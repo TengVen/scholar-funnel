@@ -1,0 +1,46 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── 环境/密钥 ──
+.env
+.venv/
+venv/
+env/
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── 模型权重（运行时自动下载）──
+apiTest/
+models/
+*.bin
+*.safetensors
+*.onnx
+*.onnx_data
+*.mdl
+
+# ── 日志 ──
+*.log
+logs/
+
+# ── 内部文档/临时文件 ──
+md/
+tt.py
+
+# ── Claude AI ──
+.claude/
+.agents/
+
+# ── OS ──
+.DS_Store
+Thumbs.db

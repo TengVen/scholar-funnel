@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap');
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    font-size: 14px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gold/30 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gold/50;
+  }
+
+  input, textarea, select {
+    @apply text-ink;
+  }
+  input:focus, textarea:focus, select:focus {
+    @apply outline-none ring-1 ring-accent/40;
+  }
+
+  ::selection {
+    @apply bg-accent/25;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-paper-white border border-line rounded-lg
+           hover:border-gold/30 transition-colors;
+  }
+
+  .btn {
+    @apply px-3.5 py-1.5 rounded-md text-[13px] font-medium
+           transition-colors duration-100
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-gradient-to-br from-gold-light via-gold to-gold-hover
+           text-[#171614] hover:brightness-110;
+  }
+  .btn-secondary {
+    @apply btn bg-paper-white border border-line text-ink
+           hover:border-gold/60 hover:text-gold-light;
+  }
+  .btn-ghost {
+    @apply btn text-ink-muted hover:text-gold-light hover:bg-paper-warm;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5
+           rounded text-[11px] font-medium tracking-wide;
+  }
+  .badge-blue {
+    @apply badge bg-accent-light text-gold-light border border-gold/25;
+  }
+  .badge-green {
+    @apply badge bg-emerald-500/15 text-emerald-300;
+  }
+  .badge-amber {
+    @apply badge bg-amber-500/15 text-amber-300;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 bg-paper-warm border border-line rounded-md
+           text-[13px] text-ink placeholder:text-ink-faint
+           focus:border-gold/60 focus:ring-1 focus:ring-gold/25
+           transition-colors;
+  }
+
+  .progress-track {
+    @apply h-1 bg-line-light rounded-full overflow-hidden;
+  }
+  .progress-fill {
+    @apply h-full bg-gradient-to-r from-gold-hover to-gold-light rounded-full
+           transition-all duration-500;
+  }
+}

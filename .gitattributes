@@ -1,0 +1,43 @@
+# 统一行尾：文本文件自动检测，提交时存 LF，检出时按平台转换
+* text=auto
+
+# 显式指定：脚本/配置文件一律 LF（跨平台安全）
+*.sh text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.sql text eol=lf
+*.txt text eol=lf
+
+# 二进制文件（git 不应尝试换行转换）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.bin binary
+*.safetensors binary
+*.onnx binary
+*.onnx_data binary
+*.mdl binary
+*.pyc binary
+
+# Windows 批处理/可执行脚本保留 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf

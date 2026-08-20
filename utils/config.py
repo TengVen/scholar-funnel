@@ -1,0 +1,93 @@
+"""
+全局配置管理 —— 单一入口，读取 .env
+"""
+import os
+from pathlib import Path
+from dataclasses import dataclass, field
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
+
+
+# ── 厂商绑定表：provider → (base_url, default_model) ──
+PROVIDERS = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "default_model": "deepseek-v4-flash",
+    },
+    "kimi": {
+        "base_url": "https://api.moonshot.cn/v1",
+        "default_model": "moonshot-v1-32k",
+    },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "default_model": "gpt-4o-mini",
+    },
+    # 想加别的厂商，直接在这里新增一行即可
+}
+
+
+@dataclass
+class Settings:
+    """应用全局配置"""
+
+    # 数据库
+    mysql_url: str = field(
+        default_factory=lambda: os.getenv(
+            "MYSQL_URL",
+            "mysql+pymysql://root:123456@localhost:3306/litfunnel",
+        )
+    )
+
+    # LLM —— 绑定为一组：provider + api_key
+    llm_provider: str = field(
+        default_factory=lambda: os.getenv("LLM_PROVIDER", "deepseek").lower().strip()
+    )
+    llm_api_key: str = field(
+        default_factory=lambda: os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+    )
+    llm_model: str = field(
+        default_factory=lambda: os.getenv("LLM_MODEL", "").strip()
+    )
+
+    google_api_key: str = field(
+        default_factory=lambda: os.getenv("GOOGLE_API_KEY", "")
+    )
+
+    # GitHub
+    github_token: str = field(
+        default_factory=lambda: os.getenv("GITHUB_TOKEN", "")
+    )
+
+    # 本地路径
+    data_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data")
+    pdf_cache_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "pdfs")
+    chroma_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "chroma")
+
+    def __post_init__(self):
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.pdf_cache_dir.mkdir(parents=True, exist_ok=True)
+        self.chroma_dir.mkdir(parents=True, exist_ok=True)
+
+        # 校验 provider 是否合法
+        if self.llm_provider not in PROVIDERS:
+            raise RuntimeError(
+                f"不支持的 LLM_PROVIDER: '{self.llm_provider}'。 "
+                f"可选: {', '.join(PROVIDERS.keys())}"
+            )
+        if not self.llm_api_key:
+            raise RuntimeError("未配置 LLM_API_KEY（或兼容的 OPENAI_API_KEY）")
+
+    # ── 绑定属性：直接取对应厂商的地址和模型 ──
+    @property
+    def llm_base_url(self) -> str:
+        return PROVIDERS[self.llm_provider]["base_url"]
+
+    @property
+    def llm_default_model(self) -> str:
+        # 如果 .env 显式配置了 LLM_MODEL，优先用；否则用厂商默认值
+        return self.llm_model or PROVIDERS[self.llm_provider]["default_model"]
+
+
+settings = Settings()
