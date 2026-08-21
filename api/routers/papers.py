@@ -2,7 +2,6 @@
 论文列表 API —— 分页、筛选、排序
 """
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import desc, func
 
 from storage.mysql_db import get_session
 from storage.models import Paper, CartItem
@@ -15,8 +14,14 @@ router = APIRouter()
 def list_papers(
     project_id: int = Query(..., description="项目 ID"),
     stage: str = Query("trunk", description="阶段: trunk / branch / network"),
-    sort_by: str = Query("trunk_score", description="排序字段: trunk_score / cited_by_count / year"),
-    sort_order: str = Query("desc", description="排序方向: asc / desc"),
+    sort_by: str = Query(
+        "trunk_score",
+        description="排序字段，支持逗号分隔的多级排序，如: cited_by_count,year（前级优先）",
+    ),
+    sort_order: str = Query(
+        "desc",
+        description="排序方向，支持逗号分隔与 sort_by 一一对应，如: desc,asc（缺省用首值补齐）",
+    ),
     filter_survey: str = Query("all", description="筛选: all / survey / non_survey"),
     min_citations: int = Query(0, ge=0),
     page: int = Query(0, ge=0),
@@ -37,18 +42,36 @@ def list_papers(
 
         total = q.count()
 
-        # 排序
-        if sort_by == "cited_by_count":
-            order = Paper.cited_by_count.desc() if sort_order == "desc" else Paper.cited_by_count.asc()
-            q = q.order_by(order)
-        elif sort_by == "year":
-            order = Paper.year.desc() if sort_order == "desc" else Paper.year.asc()
-            q = q.order_by(order)
-        else:  # trunk_score
-            if sort_order == "desc":
-                q = q.order_by(func.isnull(Paper.trunk_score).asc(), desc(Paper.trunk_score))
-            else:
-                q = q.order_by(func.isnull(Paper.trunk_score).desc(), Paper.trunk_score.asc())
+        # 联合排序：sort_by / sort_order 均支持逗号分隔，两者按位置一一对应
+        # 例：sort_by=cited_by_count,year & sort_order=desc,asc
+        sort_fields = [s.strip() for s in sort_by.split(",") if s.strip()]
+        if not sort_fields:
+            sort_fields = ["trunk_score"]
+        orders = [s.strip() for s in sort_order.split(",") if s.strip()]
+        # 方向不足时用第一个方向补齐（兼容旧前端只传一个方向）
+        if not orders:
+            orders = ["desc"] * len(sort_fields)
+        elif len(orders) < len(sort_fields):
+            orders = orders + [orders[-1]] * (len(sort_fields) - len(orders))
+
+        order_by_clauses = []
+        for field, order in zip(sort_fields, orders):
+            is_desc = order == "desc"
+            if field == "cited_by_count":
+                col = Paper.cited_by_count
+                order_by_clauses.append(col.is_(None) if is_desc else col.isnot(None))
+                order_by_clauses.append(col.desc() if is_desc else col.asc())
+            elif field == "year":
+                col = Paper.year
+                order_by_clauses.append(col.is_(None) if is_desc else col.isnot(None))
+                order_by_clauses.append(col.desc() if is_desc else col.asc())
+            else:  # trunk_score（默认）
+                col = Paper.trunk_score
+                order_by_clauses.append(col.is_(None) if is_desc else col.isnot(None))
+                order_by_clauses.append(col.desc() if is_desc else col.asc())
+
+        if order_by_clauses:
+            q = q.order_by(*order_by_clauses)
 
         # 分页
         rows = q.offset(page * page_size).limit(page_size).all()
@@ -78,6 +101,8 @@ def list_papers(
                 cited_by_count=r.cited_by_count or 0,
                 is_survey=r.is_survey,
                 trunk_score=r.trunk_score,
+                keywords=r.keywords if isinstance(r.keywords, list) else [],
+                github_url=r.github_url,
                 in_cart=r.id in cart_ids,
             ))
 

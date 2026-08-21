@@ -31,6 +31,7 @@ class OpenAlexPaper:
     is_oa: bool = False
     oa_pdf_url: str | None = None
     oa_landing_url: str | None = None  # HTML 落地页（全文入口）
+    github_url: str | None = None  # 关联 GitHub 仓库
     concepts: list[str] = field(default_factory=list)
     referenced_works: list[str] = field(default_factory=list)
     related_works: list[str] = field(default_factory=list)
@@ -130,6 +131,23 @@ def _parse_work(work: dict) -> OpenAlexPaper:
     # 提取摘要（OpenAlex 用 inverted index 存储）
     abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
 
+    # 提取 GitHub 仓库链接（扫描所有 location 的 URL）
+    github_url = None
+    for loc in work.get("locations", []):
+        for url_key in ("landing_page_url", "pdf_url"):
+            u = loc.get(url_key) or ""
+            if "github.com" in u:
+                github_url = u
+                break
+        if github_url:
+            break
+    if not github_url:
+        for u in (work.get("open_access", {}).get("oa_url") or "",
+                  (work.get("best_oa_location") or {}).get("landing_page_url") or ""):
+            if "github.com" in u:
+                github_url = u
+                break
+
     # 提取概念标签
     concepts = []
     for concept in work.get("concepts", []):
@@ -149,6 +167,7 @@ def _parse_work(work: dict) -> OpenAlexPaper:
         is_oa=is_oa,
         oa_pdf_url=oa_pdf_url,
         oa_landing_url=oa_landing_url,
+        github_url=github_url,
         concepts=concepts,
         referenced_works=[
             ref.replace("https://openalex.org/", "")

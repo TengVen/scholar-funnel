@@ -63,6 +63,8 @@ class PaperOut(BaseModel):
     cited_by_count: int = 0
     is_survey: bool = False
     trunk_score: float | None = None
+    keywords: list[str] = []
+    github_url: str | None = None
     in_cart: bool = False
 
 
@@ -195,6 +197,7 @@ class ChatRequest(BaseModel):
     conversation_id: str
     message: str
     project_id: int | None = None
+    llm_config: dict | None = None
 
 
 class ChatResponse(BaseModel):

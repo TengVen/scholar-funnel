@@ -8,15 +8,20 @@ import {
 import { PaperCard } from "./PaperCard";
 import type { Paper } from "@/lib/api";
 
+// 排序项：字段 + 独立方向
+export interface SortSpec {
+  field: string;
+  order: string;
+}
+
 interface PaperListProps {
   papers: Paper[];
   total: number;
   page: number;
   loading: boolean;
-  sortBy: string;
-  sortOrder: string;
+  sortBy: SortSpec[];
   filterSurvey: string;
-  onSortChange: (by: string, order: string) => void;
+  onSortChange: (by: SortSpec[]) => void;
   onFilterChange: (filter: string) => void;
   onPageChange: (page: number) => void;
   onAddToCart: (paperId: number) => void;
@@ -42,7 +47,6 @@ export function PaperList({
   page,
   loading,
   sortBy,
-  sortOrder,
   filterSurvey,
   onSortChange,
   onFilterChange,
@@ -51,12 +55,23 @@ export function PaperList({
 }: PaperListProps) {
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
 
+  // 三态循环：未选 → 选中↓ → 换向↑ → 取消；全部取消则回退默认"相关度↓"
+  // 优先级 = 点击顺序：后点的字段排最前成为主排序（立即生效）
   const handleSortClick = (field: string) => {
-    if (sortBy === field) {
-      onSortChange(field, sortOrder === "desc" ? "asc" : "desc");
+    const idx = sortBy.findIndex((s) => s.field === field);
+    let next: SortSpec[];
+    if (idx === -1) {
+      // 未选中 → 加入（降序 ↓），放在最前成为主排序
+      next = [{ field, order: "desc" }, ...sortBy];
+    } else if (sortBy[idx].order === "desc") {
+      // 当前 ↓ → 换向 ↑
+      next = sortBy.map((s, i) => (i === idx ? { ...s, order: "asc" } : s));
     } else {
-      onSortChange(field, "desc");
+      // 当前 ↑ → 取消
+      next = sortBy.filter((s) => s.field !== field);
+      if (next.length === 0) next = [{ field: "trunk_score", order: "desc" }];
     }
+    onSortChange(next);
   };
 
   if (papers.length === 0 && !loading) {
@@ -77,24 +92,31 @@ export function PaperList({
       {/* Toolbar */}
       <div className="flex items-center justify-between px-6 py-2 border-b border-line-light bg-paper-white shrink-0">
         <div className="flex items-center gap-3">
-          {/* Sort */}
+          {/* 联合排序（多选，每个字段独立上下箭头） */}
           <div className="flex items-center gap-1">
-            {SORT_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => handleSortClick(opt.value)}
-                className={`px-2 py-1 rounded text-[12px] transition-colors ${
-                  sortBy === opt.value
-                    ? "bg-accent-light text-accent font-medium"
-                    : "text-ink-muted hover:text-ink-secondary"
-                }`}
-              >
-                {opt.label}
-                {sortBy === opt.value && (
-                  <span className="ml-0.5">{sortOrder === "desc" ? "↓" : "↑"}</span>
-                )}
-              </button>
-            ))}
+            {SORT_OPTIONS.map((opt) => {
+              const spec = sortBy.find((s) => s.field === opt.value);
+              const selected = !!spec;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => handleSortClick(opt.value)}
+                  title={`${selected ? "点击切换方向/取消" : "点击加入排序"}`}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-[12px] transition-colors ${
+                    selected
+                      ? "bg-accent-light text-gold-light font-medium border border-gold/30"
+                      : "text-ink-muted hover:text-ink-secondary border border-transparent"
+                  }`}
+                >
+                  {opt.label}
+                  {selected && (
+                    <span className="text-[11px] text-gold leading-none">
+                      {spec.order === "desc" ? "↓" : "↑"}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           <span className="w-px h-3 bg-line" />

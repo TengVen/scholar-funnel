@@ -1,6 +1,9 @@
 "use client";
 
-import { Package, Trash2, Download } from "lucide-react";
+import { useState } from "react";
+import {
+  Package, Trash2, Download, PanelLeftClose, PanelLeft,
+} from "lucide-react";
 import type { CartStatus } from "@/lib/api";
 
 interface CartPanelProps {
@@ -15,9 +18,39 @@ const CATEGORIES = [
 ];
 
 export function CartPanel({ cart, onRemove }: CartPanelProps) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  // 折叠态：窄条，只显示图标 + 数量
+  if (collapsed) {
+    return (
+      <aside className="w-10 border-l border-line bg-paper-white flex flex-col items-center shrink-0 overflow-hidden">
+        <button
+          onClick={() => setCollapsed(false)}
+          title="展开核心骨架"
+          className="w-full flex flex-col items-center gap-2 py-3 hover:bg-paper-warm transition-colors"
+        >
+          <PanelLeft className="w-4 h-4 text-ink-muted" />
+          <span className="text-[9px] text-ink-faint [writing-mode:vertical-rl]">骨架</span>
+          {cart && (
+            <span className="w-5 h-5 rounded-full bg-accent-light text-gold-light text-[10px] tabular-nums flex items-center justify-center">
+              {cart.total}
+            </span>
+          )}
+        </button>
+      </aside>
+    );
+  }
+
   if (!cart) {
     return (
-      <aside className="w-64 border-l border-line bg-paper-white flex flex-col items-center justify-center shrink-0">
+      <aside className="w-64 border-l border-line bg-paper-white flex flex-col items-center justify-center shrink-0 relative">
+        <button
+          onClick={() => setCollapsed(true)}
+          title="收起核心骨架"
+          className="absolute top-2 left-2 p-1 rounded hover:bg-paper-warm text-ink-faint hover:text-ink-muted transition-colors"
+        >
+          <PanelLeftClose className="w-3.5 h-3.5" />
+        </button>
         <Package className="w-6 h-6 text-ink-faint mb-2" />
         <p className="text-[12px] text-ink-faint">选择项目后显示骨架</p>
       </aside>
@@ -30,9 +63,18 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
   }));
 
   return (
-    <aside className="w-64 border-l border-line bg-paper-white flex flex-col shrink-0 overflow-hidden">
+    <aside className="w-64 border-l border-line bg-paper-white flex flex-col shrink-0 overflow-hidden relative">
+      {/* 折叠按钮 */}
+      <button
+        onClick={() => setCollapsed(true)}
+        title="收起核心骨架"
+        className="absolute top-2.5 left-2 p-1 rounded hover:bg-paper-warm text-ink-faint hover:text-ink-muted transition-colors z-10"
+      >
+        <PanelLeftClose className="w-3.5 h-3.5" />
+      </button>
+
       {/* Header */}
-      <div className="px-4 py-3 border-b border-line shrink-0">
+      <div className="px-4 py-3 pl-8 border-b border-line shrink-0">
         <div className="flex items-center justify-between">
           <span className="font-serif text-[14px] font-semibold text-ink">
             核心骨架

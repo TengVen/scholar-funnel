@@ -42,10 +42,22 @@ def migrate_trunk_score():
     logger.info("已迁移：papers.trunk_score 列")
 
 
+def migrate_paper_enrich():
+    """为 papers 表添加 keywords / github_url 列（关键词与 GitHub 仓库，如果不存在）"""
+    with engine.begin() as conn:
+        if not _column_exists("papers", "keywords"):
+            conn.execute(text("ALTER TABLE papers ADD COLUMN keywords JSON DEFAULT NULL"))
+            logger.info("已迁移：papers.keywords 列")
+        if not _column_exists("papers", "github_url"):
+            conn.execute(text("ALTER TABLE papers ADD COLUMN github_url VARCHAR(500) DEFAULT NULL"))
+            logger.info("已迁移：papers.github_url 列")
+
+
 def init_db():
     """创建所有表（如果不存在），并执行必要迁移"""
     Base.metadata.create_all(engine)
     migrate_trunk_score()
+    migrate_paper_enrich()
     logger.info("数据库表初始化完成")
 
 

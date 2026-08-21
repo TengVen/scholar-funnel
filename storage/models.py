@@ -59,6 +59,8 @@ class Paper(Base):
     trunk_score: Mapped[float | None] = mapped_column(
         default=None, doc="主干检索最终评分（用于排序）"
     )
+    keywords: Mapped[dict | None] = mapped_column(JSON, default=None, doc="关键词/概念标签")
+    github_url: Mapped[str | None] = mapped_column(String(500), default=None, doc="关联 GitHub 仓库")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # 关系

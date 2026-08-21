@@ -235,6 +235,8 @@ class TrunkSearchEngine:
                     is_survey=item["is_survey"],
                     stage="trunk",
                     trunk_score=round(item["final_score"], 2),
+                    keywords=p.get("keywords") or None,
+                    github_url=p.get("github_url") or None,
                 )
                 session.add(db_paper)
                 count += 1

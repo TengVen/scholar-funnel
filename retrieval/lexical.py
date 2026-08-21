@@ -51,6 +51,8 @@ class LexicalRetriever:
                             "venue": p.venue,
                             "doi": p.doi,
                             "cited_by_count": p.cited_by_count,
+                            "keywords": p.concepts,
+                            "github_url": p.github_url,
                             "source": "openalex",
                         })
                     query_stats.append({

@@ -91,4 +91,57 @@
     @apply h-full bg-gradient-to-r from-gold-hover to-gold-light rounded-full
            transition-all duration-500;
   }
+
+  /* ── 炫彩流光环绕（Flowith 风格，鎏金主调） ── */
+  .glow-shell {
+    @apply relative overflow-hidden rounded-2xl;
+    isolation: isolate;
+    /* 常显基础浅金框：流光转到低亮度色段时兜底，保证四周始终有线 */
+    border: 1px solid rgba(201, 162, 75, 0.22);
+  }
+  .glow-shell::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    inset: -150%;
+    /* 金 + 蓝紫点缀：所有色段透明度 ≥ 0.45，任何角度可见不断线，且不厚重 */
+    background: conic-gradient(
+      from 0deg,
+      rgba(201, 162, 75, 0.8),
+      rgba(230, 200, 121, 0.45),
+      rgba(139, 92, 246, 0.5),
+      rgba(56, 189, 248, 0.45),
+      rgba(230, 200, 121, 0.45),
+      rgba(201, 162, 75, 0.8)
+    );
+    animation: glow-spin 7s linear infinite;
+  }
+  .glow-inner {
+    @apply relative z-[1] m-0.5 rounded-[14px] bg-paper;
+  }
+
+  /* ── 导航分段控制器 tab（低饱和珠宝色） ── */
+  .nav-tab {
+    color: rgba(139, 138, 128, 0.85);
+  }
+  .nav-tab:hover {
+    background: var(--tab-glow);
+    color: var(--tab-color);
+  }
+  .nav-tab .lucide {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+@keyframes glow-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-shell::before {
+    animation: none;
+  }
 }

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from storage.mysql_db import init_db
-from api.routers import projects, papers, search, cart, branch, network, chat, funnel
+from api.routers import projects, papers, search, cart, branch, network, chat, funnel, settings
 
 
 @asynccontextmanager
@@ -44,8 +44,9 @@ app.include_router(branch.router, prefix="/api/branch", tags=["branch"])
 app.include_router(network.router, prefix="/api/network", tags=["network"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(funnel.router, prefix="/api/funnel", tags=["funnel"])
+app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 
-
+# uvicorn api.main:app --reload
 @app.get("/api/health")
 def health():
     return {"status": "ok"}

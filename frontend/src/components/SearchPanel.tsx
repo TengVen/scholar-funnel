@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Loader2, SlidersHorizontal } from "lucide-react";
+import { Search, Loader2, SlidersHorizontal, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/api";
 
@@ -110,6 +110,26 @@ export function SearchPanel({
           </div>
         )}
       </form>
+
+      {/* 模式引导：检索页 = 快速模式，对话页 = 精细模式 */}
+      <div className="mt-3 flex items-center gap-2 text-[11px] text-ink-faint">
+        <Sparkles className="w-3 h-3 text-gold-light shrink-0" />
+        <span>
+          快速检索：直接输入方向一键出结果。
+          <button
+            type="button"
+            onClick={() => {
+              /* 切换到对话页由 page.tsx 处理，这里通过事件冒泡不可行，
+                 故通过 window 事件通知 page.tsx */
+              window.dispatchEvent(new CustomEvent("navigate-to-chat"));
+            }}
+            className="ml-0.5 text-gold-light hover:text-gold transition-colors underline underline-offset-2"
+          >
+            需要 AI 引导精确检索？
+          </button>
+          去对话页
+        </span>
+      </div>
     </div>
   );
 }

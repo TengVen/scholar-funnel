@@ -73,6 +73,18 @@ ANALYZE_PROMPT = """\
 
 @router.post("/message", response_model=ChatResponse)
 def send_message(body: ChatRequest):
+    # 若前端携带自定义 LLM 配置（api_key / base_url / model），先应用
+    if body.llm_config:
+        try:
+            llm.configure(
+                api_key=body.llm_config.get("api_key"),
+                base_url=body.llm_config.get("base_url"),
+                model=body.llm_config.get("model"),
+            )
+        except Exception:
+            # 配置失败不阻塞对话，仍使用默认配置
+            pass
+
     conv = _get_conv(body.conversation_id)
     conv.messages.append({"role": "user", "content": body.message})
 
@@ -145,7 +157,8 @@ def _run_search(task_id: str, conv_id: str, params: dict):
             tech_probe=params.get("tech_probe", ""),
             year_from=params.get("year_from"),
             year_to=params.get("year_to"),
-            score_threshold=0.0, top_k=100)
+            score_threshold=params.get("score_threshold", 0.0),
+            top_k=params.get("top_k", 100))
 
         conv.stage = "greeting"
         conv.title = params.get("user_query", "new")[:30]

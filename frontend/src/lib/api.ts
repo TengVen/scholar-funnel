@@ -78,6 +78,8 @@ export interface Paper {
   cited_by_count: number;
   is_survey: boolean;
   trunk_score: number | null;
+  keywords: string[];
+  github_url: string | null;
   in_cart: boolean;
 }
 
@@ -151,6 +153,15 @@ export async function addToCart(projectId: number, paperId: number, category = "
 
 export async function removeFromCart(projectId: number, paperId: number): Promise<unknown> {
   return request(`/api/cart/${paperId}?project_id=${projectId}`, { method: "DELETE" });
+}
+
+export interface CartClassifyResult {
+  category: string;
+  reason: string;
+}
+
+export async function classifyPaper(paperId: number): Promise<CartClassifyResult> {
+  return request(`/api/cart/classify?paper_id=${paperId}`, { method: "POST" });
 }
 
 export async function changeCategory(projectId: number, paperId: number, newCategory: string): Promise<unknown> {
@@ -304,11 +315,34 @@ export interface ChatResponse {
   search_result?: Record<string, unknown> | null;
 }
 
-export async function sendChatMessage(conversationId: string, message: string): Promise<ChatResponse> {
+export async function sendChatMessage(
+  conversationId: string,
+  message: string,
+  extra: Record<string, unknown> = {},
+): Promise<ChatResponse> {
   return request("/api/chat/message", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, message }),
+    body: JSON.stringify({ conversation_id: conversationId, message, ...extra }),
   });
+}
+
+// ── Settings (LLM 配置) ──
+
+export interface LLMConfig {
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+}
+
+export async function setLLMConfig(config: LLMConfig): Promise<{ ok: boolean; message: string }> {
+  return request("/api/settings/llm", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export async function getLLMConfig(): Promise<{ ok: boolean; model: string }> {
+  return request("/api/settings/llm");
 }
 
 export async function startChatSearch(
