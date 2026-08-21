@@ -139,6 +139,7 @@ class CartAddRequest(BaseModel):
 class CartItemOut(BaseModel):
     cart_id: int
     paper_id: int
+    openalex_id: str = ""
     category: str
     title: str
     authors: list[str] | None = None
@@ -202,6 +203,7 @@ class BranchAnalyzeResponse(BaseModel):
 
 class NetworkAnalyzeRequest(BaseModel):
     project_id: int
+    category: str = ""   # 分类范围: foundation/mainstream/frontier，空=全部
 
 
 class RecommendedPaperOut(BaseModel):

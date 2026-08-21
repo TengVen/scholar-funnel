@@ -177,6 +177,7 @@ export async function listPapers(params: PaperListParams): Promise<PaperListResp
 export interface CartItem {
   cart_id: number;
   paper_id: number;
+  openalex_id: string;
   category: string;
   title: string;
   authors: string[] | null;
@@ -214,6 +215,21 @@ export async function addToCart(
     method: "POST",
     body: JSON.stringify({ project_id: projectId, paper_id: paperId, category, notes }),
   });
+}
+
+export async function addToCartByOpenAlex(
+  projectId: number,
+  openalexId: string,
+  category: string,
+  notes = "",
+): Promise<unknown> {
+  const qs = new URLSearchParams({
+    project_id: String(projectId),
+    openalex_id: openalexId,
+    category,
+    notes,
+  });
+  return request(`/api/cart/add-by-openalex?${qs}`, { method: "POST" });
 }
 
 export async function removeFromCart(projectId: number, paperId: number): Promise<unknown> {
@@ -359,10 +375,13 @@ export interface NetworkResultResponse {
   stats: Record<string, number>;
 }
 
-export async function startNetworkAnalyze(projectId: number): Promise<{ task_id: string }> {
+export async function startNetworkAnalyze(
+  projectId: number,
+  category = "",
+): Promise<{ task_id: string }> {
   return request("/api/network/analyze", {
     method: "POST",
-    body: JSON.stringify({ project_id: projectId }),
+    body: JSON.stringify({ project_id: projectId, category }),
   });
 }
 

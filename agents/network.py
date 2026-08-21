@@ -72,18 +72,21 @@ TOP_K = 30                  # 每种分析最多推荐 N 篇
 #  主入口
 # ══════════════════════════════════════════════════════════
 
-def run_analysis(project_id: int, on_progress=None) -> NetworkResult:
+def run_analysis(
+    project_id: int, category: str = "", on_progress=None,
+) -> NetworkResult:
     """
     执行网络分析。
 
     Args:
         project_id: 项目 ID
+        category: 分类范围（foundation/mainstream/frontier，空=全部）
         on_progress: 进度回调 fn(step_name, detail)
 
     Returns:
         NetworkResult
     """
-    skeleton = _load_skeleton(project_id)
+    skeleton = _load_skeleton(project_id, category)
     if not skeleton:
         logger.warning(f"项目 {project_id} 骨架为空")
         return NetworkResult(stats={"error": "骨架为空"})
@@ -348,15 +351,17 @@ def _is_referenced_by(skeleton_id: str, ref_id: str) -> bool:
 #  数据加载
 # ══════════════════════════════════════════════════════════
 
-def _load_skeleton(project_id: int) -> list[dict]:
-    """加载骨架论文"""
+def _load_skeleton(project_id: int, category: str = "") -> list[dict]:
+    """加载骨架论文（可按分类过滤，category 空=全部）"""
     with get_session() as session:
-        rows = (
+        q = (
             session.query(CartItem, Paper)
             .join(Paper, CartItem.paper_id == Paper.id)
             .filter(CartItem.project_id == project_id)
-            .all()
         )
+        if category:
+            q = q.filter(CartItem.category == category)
+        rows = q.all()
         return [
             {
                 "paper_id": paper.id,

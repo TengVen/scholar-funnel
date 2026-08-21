@@ -180,6 +180,7 @@ export default function Home() {
     if (!activeProject) return;
     try {
       await removeFromCart(activeProject.id, paperId);
+
       await loadCart(activeProject.id);
       // 强制从后端重新拉取论文列表，确保 in_cart 与后端一致
       // （仅当处于检索页时刷新当前列表，其他页无需）
@@ -323,8 +324,10 @@ export default function Home() {
         return (
           <NetworkPanel
             projectId={activeProject!.id}
-            cartPaperIds={cartPaperIds}
-            onAddToCart={handleAddToCart}
+            cart={cart}
+            onAddToCart={async () => {
+              await loadCart(activeProject!.id);
+            }}
           />
         );
       case "chat":

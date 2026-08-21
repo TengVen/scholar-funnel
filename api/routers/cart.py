@@ -53,6 +53,28 @@ def _rule_fallback(paper) -> dict:
     return {"category": "mainstream", "reason": "领域主流方法"}
 
 
+@router.post("/add-by-openalex")
+def add_by_openalex(
+    openalex_id: str = Query(...),
+    project_id: int = Query(...),
+    category: str = Query("mainstream"),
+    notes: str = "",
+):
+    """
+    按 OpenAlex ID 将论文加入骨架（网络图谱推荐论文一键加入）。
+    论文不在 papers 表时先从 OpenAlex 拉取入库，再复用 add 校验加入。
+    """
+    result = cart_svc.add_by_openalex(
+        project_id=project_id,
+        openalex_id=openalex_id,
+        category=category,
+        notes=notes,
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error", "加入失败"))
+    return result
+
+
 @router.post("/classify")
 def classify_paper(paper_id: int = Query(...)):
     """AI 判断论文应归入骨架的哪一分类（奠基/主流/前沿）"""

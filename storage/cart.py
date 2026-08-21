@@ -80,6 +80,52 @@ def add(project_id: int, paper_id: int, category: str, notes: str = "") -> dict:
     return {"ok": True, "error": "", "counts": get_counts(project_id)}
 
 
+def add_by_openalex(
+    project_id: int, openalex_id: str, category: str, notes: str = ""
+) -> dict:
+    """
+    按 OpenAlex ID 将论文加入骨架：
+    论文若不在 papers 表则先从 OpenAlex 拉取并入库，再调 add 加入骨架。
+    """
+    from sources.openalex import get_work_by_id
+
+    # ── 校验分类 ──
+    if category not in LIMITS:
+        return {"ok": False, "error": f"未知分类: {category}"}
+
+    with get_session() as session:
+        paper = (
+            session.query(Paper)
+            .filter_by(openalex_id=openalex_id)
+            .first()
+        )
+        if not paper:
+            # 从 OpenAlex 拉取论文详情
+            work = get_work_by_id(openalex_id)
+            if not work:
+                return {"ok": False, "error": f"OpenAlex 未找到该论文: {openalex_id}"}
+            paper = Paper(
+                project_id=project_id,
+                openalex_id=work.openalex_id,
+                title=work.title or "",
+                authors=work.authors or [],
+                year=work.year or 0,
+                venue=work.venue or "",
+                doi=work.doi,
+                abstract=work.abstract or "",
+                cited_by_count=work.cited_by_count or 0,
+                is_survey=False,
+                stage="network",
+                keywords=work.concepts or None,
+                github_url=work.github_url,
+            )
+            session.add(paper)
+            session.flush()  # 拿到 paper.id
+
+    # 复用 add 的完整校验逻辑（上限/重复/写入）
+    return add(project_id, paper.id, category, notes)
+
+
 def remove(project_id: int, paper_id: int) -> dict:
     """从骨架中移除论文"""
     with get_session() as session:
@@ -164,6 +210,7 @@ def get_items(project_id: int) -> List[Dict]:
             results.append({
                 "cart_id": item.id,
                 "paper_id": paper.id,
+                "openalex_id": paper.openalex_id or "",
                 "category": item.category,
                 "category_order": category_order.get(item.category, 9),
                 "title": paper.title,

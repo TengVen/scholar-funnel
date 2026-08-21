@@ -42,7 +42,7 @@ def _build_response(result: network_svc.NetworkResult) -> NetworkResultResponse:
     )
 
 
-def _run_task(task_id: str, project_id: int):
+def _run_task(task_id: str, project_id: int, category: str = ""):
     task = _tasks[task_id]
     try:
         def on_progress(step, detail):
@@ -50,7 +50,7 @@ def _run_task(task_id: str, project_id: int):
             task["detail"] = detail
 
         result = network_svc.run_analysis(
-            project_id=project_id, on_progress=on_progress,
+            project_id=project_id, category=category, on_progress=on_progress,
         )
         task["result"] = _build_response(result)
         task["status"] = "done"
@@ -67,7 +67,7 @@ def start_network_analyze(body: NetworkAnalyzeRequest):
         "result": None, "error": None,
     }
     threading.Thread(
-        target=_run_task, args=(task_id, body.project_id), daemon=True,
+        target=_run_task, args=(task_id, body.project_id, body.category), daemon=True,
     ).start()
     return {"task_id": task_id}
 

@@ -6,6 +6,9 @@
  * 与 branchStore 的差异：
  * 后端目前没有 network 结果的持久化接口（只有内存 task），
  * 所以这里用 persist 中间件缓存到 localStorage，刷新页面也能恢复。
+ *
+ * 按 (projectId, category) 缓存：全量（""）与单类（foundation/mainstream/frontier）
+ * 结果独立，互不覆盖——可先全量分析，再对某类单独分析。
  */
 "use client";
 
@@ -14,15 +17,19 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { NetworkResultResponse } from "@/lib/api";
 
 interface NetworkStore {
-  /** 网络分析结果（按 projectId 缓存） */
-  resultsByProject: Record<number, NetworkResultResponse>;
+  /** 网络分析结果（按 projectId + category 缓存） */
+  resultsByProject: Record<number, Record<string, NetworkResultResponse>>;
   /** 当前项目是否正在分析中 */
   analyzingByProject: Record<number, boolean>;
   /** 最近一次轮询的进度信息 */
   progressByProject: Record<number, string>;
 
-  /** 设置某项目的结果（传 null 表示清除） */
-  setResult: (projectId: number, result: NetworkResultResponse | null) => void;
+  /** 设置某项目某分类的结果（传 null 表示清除） */
+  setResult: (
+    projectId: number,
+    category: string,
+    result: NetworkResultResponse | null,
+  ) => void;
   /** 设置某项目的分析中状态 */
   setAnalyzing: (projectId: number, analyzing: boolean) => void;
   /** 设置某项目的进度文本 */
@@ -38,13 +45,19 @@ export const useNetworkStore = create<NetworkStore>()(
       analyzingByProject: {},
       progressByProject: {},
 
-      setResult: (projectId, result) =>
+      setResult: (projectId, category, result) =>
         set((state) => {
           const resultsByProject = { ...state.resultsByProject };
+          const byCat = { ...(resultsByProject[projectId] || {}) };
           if (result === null) {
+            delete byCat[category];
+          } else {
+            byCat[category] = result;
+          }
+          if (Object.keys(byCat).length === 0) {
             delete resultsByProject[projectId];
           } else {
-            resultsByProject[projectId] = result;
+            resultsByProject[projectId] = byCat;
           }
           return { resultsByProject };
         }),

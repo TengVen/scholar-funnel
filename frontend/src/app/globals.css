@@ -166,6 +166,64 @@
   animation: spin-border 6s linear infinite;
 }
 
+/* 网络未展开意境：中心节点呼吸 + 虚点闪烁 + 线索流光 */
+@keyframes net-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes net-twinkle {
+  0%, 100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes net-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* 主星自转（缓慢） */
+@keyframes net-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.net-breathe {
+  animation: net-breathe 3.2s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.net-twinkle {
+  animation: net-twinkle 4s ease-in-out infinite;
+}
+
+.net-dash {
+  animation: net-dash 6s linear infinite;
+}
+
+/* 环绕主星的论文星点：轨道旋转（transform-origin 由内联 style 指定） */
+.net-orbit {
+  animation: net-spin 26s linear infinite;
+}
+
+/* 分析中：星点快速解析旋转（8s/圈） */
+.net-orbit-fast {
+  animation: net-spin 8s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .glow-shell::before {
     animation: none;
@@ -174,6 +232,13 @@
     animation: none;
   }
   .gold-border-rotator {
+    animation: none;
+  }
+  .net-breathe,
+  .net-twinkle,
+  .net-dash,
+  .net-orbit,
+  .net-orbit-fast {
     animation: none;
   }
 }
