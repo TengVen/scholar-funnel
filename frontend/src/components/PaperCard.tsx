@@ -9,7 +9,7 @@ import { classifyPaper, type Paper } from "@/lib/api";
 
 interface PaperCardProps {
   paper: Paper;
-  onAddToCart: (paperId: number, category?: string) => void;
+  onAddToCart: (paperId: number, category?: string, notes?: string) => void;
 }
 
 // 关键词玻璃徽章配色：清透冷调，按序循环
@@ -28,6 +28,13 @@ const CART_CATEGORIES = [
   { key: "frontier", label: "最新前沿", desc: "近两年最新进展" },
 ];
 
+// 手动选择分类时的默认理由
+const CATEGORY_NOTES: Record<string, string> = {
+  foundation: "手动选择：奠基理论类",
+  mainstream: "手动选择：主流方法类",
+  frontier: "手动选择：最新前沿类",
+};
+
 export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -45,9 +52,10 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const handleAdd = (category?: string) => {
+  // 手动分类：带默认理由；智能分类：带 AI reason
+  const handleAdd = (category?: string, notes?: string) => {
     setMenuOpen(false);
-    onAddToCart(paper.id, category);
+    onAddToCart(paper.id, category, notes);
   };
 
   const handleSmartAdd = async () => {
@@ -56,7 +64,8 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
     try {
       const res = await classifyPaper(paper.id);
       setMenuOpen(false);
-      onAddToCart(paper.id, res.category);
+      // AI 分类：带 AI 返回的理由
+      onAddToCart(paper.id, res.category, `AI 分类：${res.reason}`);
     } catch (e) {
       alert(`AI 分类失败: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -146,24 +155,31 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
         </div>
       )}
 
-      {/* Abstract toggle */}
+      {/* Abstract toggle：展开后"收起"按钮跟随在摘要末尾 */}
       {paper.abstract && (
         <div className="mt-2">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1 text-[12px] text-ink-faint hover:text-ink-muted transition-colors"
-          >
-            {expanded ? (
-              <ChevronUp className="w-3 h-3" />
-            ) : (
+          {!expanded && (
+            <button
+              onClick={() => setExpanded(true)}
+              className="flex items-center gap-1 text-[12px] text-ink-faint hover:text-ink-muted transition-colors"
+            >
               <ChevronDown className="w-3 h-3" />
-            )}
-            {expanded ? "收起" : "摘要"}
-          </button>
+              摘要
+            </button>
+          )}
           {expanded && (
-            <p className="mt-2 text-[13px] text-ink-secondary leading-relaxed">
-              {paper.abstract}
-            </p>
+            <>
+              <p className="mt-2 text-[13px] text-ink-secondary leading-relaxed">
+                {paper.abstract}
+              </p>
+              <button
+                onClick={() => setExpanded(false)}
+                className="flex items-center gap-1 mt-2 text-[12px] text-ink-faint hover:text-ink-muted transition-colors"
+              >
+                <ChevronUp className="w-3 h-3" />
+                收起
+              </button>
+            </>
           )}
         </div>
       )}
@@ -204,7 +220,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
               {CART_CATEGORIES.map((cat) => (
                 <button
                   key={cat.key}
-                  onClick={() => handleAdd(cat.key)}
+                  onClick={() => handleAdd(cat.key, CATEGORY_NOTES[cat.key])}
                   className="w-full text-left px-3 py-1.5 hover:bg-paper-warm transition-colors"
                 >
                   <span className="block text-[12.5px] text-ink leading-tight">{cat.label}</span>

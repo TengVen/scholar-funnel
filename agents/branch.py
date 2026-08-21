@@ -34,6 +34,8 @@ class BranchPaperResult:
     doi: str = ""
     abstract: str = ""
     cited_by_count: int = 0
+    category: str = ""               # 骨架分类: foundation/mainstream/frontier
+    mode: str = ""                   # 分析模式: probe_match/ai_suggest/landscape
     # 分析结果
     content_level: int = 5          # 1-5（数字越小内容越完整）
     content_source: str = "abstract"
@@ -53,6 +55,7 @@ def run_analysis(
     project_id: int,
     mode: str = MODE_PROBE,
     probe: str = "",
+    category: str = "",
     on_progress=None,
 ) -> list[BranchPaperResult]:
     """
@@ -62,6 +65,7 @@ def run_analysis(
         project_id: 项目 ID
         mode: 分析模式
         probe: 技术探针（probe_match 模式必填，其他模式可选）
+        category: 分类范围（foundation/mainstream/frontier，空=全部）
         on_progress: 进度回调 fn(current, total, paper_title)
 
     Returns:
@@ -73,13 +77,13 @@ def run_analysis(
     if mode == MODE_PROBE and not probe:
         raise ValueError("探针匹配模式必须提供技术探针")
 
-    # 获取骨架中的论文（所有分类，不只是 mainstream）
-    papers = _get_skeleton_papers(project_id)
+    # 获取骨架中的论文（可按分类过滤）
+    papers = _get_skeleton_papers(project_id, category)
     if not papers:
         logger.warning(f"项目 {project_id} 骨架为空，无法执行分支分析")
         return []
 
-    logger.info(f"开始分支分析: mode={mode}, probe={probe}, papers={len(papers)}")
+    logger.info(f"开始分支分析: mode={mode}, probe={probe}, category={category or 'all'}, papers={len(papers)}")
 
     results = []
     for i, paper in enumerate(papers):
@@ -88,6 +92,8 @@ def run_analysis(
 
         try:
             result = _analyze_single_paper(paper, mode, probe)
+            result.category = paper.get("category", "")
+            result.mode = mode
             results.append(result)
 
             # 持久化到 AnalysisResult 表
@@ -98,6 +104,8 @@ def run_analysis(
             result = BranchPaperResult(
                 paper_id=paper["paper_id"],
                 title=paper["title"],
+                category=paper.get("category", ""),
+                mode=mode,
                 error=str(e),
             )
             results.append(result)
@@ -113,17 +121,20 @@ def run_analysis(
     return results
 
 
-def get_stored_results(project_id: int) -> list[BranchPaperResult]:
-    """读取已存储的分析结果（不重新执行分析）"""
+def get_stored_results(project_id: int, mode: str = "") -> list[BranchPaperResult]:
+    """读取已存储的分析结果（不重新执行分析），可按模式过滤"""
     with get_session() as session:
-        rows = (
-            session.query(AnalysisResult, Paper)
+        q = (
+            session.query(AnalysisResult, Paper, CartItem)
             .join(Paper, AnalysisResult.paper_id == Paper.id)
-            .filter(Paper.project_id == project_id)
-            .all()
+            .join(CartItem, CartItem.paper_id == Paper.id)
+            .filter(CartItem.project_id == project_id)
         )
+        if mode:
+            q = q.filter(AnalysisResult.mode == mode)
+
         results = []
-        for ar, paper in rows:
+        for ar, paper, ci in q.all():
             results.append(BranchPaperResult(
                 paper_id=paper.id,
                 title=paper.title,
@@ -133,6 +144,8 @@ def get_stored_results(project_id: int) -> list[BranchPaperResult]:
                 doi=paper.doi or "",
                 abstract=paper.abstract or "",
                 cited_by_count=paper.cited_by_count or 0,
+                category=ci.category,
+                mode=ar.mode or "",
                 content_level=ar.content_level or 5,
                 content_source=ar.content_source or "abstract",
                 method_summary=ar.method_summary or "",
@@ -434,15 +447,17 @@ def _analyze_ai_suggest(
 #  工具函数
 # ══════════════════════════════════════════════════════════
 
-def _get_skeleton_papers(project_id: int) -> list[dict]:
-    """获取骨架中的论文列表"""
+def _get_skeleton_papers(project_id: int, category: str = "") -> list[dict]:
+    """获取骨架中的论文列表（可按分类过滤，category 为空=全部）"""
     with get_session() as session:
-        rows = (
+        q = (
             session.query(CartItem, Paper)
             .join(Paper, CartItem.paper_id == Paper.id)
             .filter(CartItem.project_id == project_id)
-            .all()
         )
+        if category:
+            q = q.filter(CartItem.category == category)
+        rows = q.all()
         results = []
         for item, paper in rows:
             results.append({
@@ -462,9 +477,13 @@ def _get_skeleton_papers(project_id: int) -> list[dict]:
 
 
 def _save_result(paper_id: int, result: BranchPaperResult):
-    """将分析结果持久化到 AnalysisResult 表"""
+    """将分析结果持久化到 AnalysisResult 表（按 paper_id + mode 唯一）"""
     with get_session() as session:
-        existing = session.query(AnalysisResult).filter_by(paper_id=paper_id).first()
+        existing = (
+            session.query(AnalysisResult)
+            .filter_by(paper_id=paper_id, mode=result.mode)
+            .first()
+        )
         if existing:
             # 更新已有记录
             existing.content_level = result.content_level
@@ -477,6 +496,7 @@ def _save_result(paper_id: int, result: BranchPaperResult):
             # 新建记录
             ar = AnalysisResult(
                 paper_id=paper_id,
+                mode=result.mode or "probe_match",
                 content_level=result.content_level,
                 content_source=result.content_source,
                 method_summary=result.method_summary,
@@ -486,7 +506,7 @@ def _save_result(paper_id: int, result: BranchPaperResult):
             )
             session.add(ar)
 
-    logger.debug(f"保存分析结果: paper={paper_id}, match={result.probe_match}")
+    logger.debug(f"保存分析结果: paper={paper_id}, mode={result.mode}, match={result.probe_match}")
 
 
 def _simple_keyword_match(paper: dict, probe: str) -> dict:

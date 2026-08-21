@@ -49,6 +49,58 @@ class SearchResponse(BaseModel):
     trace: dict
 
 
+class GapSearchRequest(BaseModel):
+    """缺口补充检索请求：定向检索某类别的论文，返回候选不入库"""
+    project_id: int
+    user_query: str                    # 领域描述（沿用项目研究方向）
+    target_category: str               # foundation / mainstream / frontier
+    tech_probe: str = ""
+    user_constraint: str = ""          # 可选：用户补充约束（如"重点关注变分方法"）
+    per_query: int = Field(default=25, ge=5, le=100)
+    top_k: int = Field(default=50, ge=5, le=200)
+    score_threshold: float = 0.35      # 比全量检索更严，过滤噪声
+    max_queries: int = Field(default=6, ge=1, le=20)
+
+
+class GapCandidate(BaseModel):
+    """缺口补充检索候选论文"""
+    paper_id: int | None = None        # 已在库则带 id，否则 None
+    openalex_id: str
+    title: str
+    authors: list[str] = []
+    year: int | None = None
+    venue: str = ""
+    abstract: str = ""
+    cited_by_count: int = 0
+    is_survey: bool = False
+    keywords: list[str] = []
+    github_url: str | None = None
+    relevance_score: float = 0.0       # BGE 相关度
+    recommended_category: str           # 推荐类别
+    confidence: str = "medium"          # high / medium / low
+    reason: str = ""                    # AI 判定理由
+    already_in_cart: bool = False
+    already_in_db: bool = False
+
+
+class GapSearchResponse(BaseModel):
+    """缺口补充检索响应：候选列表（不入库）"""
+    target_category: str
+    candidates: list[GapCandidate]
+    expanded_queries: list[str]
+    reasoning: str
+    total_found: int
+    returned: int
+    status: str                        # ok / low_results / empty
+
+
+class TitleLookupRequest(BaseModel):
+    """按标题直达查询（骨架补充的"标题直达"模式）"""
+    project_id: int
+    title: str                         # 论文标题
+    target_category: str               # foundation / mainstream / frontier
+
+
 # ── Paper ──
 
 class PaperOut(BaseModel):
@@ -97,6 +149,8 @@ class CartItemOut(BaseModel):
     abstract: str | None = None
     cited_by_count: int = 0
     is_survey: bool = False
+    keywords: list[str] = []
+    github_url: str | None = None
     notes: str = ""
     added_at: str = ""
 
@@ -114,6 +168,7 @@ class BranchAnalyzeRequest(BaseModel):
     project_id: int
     mode: str = "probe_match"
     probe: str = ""
+    category: str = ""   # 分类范围: foundation/mainstream/frontier，空=全部
 
 
 class BranchPaperResultOut(BaseModel):
@@ -125,6 +180,7 @@ class BranchPaperResultOut(BaseModel):
     doi: str = ""
     abstract: str = ""
     cited_by_count: int = 0
+    category: str = ""
     content_level: int = 5
     content_source: str = "abstract"
     method_summary: str = ""

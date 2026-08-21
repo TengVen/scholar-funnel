@@ -13,6 +13,8 @@ import {
   listProjects,
   createProject,
   runTrunkSearch,
+  runGapSearch,
+  lookupTitleByTitle,
   listPapers,
   getCart,
   addToCart,
@@ -21,10 +23,12 @@ import {
   type Paper,
   type CartStatus,
   type SearchResult,
+  type GapSearchResult,
 } from "@/lib/api";
 import { Sidebar } from "@/components/Sidebar";
 import { SearchPanel } from "@/components/SearchPanel";
 import { PaperList } from "@/components/PaperList";
+import { GapPanel } from "@/components/GapPanel";
 import { CartPanel } from "@/components/CartPanel";
 import { StatsBar } from "@/components/StatsBar";
 import { BranchPanel } from "@/components/BranchPanel";
@@ -66,6 +70,10 @@ export default function Home() {
   // ── 排序/筛选状态 ──
   const [sortBy, setSortBy] = useState<SortSpec[]>([{ field: "trunk_score", order: "desc" }]);
   const [filterSurvey, setFilterSurvey] = useState("all");
+  // ── 缺口补充检索（重检索）状态 ──
+  const [gapMode, setGapMode] = useState(false);          // 是否显示重检索视图
+  const [gapResult, setGapResult] = useState<GapSearchResult | null>(null);
+  const [gapSearching, setGapSearching] = useState(false);
 
   // ── 加载项目列表 ──
   useEffect(() => {
@@ -77,6 +85,13 @@ export default function Home() {
     const handler = () => setActivePage("chat");
     window.addEventListener("navigate-to-chat", handler);
     return () => window.removeEventListener("navigate-to-chat", handler);
+  }, []);
+
+  // ── 监听分支页"去骨架页"引导跳转 ──
+  useEffect(() => {
+    const handler = () => setActivePage("cart");
+    window.addEventListener("navigate-to-cart", handler);
+    return () => window.removeEventListener("navigate-to-cart", handler);
   }, []);
 
   // ── 加载论文和骨架 ──
@@ -148,10 +163,10 @@ export default function Home() {
   };
 
   // ── 加入/移出骨架 ──
-  const handleAddToCart = async (paperId: number, category = "mainstream") => {
+  const handleAddToCart = async (paperId: number, category = "mainstream", notes = "") => {
     if (!activeProject) return;
     try {
-      await addToCart(activeProject.id, paperId, category);
+      await addToCart(activeProject.id, paperId, category, notes);
       await loadCart(activeProject.id);
       if (activePage === "search") {
         await loadPapers(activeProject.id, page);
@@ -173,6 +188,55 @@ export default function Home() {
       }
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // ── 缺口补充检索（重检索）──
+  const handleGapSearch = async (targetCategory: string, constraint = "", threshold = 0.35) => {
+    if (!activeProject) return;
+    setGapSearching(true);
+    try {
+      const res = await runGapSearch({
+        project_id: activeProject.id,
+        user_query: activeProject.name,   // 领域描述用项目名
+        tech_probe: activeProject.tech_probe || "",
+        target_category: targetCategory,
+        user_constraint: constraint,
+        score_threshold: threshold,
+      });
+      setGapResult(res);
+      setGapMode(true);
+      setActivePage("search");            // 跳到检索页查看重检索结果
+    } catch (e: unknown) {
+      alert(`补充检索失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setGapSearching(false);
+    }
+  };
+
+  // 退出重检索视图
+  const handleExitGapMode = () => {
+    setGapMode(false);
+    setGapResult(null);
+  };
+
+  // ── 标题直达查找（骨架补充"输入标题"模式）──
+  const handleTitleLookup = async (targetCategory: string, title: string) => {
+    if (!activeProject) return;
+    setGapSearching(true);
+    try {
+      const res = await lookupTitleByTitle({
+        project_id: activeProject.id,
+        title,
+        target_category: targetCategory,
+      });
+      setGapResult(res);
+      setGapMode(true);
+      setActivePage("search");
+    } catch (e: unknown) {
+      alert(`标题查找失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setGapSearching(false);
     }
   };
 
@@ -200,6 +264,18 @@ export default function Home() {
 
     switch (activePage) {
       case "search":
+        // 重检索模式：展示缺口补充候选（按类别分组）
+        if (gapMode) {
+          return (
+            <GapPanel
+              result={gapResult}
+              searching={gapSearching}
+              cartPaperIds={cartPaperIds}
+              onAddToCart={handleAddToCart}
+              onExit={handleExitGapMode}
+            />
+          );
+        }
         return (
           <>
             <SearchPanel
@@ -216,6 +292,8 @@ export default function Home() {
               loading={loadingPapers}
               sortBy={sortBy}
               filterSurvey={filterSurvey}
+              gapActive={gapMode}
+              onToggleGap={() => setGapMode(!gapMode)}
               onSortChange={setSortBy}
               onFilterChange={setFilterSurvey}
               onPageChange={handlePageChange}
@@ -234,10 +312,13 @@ export default function Home() {
                 loadPapers(activeProject!.id, page),
               ]);
             }}
+            onGapSearch={handleGapSearch}
+            onTitleLookup={handleTitleLookup}
+            gapSearching={gapSearching}
           />
         );
       case "branch":
-        return <BranchPanel projectId={activeProject!.id} />;
+        return <BranchPanel projectId={activeProject!.id} cart={cart} />;
       case "network":
         return (
           <NetworkPanel

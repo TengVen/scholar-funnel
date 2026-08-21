@@ -16,7 +16,8 @@ def _serialize(r: branch_svc.BranchPaperResult) -> BranchPaperResultOut:
     return BranchPaperResultOut(
         paper_id=r.paper_id, title=r.title, authors=r.authors,
         year=r.year, venue=r.venue, doi=r.doi, abstract=r.abstract,
-        cited_by_count=r.cited_by_count, content_level=r.content_level,
+        cited_by_count=r.cited_by_count, category=r.category,
+        content_level=r.content_level,
         content_source=r.content_source, method_summary=r.method_summary,
         probe_match=r.probe_match, probe_confidence=r.probe_confidence,
         key_findings=r.key_findings, optimization_method=r.optimization_method,
@@ -24,7 +25,7 @@ def _serialize(r: branch_svc.BranchPaperResult) -> BranchPaperResultOut:
     )
 
 
-def _run_task(task_id: str, project_id: int, mode: str, probe: str):
+def _run_task(task_id: str, project_id: int, mode: str, probe: str, category: str = ""):
     task = _tasks[task_id]
     try:
         def on_progress(current, total, title):
@@ -33,7 +34,7 @@ def _run_task(task_id: str, project_id: int, mode: str, probe: str):
             task["detail"] = title
 
         results = branch_svc.run_analysis(
-            project_id=project_id, mode=mode, probe=probe,
+            project_id=project_id, mode=mode, probe=probe, category=category,
             on_progress=on_progress,
         )
         level_dist: dict[str, int] = {}
@@ -62,7 +63,7 @@ def start_branch_analyze(body: BranchAnalyzeRequest):
     }
     threading.Thread(
         target=_run_task,
-        args=(task_id, body.project_id, body.mode, body.probe),
+        args=(task_id, body.project_id, body.mode, body.probe, body.category),
         daemon=True,
     ).start()
     return {"task_id": task_id}
@@ -93,13 +94,16 @@ def get_branch_result(task_id: str = Query(...)):
 
 
 @router.get("/results", response_model=BranchAnalyzeResponse)
-def get_branch_results(project_id: int = Query(...)):
-    results = branch_svc.get_stored_results(project_id)
+def get_branch_results(
+    project_id: int = Query(...),
+    mode: str = Query("", description="按分析模式过滤: probe_match/ai_suggest/landscape，空=全部"),
+):
+    results = branch_svc.get_stored_results(project_id, mode)
     level_dist: dict[str, int] = {}
     for r in results:
         src = f"L{r.content_level} ({r.content_source})"
         level_dist[src] = level_dist.get(src, 0) + 1
     return BranchAnalyzeResponse(
         results=[_serialize(r) for r in results],
-        total=len(results), mode="stored", level_distribution=level_dist,
+        total=len(results), mode=mode or "stored", level_distribution=level_dist,
     )

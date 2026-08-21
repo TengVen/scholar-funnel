@@ -54,13 +54,16 @@ class Paper(Base):
     cited_by_count: Mapped[int] = mapped_column(Integer, default=0)
     is_survey: Mapped[bool] = mapped_column(Boolean, default=False)
     stage: Mapped[str] = mapped_column(
-        Enum("trunk", "branch", "network", name="paper_stage"), default="trunk"
+        Enum("trunk", "branch", "network", "gap", name="paper_stage"), default="trunk"
     )
     trunk_score: Mapped[float | None] = mapped_column(
         default=None, doc="主干检索最终评分（用于排序）"
     )
     keywords: Mapped[dict | None] = mapped_column(JSON, default=None, doc="关键词/概念标签")
     github_url: Mapped[str | None] = mapped_column(String(500), default=None, doc="关联 GitHub 仓库")
+    recommended_category: Mapped[str | None] = mapped_column(
+        String(20), default=None, doc="缺口检索推荐类别: foundation/mainstream/frontier"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # 关系
@@ -81,10 +84,14 @@ class AnalysisResult(Base):
     __tablename__ = "analysis_results"
     __table_args__ = (
         Index("idx_match", "probe_match", "probe_confidence"),
+        UniqueConstraint("paper_id", "mode", name="uniq_analysis_paper_mode"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     paper_id: Mapped[int] = mapped_column(ForeignKey("papers.id"), nullable=False)
+    mode: Mapped[str | None] = mapped_column(
+        String(20), default=None, doc="分析模式: probe_match/ai_suggest/landscape"
+    )
     content_level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     content_source: Mapped[str] = mapped_column(String(30))
     method_summary: Mapped[str | None] = mapped_column(Text)

@@ -9,12 +9,15 @@ import {
   ExternalLink,
   Trash2,
   ArrowLeftRight,
+  Github,
+  Sparkles,
 } from "lucide-react";
 import {
   diagnoseCart,
   exportBibtex,
   removeFromCart,
   changeCategory,
+  summarizeCart,
   type CartStatus,
   type CartItem,
 } from "@/lib/api";
@@ -23,6 +26,9 @@ interface CartDetailProps {
   projectId: number;
   cart: CartStatus | null;
   onRefresh: () => void;
+  onGapSearch: (category: string, constraint?: string, threshold?: number) => void;
+  onTitleLookup: (category: string, title: string) => void;
+  gapSearching?: boolean;
 }
 
 const CATEGORIES = [
@@ -31,7 +37,16 @@ const CATEGORIES = [
   { key: "frontier", label: "最新前沿", limit: 5, desc: "近2年的最新进展" },
 ];
 
-export function CartDetail({ projectId, cart, onRefresh }: CartDetailProps) {
+// 关键词玻璃徽章配色（与检索页一致）
+const KEYWORD_COLORS = [
+  { bg: "rgba(94, 205, 196, 0.12)", border: "rgba(94, 205, 196, 0.32)", text: "#8FE3DA" },
+  { bg: "rgba(120, 170, 255, 0.12)", border: "rgba(120, 170, 255, 0.32)", text: "#9FC4FF" },
+  { bg: "rgba(140, 220, 160, 0.12)", border: "rgba(140, 220, 160, 0.32)", text: "#A9E8BC" },
+  { bg: "rgba(180, 160, 240, 0.12)", border: "rgba(180, 160, 240, 0.32)", text: "#C4B4F5" },
+  { bg: "rgba(110, 200, 230, 0.12)", border: "rgba(110, 200, 230, 0.32)", text: "#8FD8EC" },
+];
+
+export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLookup, gapSearching }: CartDetailProps) {
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnosis, setDiagnosis] = useState<{
     verdict: string;
@@ -41,6 +56,12 @@ export function CartDetail({ projectId, cart, onRefresh }: CartDetailProps) {
     suggestions: string[];
   } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [gapOpenCat, setGapOpenCat] = useState<string | null>(null);  // 展开补充输入的类别
+  const [gapConstraint, setGapConstraint] = useState("");
+  const [gapMode, setGapMode] = useState<"search" | "title">("search");  // 补充输入模式
+  const [gapThreshold, setGapThreshold] = useState(0.35);  // 相关度阈值（关键词补充模式）
 
   const handleDiagnose = async () => {
     setDiagnosing(true);
@@ -51,6 +72,18 @@ export function CartDetail({ projectId, cart, onRefresh }: CartDetailProps) {
       alert(`诊断失败: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setDiagnosing(false);
+    }
+  };
+
+  const handleSummarize = async () => {
+    setSummarizing(true);
+    try {
+      const res = await summarizeCart(projectId);
+      setSummary(res.summary);
+    } catch (e) {
+      alert(`生成摘要失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSummarizing(false);
     }
   };
 
@@ -117,6 +150,16 @@ export function CartDetail({ projectId, cart, onRefresh }: CartDetailProps) {
             AI 诊断
           </button>
           <button
+            onClick={handleSummarize}
+            disabled={summarizing || cart.total === 0}
+            className="btn-secondary text-[12px]"
+          >
+            {summarizing ? (
+              <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
+            ) : null}
+            生成骨架摘要
+          </button>
+          <button
             onClick={handleExport}
             disabled={exporting || cart.total === 0}
             className="btn-ghost text-[12px]"
@@ -129,6 +172,24 @@ export function CartDetail({ projectId, cart, onRefresh }: CartDetailProps) {
         {/* Diagnosis result */}
         {diagnosis && (
           <DiagnosisCard diagnosis={diagnosis} />
+        )}
+
+        {/* 骨架摘要 */}
+        {summary && (
+          <div className="bg-paper-warm rounded-lg p-3 text-[12px] border border-gold/20">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-medium text-gold-light tracking-wide">
+                骨架综述开场段
+              </span>
+              <button
+                onClick={() => navigator.clipboard.writeText(summary)}
+                className="text-[10.5px] text-ink-faint hover:text-gold-light transition-colors"
+              >
+                复制
+              </button>
+            </div>
+            <p className="text-ink-secondary leading-relaxed">{summary}</p>
+          </div>
         )}
       </div>
 
@@ -145,10 +206,128 @@ export function CartDetail({ projectId, cart, onRefresh }: CartDetailProps) {
                   {cat.desc}
                 </span>
               </div>
-              <span className="text-[11px] text-ink-faint tabular-nums">
-                {cat.items.length}/{cat.limit}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-ink-faint tabular-nums">
+                  {cat.items.length}/{cat.limit}
+                </span>
+                {/* 缺口补充检索入口 */}
+                <button
+                  onClick={() => {
+                    setGapOpenCat(gapOpenCat === cat.key ? null : cat.key);
+                    setGapConstraint("");
+                  }}
+                  disabled={gapSearching}
+                  className="btn-ghost text-[11px] flex items-center gap-1 text-gold-light
+                             hover:text-gold transition-colors"
+                  title={`补充${cat.label}候选论文`}
+                >
+                  {gapSearching && gapOpenCat === cat.key ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3 h-3" />
+                  )}
+                  补充
+                </button>
+              </div>
             </div>
+
+            {/* 补充输入（可选）：关键词约束 或 标题直达 */}
+            {gapOpenCat === cat.key && (
+              <div className="mb-2 bg-paper-warm rounded-lg p-2.5">
+                {/* 模式切换 */}
+                <div className="flex items-center gap-1 mb-2">
+                  <button
+                    onClick={() => { setGapMode("search"); setGapConstraint(""); }}
+                    className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                      gapMode === "search"
+                        ? "bg-accent-light text-accent font-medium"
+                        : "text-ink-faint hover:text-ink-muted"
+                    }`}
+                  >
+                    关键词补充
+                  </button>
+                  <button
+                    onClick={() => { setGapMode("title"); setGapConstraint(""); }}
+                    className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                      gapMode === "title"
+                        ? "bg-accent-light text-accent font-medium"
+                        : "text-ink-faint hover:text-ink-muted"
+                    }`}
+                  >
+                    标题直达
+                  </button>
+                </div>
+
+                {gapMode === "search" ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={gapConstraint}
+                        onChange={(e) => setGapConstraint(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !gapSearching) {
+                            onGapSearch(cat.key, gapConstraint.trim(), gapThreshold);
+                          }
+                        }}
+                        placeholder={`可选：补充约束，如"重点关注变分方法"`}
+                        className="input flex-1 !py-1.5 !text-[12px]"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => onGapSearch(cat.key, gapConstraint.trim(), gapThreshold)}
+                        disabled={gapSearching}
+                        className="btn-secondary text-[12px] whitespace-nowrap"
+                      >
+                        {gapSearching ? "检索中..." : "开始补充"}
+                      </button>
+                    </div>
+                    {/* 相关度阈值滑块 */}
+                    <div className="flex items-center gap-2 text-[11px] text-ink-muted">
+                      <span className="whitespace-nowrap">相关度阈值</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={0.8}
+                        step={0.05}
+                        value={gapThreshold}
+                        onChange={(e) => setGapThreshold(Number(e.target.value))}
+                        className="flex-1 accent-gold"
+                      />
+                      <span className="text-gold-light tabular-nums w-9 text-right">
+                        {gapThreshold.toFixed(2)}
+                      </span>
+                      <span className="whitespace-nowrap text-ink-faint">
+                        越高越精准，越低越多候选
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={gapConstraint}
+                      onChange={(e) => setGapConstraint(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !gapSearching) {
+                          onTitleLookup(cat.key, gapConstraint.trim());
+                        }
+                      }}
+                      placeholder={`输入论文标题，如"Mask-Aware Transformer"`}
+                      className="input flex-1 !py-1.5 !text-[12px]"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => onTitleLookup(cat.key, gapConstraint.trim())}
+                      disabled={gapSearching || !gapConstraint.trim()}
+                      className="btn-secondary text-[12px] whitespace-nowrap"
+                    >
+                      {gapSearching ? "查找中..." : "直达"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="progress-track mb-2">
               <div
@@ -233,6 +412,31 @@ function CartItemRow({
             {item.cited_by_count > 0 && ` · 被引 ${item.cited_by_count}`}
             {item.venue && ` · ${item.venue}`}
           </p>
+          {/* 分类理由（notes） */}
+          {item.notes && (
+            <p className="text-[11px] text-gold-light/80 mt-0.5 flex items-center gap-1">
+              <span className="w-1 h-1 rounded-full bg-gold shrink-0" />
+              {item.notes}
+            </p>
+          )}
+
+          {/* 关键词（玻璃徽章） */}
+          {item.keywords && item.keywords.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 mt-1.5">
+              {item.keywords.slice(0, 5).map((kw, i) => {
+                const c = KEYWORD_COLORS[i % KEYWORD_COLORS.length];
+                return (
+                  <span
+                    key={kw}
+                    className="px-1.5 py-0.5 rounded-md text-[10px] backdrop-blur-sm"
+                    style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}
+                  >
+                    {kw}
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -277,30 +481,49 @@ function CartItemRow({
         </div>
       </div>
 
-      {/* Abstract toggle */}
+      {/* Abstract toggle：展开后"收起"按钮跟随在摘要末尾 */}
       {item.abstract && (
         <div className="mt-1">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1 text-[11px] text-ink-faint hover:text-ink-muted transition-colors"
-          >
-            {expanded ? (
-              <ChevronUp className="w-3 h-3" />
-            ) : (
+          {!expanded && (
+            <button
+              onClick={() => setExpanded(true)}
+              className="flex items-center gap-1 text-[11px] text-ink-faint hover:text-ink-muted transition-colors"
+            >
               <ChevronDown className="w-3 h-3" />
-            )}
-            {expanded ? "收起" : "摘要"}
-          </button>
+              摘要
+            </button>
+          )}
           {expanded && (
-            <p className="mt-1 text-[12px] text-ink-secondary leading-relaxed">
-              {item.abstract?.slice(0, 500)}
-            </p>
+            <>
+              <p className="mt-1 text-[12px] text-ink-secondary leading-relaxed">
+                {item.abstract}
+              </p>
+              <button
+                onClick={() => setExpanded(false)}
+                className="flex items-center gap-1 mt-1.5 text-[11px] text-ink-faint hover:text-ink-muted transition-colors"
+              >
+                <ChevronUp className="w-3 h-3" />
+                收起
+              </button>
+            </>
           )}
         </div>
       )}
 
       {/* Links */}
       <div className="flex items-center gap-2 mt-2">
+        {item.github_url && (
+          <a
+            href={item.github_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="查看 GitHub 代码仓库"
+            className="text-[11px] text-ink-faint hover:text-accent transition-colors"
+          >
+            <Github className="w-2.5 h-2.5 inline mr-0.5" />
+            GitHub
+          </a>
+        )}
         {item.doi && (
           <a
             href={`https://doi.org/${item.doi}`}

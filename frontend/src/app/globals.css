@@ -140,8 +140,40 @@
   }
 }
 
+/* 水波流光：渐变背景横向循环流动 */
+@keyframes flow-x {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.flow-bar {
+  background-size: 200% 100%;
+  animation: flow-x 4s linear infinite;
+}
+
+/* 鎏金边框：conic-gradient 360° 缓慢环绕 */
+@keyframes spin-border {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.gold-border-rotator {
+  animation: spin-border 6s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .glow-shell::before {
+    animation: none;
+  }
+  .flow-bar {
+    animation: none;
+  }
+  .gold-border-rotator {
     animation: none;
   }
 }

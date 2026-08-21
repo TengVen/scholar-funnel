@@ -3,6 +3,7 @@ OpenAlex API 封装 —— 主数据引擎（免费无需 Key）
 文档：https://docs.openalex.org/
 """
 import os
+import re
 import time
 import httpx
 from dataclasses import dataclass, field
@@ -194,7 +195,30 @@ def _reconstruct_abstract(inverted_index: dict | None) -> str:
             word_positions.append((pos, word))
 
     word_positions.sort(key=lambda x: x[0])
-    return " ".join(w for _, w in word_positions)
+    raw = " ".join(w for _, w in word_positions)
+    return _clean_latex(raw)
+
+
+def _clean_latex(text: str) -> str:
+    """
+    清洗摘要中的 LaTeX 标记，转成可读纯文本。
+    覆盖常见模式：\textbf{}、\textit{}、\text{}、\mathbf{}、$...$、\left \right 等。
+    """
+
+    # 1. 移除 \command{...} 类（\textbf{GRIP} → GRIP），保留花括号内内容
+    text = re.sub(r"\\[a-zA-Z]+\{([^{}]*)\}", r"\1", text)
+    # 2. 移除无参数命令（\quad、\times 等孤立命令）
+    text = re.sub(r"\\[a-zA-Z]+", " ", text)
+    # 3. 移除行内数学 $...$（保留内部内容，去掉 $$ 分隔符）
+    text = re.sub(r"\$\$(.+?)\$\$", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"\$(.+?)\$", r"\1", text, flags=re.DOTALL)
+    # 4. 移除数学环境 \left( \right) 前缀
+    text = re.sub(r"\\left|\\right", "", text)
+    # 5. 清理残留的花括号（如孤立的 { } 或 {GRIP} 残余）
+    text = text.replace("{", "").replace("}", "")
+    # 6. 压缩多余空格
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 # ──────────────────────────────────────────

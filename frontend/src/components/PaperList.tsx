@@ -21,6 +21,8 @@ interface PaperListProps {
   loading: boolean;
   sortBy: SortSpec[];
   filterSurvey: string;
+  gapActive: boolean;
+  onToggleGap: () => void;
   onSortChange: (by: SortSpec[]) => void;
   onFilterChange: (filter: string) => void;
   onPageChange: (page: number) => void;
@@ -48,6 +50,8 @@ export function PaperList({
   loading,
   sortBy,
   filterSurvey,
+  gapActive,
+  onToggleGap,
   onSortChange,
   onFilterChange,
   onPageChange,
@@ -136,6 +140,21 @@ export function PaperList({
                 {opt.label}
               </button>
             ))}
+
+            <span className="w-px h-3 bg-line mx-0.5" />
+
+            {/* 重检索（缺口补充结果）切换 */}
+            <button
+              onClick={onToggleGap}
+              className={`px-2 py-1 rounded text-[12px] transition-colors ${
+                gapActive
+                  ? "bg-violet-500/15 text-violet-300 font-medium"
+                  : "text-ink-muted hover:text-violet-300/70"
+              }`}
+              title="查看缺口补充检索的候选论文"
+            >
+              ⚡ 重检索
+            </button>
           </div>
         </div>
 

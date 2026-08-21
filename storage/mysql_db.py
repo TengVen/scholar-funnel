@@ -53,11 +53,60 @@ def migrate_paper_enrich():
             logger.info("已迁移：papers.github_url 列")
 
 
+def migrate_gap_support():
+    """缺口补充检索支持：stage 枚举加 gap + 新增 recommended_category 列"""
+    with engine.begin() as conn:
+        # 1. recommended_category 列
+        if not _column_exists("papers", "recommended_category"):
+            conn.execute(text(
+                "ALTER TABLE papers ADD COLUMN recommended_category VARCHAR(20) DEFAULT NULL"
+            ))
+            logger.info("已迁移：papers.recommended_category 列")
+
+        # 2. stage 枚举加 gap 值（MySQL ENUM 需整体重建列）
+        try:
+            conn.execute(text(
+                "ALTER TABLE papers MODIFY COLUMN stage "
+                "ENUM('trunk','branch','network','gap') NOT NULL DEFAULT 'trunk'"
+            ))
+            logger.info("已迁移：papers.stage 枚举增加 gap")
+        except Exception as e:
+            logger.warning(f"stage 枚举迁移跳过（可能已含 gap）: {e}")
+
+
+def migrate_branch_mode():
+    """分支深挖按模式区分：analysis_results 加 mode 列 + (paper_id, mode) 唯一约束"""
+    with engine.begin() as conn:
+        # 1. mode 列
+        if not _column_exists("analysis_results", "mode"):
+            conn.execute(text(
+                "ALTER TABLE analysis_results ADD COLUMN mode VARCHAR(20) DEFAULT NULL"
+            ))
+            logger.info("已迁移：analysis_results.mode 列")
+
+        # 2. 旧数据回填：无 mode 的记录归为 probe_match（最常用模式）
+        conn.execute(text(
+            "UPDATE analysis_results SET mode='probe_match' WHERE mode IS NULL OR mode=''"
+        ))
+
+        # 3. (paper_id, mode) 唯一约束（若不存在）
+        try:
+            conn.execute(text(
+                "ALTER TABLE analysis_results ADD CONSTRAINT uniq_analysis_paper_mode "
+                "UNIQUE (paper_id, mode)"
+            ))
+            logger.info("已迁移：analysis_results (paper_id, mode) 唯一约束")
+        except Exception as e:
+            logger.warning(f"唯一约束迁移跳过（可能已存在）: {e}")
+
+
 def init_db():
     """创建所有表（如果不存在），并执行必要迁移"""
     Base.metadata.create_all(engine)
     migrate_trunk_score()
     migrate_paper_enrich()
+    migrate_gap_support()
+    migrate_branch_mode()
     logger.info("数据库表初始化完成")
 
 

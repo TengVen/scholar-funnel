@@ -176,6 +176,8 @@ def get_items(project_id: int) -> List[Dict]:
                 "cited_by_count": paper.cited_by_count or 0,
                 "is_survey": paper.is_survey,
                 "trunk_score": paper.trunk_score,
+                "keywords": paper.keywords if isinstance(paper.keywords, list) else [],
+                "github_url": paper.github_url or "",
                 "notes": item.notes or "",
                 "added_at": item.added_at.isoformat() if item.added_at else "",
             })

@@ -18,6 +18,9 @@ router = APIRouter()
 # AI 分类缓存：paper_id → {category, reason}
 _classify_cache: dict[int, dict] = {}
 
+# 骨架摘要缓存：project_id → str
+_summarize_cache: dict[int, str] = {}
+
 # AI 分类 Prompt
 CLASSIFY_PROMPT = """\
 你是一名学术领域专家。判断下面这篇论文在它的研究领域中属于哪一类：
@@ -93,6 +96,54 @@ def classify_paper(paper_id: int = Query(...)):
     return result
 
 
+# 骨架摘要 Prompt
+SUMMARIZE_PROMPT = """\
+你是一名学术写作专家。以下是某研究项目的文献骨架（20篇论文，按类别分组）：
+{grouped}
+
+请写一段约 200-300 字的「研究骨架综述开场段」，要求：
+1. 概括本研究方向的整体轮廓：哪些奠基工作奠定基础、主流方法集中在什么方向、最新前沿在探索什么。
+2. 自然引用代表性的论文标题（用引号或括号标注），不要编造不存在的论文。
+3. 语言学术化、流畅，可直接作为论文综述部分的开头段落。
+只输出段落本身，不要标题、不要解释。
+"""
+
+
+@router.post("/summarize")
+def summarize_cart(project_id: int = Query(...)):
+    """AI 生成骨架综述开场段（读骨架论文标题+类别）"""
+    if project_id in _summarize_cache:
+        return {"summary": _summarize_cache[project_id]}
+
+    items = cart_svc.get_items(project_id)
+    if not items:
+        raise HTTPException(400, "骨架为空，无法生成摘要")
+
+    cat_labels = {
+        "foundation": "奠基理论",
+        "mainstream": "主流方法",
+        "frontier": "最新前沿",
+    }
+    grouped_lines = []
+    for cat in ("foundation", "mainstream", "frontier"):
+        cat_items = [it for it in items if it["category"] == cat]
+        if not cat_items:
+            continue
+        grouped_lines.append(
+            f"【{cat_labels.get(cat, cat)}】\n"
+            + "\n".join(f"- {it['title']} ({it.get('year') or '?'})" for it in cat_items)
+        )
+    grouped_text = "\n\n".join(grouped_lines)
+
+    try:
+        summary = llm.chat(SUMMARIZE_PROMPT.format(grouped=grouped_text), temperature=0.4)
+    except Exception as e:
+        raise HTTPException(500, f"生成摘要失败: {str(e)}")
+
+    _summarize_cache[project_id] = summary
+    return {"summary": summary}
+
+
 @router.get("", response_model=CartStatusResponse)
 def get_cart(project_id: int = Query(...)):
     """获取项目骨架清单状态"""
@@ -114,6 +165,8 @@ def get_cart(project_id: int = Query(...)):
             abstract=it.get("abstract"),
             cited_by_count=it.get("cited_by_count", 0),
             is_survey=it.get("is_survey", False),
+            keywords=it.get("keywords") or [],
+            github_url=it.get("github_url") or None,
             notes=it.get("notes", ""),
             added_at=it.get("added_at", ""),
         )

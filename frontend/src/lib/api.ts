@@ -64,6 +64,64 @@ export async function runTrunkSearch(body: SearchRequest): Promise<SearchResult>
   return request("/api/search/trunk", { method: "POST", body: JSON.stringify(body) });
 }
 
+// ── Gap Search（缺口补充检索）──
+
+export interface GapSearchRequest {
+  project_id: number;
+  user_query: string;
+  target_category: string;   // foundation / mainstream / frontier
+  tech_probe?: string;
+  user_constraint?: string;  // 可选：用户补充约束
+  per_query?: number;
+  top_k?: number;
+  score_threshold?: number;
+  max_queries?: number;
+}
+
+export interface GapCandidate {
+  paper_id: number | null;
+  openalex_id: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string;
+  abstract: string;
+  cited_by_count: number;
+  is_survey: boolean;
+  keywords: string[];
+  github_url: string | null;
+  relevance_score: number;
+  recommended_category: string;
+  confidence: string;    // high / medium / low
+  reason: string;
+  already_in_cart: boolean;
+  already_in_db: boolean;
+}
+
+export interface GapSearchResult {
+  target_category: string;
+  candidates: GapCandidate[];
+  expanded_queries: string[];
+  reasoning: string;
+  total_found: number;
+  returned: number;
+  status: string;        // ok / low_results / empty
+}
+
+export async function runGapSearch(body: GapSearchRequest): Promise<GapSearchResult> {
+  return request("/api/search/gap", { method: "POST", body: JSON.stringify(body) });
+}
+
+export interface TitleLookupRequest {
+  project_id: number;
+  title: string;
+  target_category: string;
+}
+
+export async function lookupTitleByTitle(body: TitleLookupRequest): Promise<GapSearchResult> {
+  return request("/api/search/title", { method: "POST", body: JSON.stringify(body) });
+}
+
 // ── Paper ──
 
 export interface Paper {
@@ -129,6 +187,8 @@ export interface CartItem {
   abstract: string | null;
   cited_by_count: number;
   is_survey: boolean;
+  keywords: string[];
+  github_url: string | null;
   notes: string;
   added_at: string;
 }
@@ -144,10 +204,15 @@ export async function getCart(projectId: number): Promise<CartStatus> {
   return request(`/api/cart?project_id=${projectId}`);
 }
 
-export async function addToCart(projectId: number, paperId: number, category = "mainstream"): Promise<unknown> {
+export async function addToCart(
+  projectId: number,
+  paperId: number,
+  category = "mainstream",
+  notes = "",
+): Promise<unknown> {
   return request("/api/cart", {
     method: "POST",
-    body: JSON.stringify({ project_id: projectId, paper_id: paperId, category }),
+    body: JSON.stringify({ project_id: projectId, paper_id: paperId, category, notes }),
   });
 }
 
@@ -162,6 +227,10 @@ export interface CartClassifyResult {
 
 export async function classifyPaper(paperId: number): Promise<CartClassifyResult> {
   return request(`/api/cart/classify?paper_id=${paperId}`, { method: "POST" });
+}
+
+export async function summarizeCart(projectId: number): Promise<{ summary: string }> {
+  return request(`/api/cart/summarize?project_id=${projectId}`, { method: "POST" });
 }
 
 export async function changeCategory(projectId: number, paperId: number, newCategory: string): Promise<unknown> {
@@ -201,6 +270,7 @@ export interface BranchAnalyzeRequest {
   project_id: number;
   mode: string;
   probe?: string;
+  category?: string;   // 分类范围: foundation/mainstream/frontier，空=全部
 }
 
 export interface BranchPaperResult {
@@ -212,6 +282,7 @@ export interface BranchPaperResult {
   doi: string;
   abstract: string;
   cited_by_count: number;
+  category: string;   // foundation / mainstream / frontier
   content_level: number;
   content_source: string;
   method_summary: string;
@@ -241,8 +312,11 @@ export async function getBranchResult(taskId: string): Promise<BranchAnalyzeResp
   return request(`/api/branch/result?task_id=${taskId}`);
 }
 
-export async function getBranchResults(projectId: number): Promise<BranchAnalyzeResponse> {
-  return request(`/api/branch/results?project_id=${projectId}`);
+export async function getBranchResults(
+  projectId: number,
+  mode = "",
+): Promise<BranchAnalyzeResponse> {
+  return request(`/api/branch/results?project_id=${projectId}&mode=${mode}`);
 }
 
 // ── Network ──
