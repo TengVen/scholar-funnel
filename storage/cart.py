@@ -9,6 +9,7 @@ from storage.mysql_db import get_session
 from storage.models import CartItem, Paper, Project
 from utils.log import setup_logger
 from llm import client as llm
+from prompt.cart import CLASSIFY_PROMPT, DIAGNOSE_PROMPT
 
 logger = setup_logger("cart")
 
@@ -264,39 +265,6 @@ def is_in_cart(project_id: int, paper_id: int) -> bool:
 #  AI 分类建议
 # ══════════════════════════════════════════════════════════
 
-CLASSIFY_PROMPT = """\
-你是一个学术论文分类助手。根据论文信息，判断它最适合放在用户骨架清单的哪个分类。
-
-分类说明：
-1. foundation（奠基理论）
-   - 定义核心问题，提出基础模型或理论框架
-   - 高被引（通常被引/年 > 50）
-   - 发表时间较早（但不绝对）
-2. mainstream（主流方法）
-   - 代表当前领域的主流技术路线
-   - 通常有可复现的开源代码
-   - 是领域内广泛使用或对比的 Baseline
-3. frontier（最新前沿）
-   - 近 2 年发表的新工作
-   - 代表了新的技术趋势或范式
-   - 可能还没有大量引用，但有潜力
-
-论文信息：
-- 标题：{title}
-- 摘要（前 500 字）：{abstract}
-- 发表年份：{year}
-- 被引量：{cited_by_count}
-- 是否综述：{is_survey}
-
-请输出严格 JSON：
-{{
-  "suggested_category": "foundation" 或 "mainstream" 或 "frontier",
-  "confidence": "high" 或 "medium" 或 "low",
-  "reason": "一句话理由（20 字以内）"
-}}
-"""
-
-
 def suggest_category(paper: Paper) -> dict:
     """
     AI 建议这篇论文在骨架中的分类。
@@ -360,28 +328,6 @@ def suggest_category(paper: Paper) -> dict:
 # ══════════════════════════════════════════════════════════
 #  AI 诊断
 # ══════════════════════════════════════════════════════════
-
-DIAGNOSE_PROMPT = """\
-你是一个研究指导助手。用户正在用"主干-分支-网络"三层漏斗搭建文献骨架，
-骨架共 20 篇，分为三类：奠基(5篇) / 主流(10篇) / 前沿(5篇)。
-
-当前骨架的论文列表：
-{items_text}
-
-请给出诊断建议：
-1. 哪类数量不足或过多？
-2. 覆盖的技术方向是否有重大盲区？
-3. 有什么具体的补充方向建议？
-
-输出严格 JSON：
-{{
-  "verdict": "overall" | "biased" | "insufficient",
-  "summary": "一句话总体评价（15字以内）",
-  "issues": ["问题1", "问题2"],
-  "suggestions": ["建议补充方向1", "建议补充方向2"]
-}}
-"""
-
 
 def diagnose(project_id: int) -> dict:
     """

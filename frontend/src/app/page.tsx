@@ -377,6 +377,16 @@ export default function Home() {
                 if (found) setActiveProject(found);
               });
             }}
+            onOpenProject={(pid) => {
+              // 对话里点"查看项目"→ 跳检索页 + 切到该项目
+              listProjects().then((ps) => {
+                const found = ps.find((p) => p.id === pid);
+                if (found) {
+                  setActiveProject(found);
+                  setActivePage("search");
+                }
+              });
+            }}
           />
         );
     }

@@ -273,3 +273,4 @@ class ChatResponse(BaseModel):
     stage: str = "greeting"
     params: dict = {}
     search_result: dict | None = None
+    task_id: str | None = None      # full_search 异步任务（前端轮询用）

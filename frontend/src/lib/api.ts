@@ -433,6 +433,8 @@ export async function getNetworkResult(taskId: string): Promise<NetworkResultRes
 export interface ChatMessage {
   role: string;
   content: string;
+  project_id?: number;   // 检索完成消息关联的项目（"查看项目"按钮）
+  project_name?: string;
 }
 
 export interface ChatResponse {
@@ -441,6 +443,13 @@ export interface ChatResponse {
   stage: string;
   params: Record<string, unknown>;
   search_result?: Record<string, unknown> | null;
+  task_id?: string | null;   // full_search 异步任务（前端轮询）
+}
+
+export interface SearchSummary {
+  summary: string;
+  project_id: number;
+  project_name: string;
 }
 
 export async function sendChatMessage(
@@ -473,21 +482,12 @@ export async function getLLMConfig(): Promise<{ ok: boolean; model: string }> {
   return request("/api/settings/llm");
 }
 
-export async function startChatSearch(
-  conversationId: string, params: Record<string, unknown>,
-): Promise<{ task_id: string }> {
-  return request("/api/chat/search/start", {
-    method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, params }),
-  });
-}
-
 export async function getChatSearchStatus(taskId: string): Promise<TaskStatus> {
   return request(`/api/chat/search/status?task_id=${taskId}`);
 }
 
-export async function getChatSearchResult(
+export async function finalizeSearchSummary(
   taskId: string,
-): Promise<{ ok: boolean; project_id: number; result: SearchResult }> {
-  return request(`/api/chat/search/result?task_id=${taskId}`);
+): Promise<SearchSummary> {
+  return request(`/api/chat/search/${taskId}/summary`, { method: "POST" });
 }

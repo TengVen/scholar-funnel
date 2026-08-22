@@ -23,6 +23,7 @@ from agents.funnel.tools import (
     CATEGORY_LIMITS,
 )
 from agents.funnel.state import SkeletonRecommendation
+from prompt.funnel.skeleton import RANK_PROMPT, REASON_PROMPT
 
 
 # ══════════════════════════════════════════════════════════
@@ -131,29 +132,8 @@ def _rule_screening(
 #  LLM 精排
 # ══════════════════════════════════════════════════════════
 
-RANK_PROMPT = """\
-你是一个学术文献筛选专家。用户正在搭建一个研究课题的文献骨架，需要从以下候选论文中选出最值得精读的 {max_total} 篇。
 
-选择标准（按重要性排序）：
-1. 方法论创新性：是否有独特的技术路线
-2. 影响力：被引量是否足够高（相对于同领域）
-3. 代表性：是否代表了一类方法的典型做法
-4. 时效性：是否覆盖了不同时期的工作
 
-候选论文列表：
-{papers_text}
-
-请输出严格 JSON（只输出论文序号，不需要其他内容）：
-{{
-  "selected_indices": [0, 1, 3, 5, ...],
-  "reasoning": "选择理由简述"
-}}
-
-注意：
-- selected_indices 中的数字对应论文列表中的索引（从0开始）
-- 选出恰好 {max_total} 篇
-- 优先保留不同技术路线的代表性论文，避免选太多相似的论文
-"""
 
 
 def _llm_rank(candidates: list[dict], max_total: int) -> list[dict]:
@@ -242,24 +222,8 @@ def _balance_categories(
 #  推荐理由生成
 # ══════════════════════════════════════════════════════════
 
-REASON_PROMPT = """\
-请为以下论文生成一句话推荐理由（20字以内），说明为什么这篇论文值得加入文献骨架。
 
-论文信息：
-- 标题：{title}
-- 年份：{year}
-- 被引量：{cited_by_count}
-- 推荐分类：{category_label}
-- 摘要（前200字）：{abstract}
 
-要求：
-- 简洁有力，一句话点出核心价值
-- 不要重复论文标题
-- 中文输出
-
-请输出严格 JSON：
-{{"reason": "推荐理由"}}
-"""
 
 
 def _generate_reasons(

@@ -13,6 +13,7 @@ from llm import client as llm
 from storage.mysql_db import get_session
 from storage.models import Paper, User
 from utils.auth import get_current_user, get_owned_project
+from prompt.cart import ROUTER_CLASSIFY_PROMPT, SUMMARIZE_PROMPT
 
 router = APIRouter()
 
@@ -22,25 +23,7 @@ _classify_cache: dict[int, dict] = {}
 # 骨架摘要缓存：project_id → str
 _summarize_cache: dict[int, str] = {}
 
-# AI 分类 Prompt
-CLASSIFY_PROMPT = """\
-你是一名学术领域专家。判断下面这篇论文在它的研究领域中属于哪一类：
-
-1. foundation（奠基理论）：定义核心问题或提出开创性方法的源头工作，后续研究普遍以其为基础。
-2. mainstream（主流方法）：当前领域被广泛采用的技术路线，属于"大家都在用方向"的代表作。
-3. frontier（最新前沿）：近两年的新趋势、新范式、新任务，代表领域探索方向。
-
-论文信息：
-标题：{title}
-摘要：{abstract}
-年份：{year}
-被引量：{cited_by_count}
-是否综述：{is_survey}
-
-只输出 JSON（不要多余内容）：
-{{"category": "foundation 或 mainstream 或 frontier", "reason": "一句话理由（30字内）"}}
-"""
-
+# AI 分类 Prompt（集中管理于 prompt/cart.py）
 
 def _rule_fallback(paper) -> dict:
     """规则回退分类：综述或老且高被引→奠基；近2年→前沿；其余→主流"""
@@ -100,7 +83,7 @@ def classify_paper(paper_id: int = Query(...)):
     # AI 分类（失败回退规则）
     try:
         raw = llm.chat_json(
-            CLASSIFY_PROMPT.format(
+            ROUTER_CLASSIFY_PROMPT.format(
                 title=title,
                 abstract=abstract or "（无摘要）",
                 year=year,
@@ -122,18 +105,7 @@ def classify_paper(paper_id: int = Query(...)):
     return result
 
 
-# 骨架摘要 Prompt
-SUMMARIZE_PROMPT = """\
-你是一名学术写作专家。以下是某研究项目的文献骨架（20篇论文，按类别分组）：
-{grouped}
-
-请写一段约 200-300 字的「研究骨架综述开场段」，要求：
-1. 概括本研究方向的整体轮廓：哪些奠基工作奠定基础、主流方法集中在什么方向、最新前沿在探索什么。
-2. 自然引用代表性的论文标题（用引号或括号标注），不要编造不存在的论文。
-3. 语言学术化、流畅，可直接作为论文综述部分的开头段落。
-只输出段落本身，不要标题、不要解释。
-"""
-
+# 骨架摘要 Prompt（集中管理于 prompt/cart.py）
 
 @router.post("/summarize")
 def summarize_cart(project_id: int = Query(...), user: User = Depends(get_current_user)):

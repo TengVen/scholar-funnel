@@ -88,3 +88,67 @@ def chat_json(
         response_format={"type": "json_object"},
     )
     return response.choices[0].message.content.strip()
+
+
+def chat_with_tools(
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    system: str | None = None,
+    model: str = None,
+    temperature: float = 0.2,
+    max_tokens: int = 300000,
+) -> tuple[str | None, list[dict] | None]:
+    """
+    带工具调用（Function Calling）的对话接口。
+
+    Args:
+        messages: 完整消息列表（[{"role","content"}, ...]，含历史）
+        tools: 工具注册表（OpenAI function calling 格式）
+        system: 追加的 system prompt（会插入消息开头）
+        model / temperature / max_tokens: 同 chat()
+
+    Returns:
+        (content, tool_calls)
+        - content: 模型文本回复（无工具调用时）
+        - tool_calls: [{"id","name","arguments"(dict)}, ...]（有工具调用时）
+    """
+    client = _get_client()
+    model = _resolve_model(model)
+
+    msgs = []
+    if system:
+        msgs.append({"role": "system", "content": system})
+    msgs.extend(messages)
+
+    kwargs = {
+        "model": model,
+        "messages": msgs,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if tools:
+        kwargs["tools"] = tools
+
+    response = client.chat.completions.create(**kwargs)
+    message = response.choices[0].message
+
+    tool_calls = None
+    if getattr(message, "tool_calls", None):
+        tool_calls = [
+            {
+                "id": tc.id,
+                "name": tc.function.name,
+                "arguments": json_loads_safe(tc.function.arguments),
+            }
+            for tc in message.tool_calls
+        ]
+    return message.content, tool_calls
+
+
+def json_loads_safe(s: str) -> dict:
+    """安全解析工具参数 JSON（DeepSeek 可能返回带格式的字符串）"""
+    import json
+    try:
+        return json.loads(s)
+    except Exception:
+        return {}

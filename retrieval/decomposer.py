@@ -2,7 +2,7 @@ import json
 from typing import List
 
 from llm import client as llm
-from llm.prompts import DECOMPOSE_QUERY_PROMPT
+from prompt.retrieval import DECOMPOSE_QUERY_PROMPT
 from retrieval.intent import ResearchIntent, MethodologyDim, DomainDim
 
 

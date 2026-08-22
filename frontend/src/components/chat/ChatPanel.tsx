@@ -1,14 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Sparkles, ArrowUp } from "lucide-react";
+import { Send, Loader2, Sparkles, ArrowUp, ExternalLink } from "lucide-react";
 import {
   sendChatMessage,
-  startChatSearch,
   getChatSearchStatus,
-  getChatSearchResult,
+  finalizeSearchSummary,
   type ChatMessage,
-  type SearchResult,
 } from "@/lib/api";
 import {
   ChatConfigBar,
@@ -19,6 +17,7 @@ import {
 
 interface ChatPanelProps {
   onProjectCreated: (projectId: number) => void;
+  onOpenProject: (projectId: number) => void;   // 查看项目 → 检索页
 }
 
 const SUGGESTIONS = [
@@ -28,7 +27,7 @@ const SUGGESTIONS = [
   "多智能体协作推理的研究现状",
 ];
 
-export function ChatPanel({ onProjectCreated }: ChatPanelProps) {
+export function ChatPanel({ onProjectCreated, onOpenProject }: ChatPanelProps) {
   const [conversationId] = useState(() =>
     Date.now().toString(36) + Math.random().toString(36).slice(2),
   );
@@ -44,7 +43,6 @@ export function ChatPanel({ onProjectCreated }: ChatPanelProps) {
   const [stage, setStage] = useState("greeting");
   const [confirmedParams, setConfirmedParams] = useState<Record<string, unknown>>({});
   const [searching, setSearching] = useState(false);
-  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [config, setConfig] = useState<ChatConfig>(() => loadConfig());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -88,18 +86,47 @@ export function ChatPanel({ onProjectCreated }: ChatPanelProps) {
         ...(Object.keys(llmConfig).length > 0 ? { llm_config: llmConfig } : {}),
       });
 
-      if (res.stage === "searching" && res.params?.user_query) {
-        setConfirmedParams(res.params);
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "好的，正在为你检索文献..." },
-        ]);
-        await doSearch(res.params);
-      } else if (res.reply) {
+      if (res.reply) {
         setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
         setStage(res.stage);
-        if (Object.keys(res.params).length > 0) {
-          setConfirmedParams(res.params);
+      }
+
+      // 主 Agent 发起了 full_search → 异步轮询 → 完成后生成总结
+      if (res.task_id) {
+        setSearching(true);
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "检索已启动，正在后台执行（预计 1-2 分钟）..." },
+        ]);
+        try {
+          while (true) {
+            await new Promise((r) => setTimeout(r, 3000));
+            const status = await getChatSearchStatus(res.task_id);
+            if (status.status === "done") break;
+            if (status.status === "error") throw new Error(status.error || "search failed");
+          }
+          const summary = await finalizeSearchSummary(res.task_id);
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: summary.summary,
+              project_id: summary.project_id,
+              project_name: summary.project_name,
+            },
+          ]);
+          onProjectCreated(summary.project_id);
+          setStage("greeting");
+        } catch (e) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: `检索失败：${e instanceof Error ? e.message : String(e)}。你可以修改需求后重试。`,
+            },
+          ]);
+        } finally {
+          setSearching(false);
         }
       }
     } catch (e) {
@@ -110,51 +137,6 @@ export function ChatPanel({ onProjectCreated }: ChatPanelProps) {
     } finally {
       setSending(false);
       inputRef.current?.focus();
-    }
-  };
-
-  const doSearch = async (params: Record<string, unknown>) => {
-    setSearching(true);
-    setSearchResult(null);
-    try {
-      // 合并用户在配置栏设置的检索参数（年份/类型/阈值等，覆盖 AI 解析值）
-      const mergedParams: Record<string, unknown> = { ...params };
-      if (config.yearFrom) mergedParams.year_from = Number(config.yearFrom);
-      if (config.yearTo) mergedParams.year_to = Number(config.yearTo);
-      if (config.paperType === "survey" || config.paperType === "original") {
-        mergedParams.paper_type = config.paperType;
-      }
-      if (config.techProbe) mergedParams.tech_probe = config.techProbe;
-      if (config.topK) mergedParams.top_k = config.topK;
-      if (config.scoreThreshold) mergedParams.score_threshold = config.scoreThreshold;
-
-      const { task_id } = await startChatSearch(conversationId, mergedParams);
-
-      while (true) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const status = await getChatSearchStatus(task_id);
-        if (status.status === "done") break;
-        if (status.status === "error") throw new Error(status.error || "search failed");
-      }
-
-      const res = await getChatSearchResult(task_id);
-      setSearchResult(res.result);
-      onProjectCreated(res.project_id);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `检索完成！共找到 ${res.result.new_saved} 篇新论文，其中综述 ${res.result.survey_count} 篇。\n\n你可以在左侧切换到"检索"页面查看详情，或继续和我对话调整检索方向。`,
-        },
-      ]);
-      setStage("greeting");
-    } catch (e) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `检索失败：${e instanceof Error ? e.message : String(e)}。你可以修改需求后重试。` },
-      ]);
-    } finally {
-      setSearching(false);
     }
   };
 
@@ -262,6 +244,15 @@ export function ChatPanel({ onProjectCreated }: ChatPanelProps) {
                       : "card"
                   }`}>
                     {msg.content}
+                    {msg.project_id && (
+                      <button
+                        onClick={() => onOpenProject(msg.project_id!)}
+                        className="mt-2.5 flex items-center gap-1.5 btn-secondary text-[12px] !py-1.5"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        查看项目「{msg.project_name || `#${msg.project_id}`}」
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -272,27 +263,6 @@ export function ChatPanel({ onProjectCreated }: ChatPanelProps) {
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     正在检索文献，请稍候...
                   </div>
-                </div>
-              )}
-
-              {searchResult && (
-                <div className="card px-5 py-4 bg-accent-light/30 border-accent/20">
-                  <p className="text-[13px] text-ink-secondary font-medium mb-2">检索结果</p>
-                  <div className="flex items-center gap-4 text-[12px] text-ink-muted">
-                    <span>召回 <span className="text-ink font-medium">{searchResult.total_found}</span></span>
-                    <span>重排 <span className="text-ink font-medium">{searchResult.after_rerank}</span></span>
-                    <span>新增 <span className="text-ink font-medium">{searchResult.new_saved}</span></span>
-                    {searchResult.survey_count > 0 && (
-                      <span>综述 <span className="text-accent font-medium">{searchResult.survey_count}</span></span>
-                    )}
-                  </div>
-                  {searchResult.expanded_queries?.length > 0 && (
-                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                      {searchResult.expanded_queries.slice(0, 5).map((q, i) => (
-                        <span key={i} className="badge-blue">{q}</span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
 

@@ -275,10 +275,11 @@ class Conversation(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
     # 注意：memory_embedding（vector 列）不在此映射，向量读写走 storage/vector_store.py 原生 SQL
 
-    # 会话落库新增（DDL 07）
+    # 会话落库新增（DDL 07/08）
     stage: Mapped[str | None] = mapped_column(String(20), default="greeting")
     params: Mapped[dict | None] = mapped_column(JSON)
     project_id: Mapped[int | None] = mapped_column(Integer)
+    project_ids: Mapped[list | None] = mapped_column(JSON)  # 历史项目 id 列表（多轮检索回看）
 
 
 class Message(Base):
