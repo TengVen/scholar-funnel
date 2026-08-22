@@ -25,8 +25,14 @@ COMMENT ON COLUMN ai_tenants.slug IS '唯一标识（URL 友好）';
 COMMENT ON COLUMN ai_tenants.status IS '状态（0=停用 1=正常）';
 COMMENT ON COLUMN ai_tenants.created_at IS '创建时间';
 COMMENT ON COLUMN ai_tenants.updated_at IS '更新时间';
-CREATE TRIGGER trg_ai_tenants_updated BEFORE UPDATE ON ai_tenants
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_tenants_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_tenants_updated') THEN
+    CREATE TRIGGER trg_ai_tenants_updated BEFORE UPDATE ON ai_tenants
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_users 用户主表（纯净：只回答"这个人是谁"）
@@ -62,8 +68,14 @@ COMMENT ON COLUMN ai_users.updated_at IS '更新时间';
 COMMENT ON COLUMN ai_users.deleted_at IS '软删除标记';
 CREATE INDEX IF NOT EXISTS idx_ai_users_tenant ON ai_users (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ai_users_deleted ON ai_users (deleted_at);
-CREATE TRIGGER trg_ai_users_updated BEFORE UPDATE ON ai_users
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_users_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_users_updated') THEN
+    CREATE TRIGGER trg_ai_users_updated BEFORE UPDATE ON ai_users
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_user_credentials 登录凭据
@@ -86,8 +98,14 @@ COMMENT ON COLUMN ai_user_credentials.salt IS '盐值（如使用自定义哈希
 COMMENT ON COLUMN ai_user_credentials.password_set_at IS '密码设置/重置时间';
 COMMENT ON COLUMN ai_user_credentials.created_at IS '创建时间';
 COMMENT ON COLUMN ai_user_credentials.updated_at IS '更新时间';
-CREATE TRIGGER trg_ai_creds_updated BEFORE UPDATE ON ai_user_credentials
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_creds_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_creds_updated') THEN
+    CREATE TRIGGER trg_ai_creds_updated BEFORE UPDATE ON ai_user_credentials
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_user_security 账号安全状态
@@ -122,8 +140,14 @@ COMMENT ON COLUMN ai_user_security.email_verified_at IS '邮箱验证时间';
 COMMENT ON COLUMN ai_user_security.phone_verified_at IS '手机验证时间';
 COMMENT ON COLUMN ai_user_security.created_at IS '创建时间';
 COMMENT ON COLUMN ai_user_security.updated_at IS '更新时间';
-CREATE TRIGGER trg_ai_security_updated BEFORE UPDATE ON ai_user_security
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_security_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_security_updated') THEN
+    CREATE TRIGGER trg_ai_security_updated BEFORE UPDATE ON ai_user_security
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_user_sessions 登录会话（Access/Refresh 体系）
@@ -221,8 +245,14 @@ COMMENT ON COLUMN ai_oauth_bindings.raw_data IS '原始用户信息';
 COMMENT ON COLUMN ai_oauth_bindings.created_at IS '绑定时间';
 COMMENT ON COLUMN ai_oauth_bindings.updated_at IS '更新时间';
 CREATE INDEX IF NOT EXISTS idx_oauth_user ON ai_oauth_bindings (user_id);
-CREATE TRIGGER trg_ai_oauth_updated BEFORE UPDATE ON ai_oauth_bindings
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_oauth_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_oauth_updated') THEN
+    CREATE TRIGGER trg_ai_oauth_updated BEFORE UPDATE ON ai_oauth_bindings
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_login_logs 登录日志

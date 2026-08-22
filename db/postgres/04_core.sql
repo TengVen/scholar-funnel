@@ -24,8 +24,14 @@ COMMENT ON COLUMN ai_projects.user_query IS '用户检索需求（原始描述�
 COMMENT ON COLUMN ai_projects.tech_probe IS '技术探针（可选，聚焦技术点）';
 COMMENT ON COLUMN ai_projects.created_at IS '创建时间';
 COMMENT ON COLUMN ai_projects.updated_at IS '更新时间';
-CREATE TRIGGER trg_ai_projects_updated BEFORE UPDATE ON ai_projects
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_projects_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_projects_updated') THEN
+    CREATE TRIGGER trg_ai_projects_updated BEFORE UPDATE ON ai_projects
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_papers 论文元数据

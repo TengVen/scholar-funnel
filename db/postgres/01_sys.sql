@@ -36,8 +36,14 @@ COMMENT ON COLUMN sys_settings.key IS '配置键（如 default_model）';
 COMMENT ON COLUMN sys_settings.value IS '配置值（JSONB 支持任意类型）';
 COMMENT ON COLUMN sys_settings.description IS '配置说明';
 COMMENT ON COLUMN sys_settings.updated_at IS '更新时间';
-CREATE TRIGGER trg_sys_settings_updated BEFORE UPDATE ON sys_settings
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_sys_settings_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_sys_settings_updated') THEN
+    CREATE TRIGGER trg_sys_settings_updated BEFORE UPDATE ON sys_settings
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- sys_audit_logs 审计日志

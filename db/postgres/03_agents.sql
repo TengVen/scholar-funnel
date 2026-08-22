@@ -34,8 +34,14 @@ COMMENT ON COLUMN ai_agents.tenant_id IS '所属租户（可空=平台级）';
 COMMENT ON COLUMN ai_agents.status IS '状态（0=停用 1=启用）';
 COMMENT ON COLUMN ai_agents.created_at IS '创建时间';
 COMMENT ON COLUMN ai_agents.updated_at IS '更新时间';
-CREATE TRIGGER trg_ai_agents_updated BEFORE UPDATE ON ai_agents
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_agents_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_agents_updated') THEN
+    CREATE TRIGGER trg_ai_agents_updated BEFORE UPDATE ON ai_agents
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_agent_versions Agent 版本（不可变快照）
@@ -117,8 +123,14 @@ CREATE INDEX IF NOT EXISTS idx_ai_conv_tenant ON ai_conversations (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ai_conv_agent ON ai_conversations (agent_id);
 CREATE INDEX IF NOT EXISTS idx_ai_conv_deleted ON ai_conversations (deleted_at);
 CREATE INDEX IF NOT EXISTS idx_ai_conv_share ON ai_conversations (share_uuid);
-CREATE TRIGGER trg_ai_conversations_updated BEFORE UPDATE ON ai_conversations
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_conversations_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_conversations_updated') THEN
+    CREATE TRIGGER trg_ai_conversations_updated BEFORE UPDATE ON ai_conversations
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_messages 消息（瘦身版：只存用户看到的内容）
@@ -162,8 +174,14 @@ COMMENT ON COLUMN ai_messages.updated_at IS '更新时间';
 CREATE INDEX IF NOT EXISTS idx_ai_msg_conv ON ai_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_msg_user ON ai_messages (user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_msg_parent ON ai_messages (parent_id);
-CREATE TRIGGER trg_ai_messages_updated BEFORE UPDATE ON ai_messages
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- 幂等创建触发器 trg_ai_messages_updated（避免重复执行报 already exists）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ai_messages_updated') THEN
+    CREATE TRIGGER trg_ai_messages_updated BEFORE UPDATE ON ai_messages
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- ai_agent_runs Agent 执行记录（Run）
