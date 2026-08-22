@@ -182,6 +182,33 @@
   animation: spin-border 6s linear infinite;
 }
 
+/* ── 4.3 分支深挖：分析中涟漪波纹（鎏金圈层扩散） ── */
+@keyframes ripple-ring {
+  0% {
+    box-shadow: 0 0 0 1px var(--ripple-color, rgba(240, 206, 110, 0.7)),
+                0 0 0 0 rgba(240, 206, 110, 0.3);
+  }
+  55% {
+    box-shadow: 0 0 0 8px var(--ripple-color, rgba(240, 206, 110, 0.35)),
+                0 0 0 0 rgba(240, 206, 110, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(240, 206, 110, 0.12),
+                0 0 0 22px transparent;
+  }
+}
+.ripple-ring {
+  animation: ripple-ring 2.2s linear infinite;
+}
+.ripple-ring-2 {
+  animation: ripple-ring 2.2s linear infinite;
+  animation-delay: 0.73s;
+}
+.ripple-ring-3 {
+  animation: ripple-ring 2.2s linear infinite;
+  animation-delay: 1.47s;
+}
+
 /* ── 4.2 网络星图动画 ── */
 /* 中心节点呼吸 */
 @keyframes net-breathe {
@@ -243,6 +270,9 @@
   .glow-shell::before,
   .flow-bar,
   .gold-border-rotator,
+  .ripple-ring,
+  .ripple-ring-2,
+  .ripple-ring-3,
   .net-breathe,
   .net-twinkle,
   .net-dash,

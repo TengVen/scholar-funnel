@@ -32,11 +32,18 @@ PROVIDERS = {
 class Settings:
     """应用全局配置"""
 
-    # 数据库
-    mysql_url: str = field(
+    # 数据库（PostgreSQL + pgvector）
+    postgres_url: str = field(
         default_factory=lambda: os.getenv(
-            "MYSQL_URL",
-            "mysql+pymysql://root:123456@localhost:3306/litfunnel",
+            "POSTGRES_URL",
+            "postgresql+psycopg://postgres:123456@localhost:5432/agent",
+        )
+    )
+
+    # 认证
+    jwt_secret: str = field(
+        default_factory=lambda: os.getenv(
+            "JWT_SECRET", "scholar-funnel-dev-secret-0123456789abcdef"
         )
     )
 

@@ -26,7 +26,7 @@ interface CartDetailProps {
   projectId: number;
   cart: CartStatus | null;
   onRefresh: () => void;
-  onGapSearch: (category: string, constraint?: string, threshold?: number) => void;
+  onGapSearch: (category: string, constraint?: string, threshold?: number, mode?: string) => void;
   onTitleLookup: (category: string, title: string) => void;
   gapSearching?: boolean;
 }
@@ -60,7 +60,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
   const [summary, setSummary] = useState<string | null>(null);
   const [gapOpenCat, setGapOpenCat] = useState<string | null>(null);  // 展开补充输入的类别
   const [gapConstraint, setGapConstraint] = useState("");
-  const [gapMode, setGapMode] = useState<"search" | "title">("search");  // 补充输入模式
+  const [gapMode, setGapMode] = useState<"search" | "title" | "semantic">("search");  // 补充输入模式
   const [gapThreshold, setGapThreshold] = useState(0.35);  // 相关度阈值（关键词补充模式）
 
   const handleDiagnose = async () => {
@@ -256,6 +256,17 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                   >
                     标题直达
                   </button>
+                  <button
+                    onClick={() => { setGapMode("semantic"); }}
+                    className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                      gapMode === "semantic"
+                        ? "bg-accent-light text-accent font-medium"
+                        : "text-ink-faint hover:text-ink-muted"
+                    }`}
+                    title="基于该类骨架论文的向量质心，在已入库论文中找语义最相近的候选"
+                  >
+                    语义补充
+                  </button>
                 </div>
 
                 {gapMode === "search" ? (
@@ -301,6 +312,20 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                         越高越精准，越低越多候选
                       </span>
                     </div>
+                  </div>
+                ) : gapMode === "semantic" ? (
+                  /* 语义补充：基于骨架质心，一键执行（无需输入） */
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-ink-muted flex-1">
+                      基于该类骨架论文的向量质心，从已入库论文中找语义最相近的候选（无 LLM 调用，秒级）
+                    </span>
+                    <button
+                      onClick={() => onGapSearch(cat.key, "", 0.35, "semantic")}
+                      disabled={gapSearching}
+                      className="btn-secondary text-[12px] whitespace-nowrap"
+                    >
+                      {gapSearching ? "分析中..." : "语义补充"}
+                    </button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">

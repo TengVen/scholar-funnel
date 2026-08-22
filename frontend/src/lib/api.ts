@@ -4,11 +4,28 @@
 
 const BASE = "";
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit, _retry = true): Promise<T> {
+  // 注入 Authorization（动态 import 避免循环依赖）
+  const { getAccessToken } = await import("./auth");
+  const token = getAccessToken();
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options?.headers,
+    },
     ...options,
   });
+  if (res.status === 401 && _retry) {
+    // access 过期 → 用 refresh 换新，重试一次
+    const { tryRefreshToken } = await import("./auth");
+    if (await tryRefreshToken()) {
+      return request<T>(path, options, false);
+    }
+    // 刷新失败（refresh 也过期/被吊销）→ 触发重新登录
+    window.dispatchEvent(new CustomEvent("auth:expired"));
+    throw new Error("登录已过期，请重新登录");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `请求失败 (${res.status})`);
@@ -96,6 +113,7 @@ export interface GapCandidate {
   reason: string;
   already_in_cart: boolean;
   already_in_db: boolean;
+  similarity: number | null;   // 语义相似度（语义补充模式）
 }
 
 export interface GapSearchResult {
@@ -110,6 +128,23 @@ export interface GapSearchResult {
 
 export async function runGapSearch(body: GapSearchRequest): Promise<GapSearchResult> {
   return request("/api/search/gap", { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function runGapSemantic(
+  projectId: number,
+  targetCategory: string,
+  topK = 20,
+  threshold = 0.35,
+): Promise<GapSearchResult> {
+  return request("/api/search/gap-semantic", {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: projectId,
+      target_category: targetCategory,
+      top_k: topK,
+      similarity_threshold: threshold,
+    }),
+  });
 }
 
 export interface TitleLookupRequest {

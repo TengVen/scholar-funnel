@@ -8,7 +8,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from storage.mysql_db import init_db
-from api.routers import projects, papers, search, cart, branch, network, chat, funnel, settings
+from api.routers import (
+    auth, projects, papers, search, cart, branch, network, chat, funnel, settings,
+    admin,
+)
 
 
 @asynccontextmanager
@@ -36,6 +39,7 @@ app.add_middleware(
 )
 
 # 注册路由
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(papers.router, prefix="/api/papers", tags=["papers"])
@@ -45,6 +49,7 @@ app.include_router(network.router, prefix="/api/network", tags=["network"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(funnel.router, prefix="/api/funnel", tags=["funnel"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 # uvicorn api.main:app --reload
 @app.get("/api/health")

@@ -3,12 +3,24 @@ Branch analysis API - background task + polling
 """
 import uuid
 import threading
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.schemas import BranchAnalyzeRequest, BranchAnalyzeResponse, BranchPaperResultOut
 from agents import branch as branch_svc
 
+from storage.models import User
+from utils.auth import get_current_user, get_owned_project
+from storage.mysql_db import get_session
+
 router = APIRouter()
+
+def _check(project_id: int, user: User):
+    """校验项目归属（用户隔离）"""
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
+
+
+
 _tasks: dict[str, dict] = {}
 
 
@@ -53,7 +65,8 @@ def _run_task(task_id: str, project_id: int, mode: str, probe: str, category: st
 
 
 @router.post("/analyze")
-def start_branch_analyze(body: BranchAnalyzeRequest):
+def start_branch_analyze(body: BranchAnalyzeRequest, user: User = Depends(get_current_user)):
+    _check(body.project_id, user)
     if body.mode == "probe_match" and not body.probe:
         raise HTTPException(400, "probe_match mode requires a probe")
     task_id = uuid.uuid4().hex[:12]
@@ -97,7 +110,9 @@ def get_branch_result(task_id: str = Query(...)):
 def get_branch_results(
     project_id: int = Query(...),
     mode: str = Query("", description="按分析模式过滤: probe_match/ai_suggest/landscape，空=全部"),
+    user: User = Depends(get_current_user),
 ):
+    _check(project_id, user)
     results = branch_svc.get_stored_results(project_id, mode)
     level_dist: dict[str, int] = {}
     for r in results:

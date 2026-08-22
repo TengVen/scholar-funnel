@@ -81,6 +81,15 @@ class GapCandidate(BaseModel):
     reason: str = ""                    # AI 判定理由
     already_in_cart: bool = False
     already_in_db: bool = False
+    similarity: float | None = None     # 语义相似度（语义缺口补充用）
+
+
+class SemanticGapRequest(BaseModel):
+    """语义缺口补充请求：骨架质心 → 项目内未入骨架论文"""
+    project_id: int
+    target_category: str                # foundation / mainstream / frontier
+    top_k: int = Field(default=20, ge=1, le=50)
+    similarity_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
 
 
 class GapSearchResponse(BaseModel):

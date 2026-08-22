@@ -3,7 +3,7 @@ Network analysis API - background task + polling
 """
 import uuid
 import threading
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.schemas import (
     NetworkAnalyzeRequest, NetworkResultResponse,
@@ -11,7 +11,19 @@ from api.schemas import (
 )
 from agents import network as network_svc
 
+from storage.models import User
+from utils.auth import get_current_user, get_owned_project
+from storage.mysql_db import get_session
+
 router = APIRouter()
+
+def _check(project_id: int, user: User):
+    """校验项目归属（用户隔离）"""
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
+
+
+
 _tasks: dict[str, dict] = {}
 
 
@@ -60,7 +72,8 @@ def _run_task(task_id: str, project_id: int, category: str = ""):
 
 
 @router.post("/analyze")
-def start_network_analyze(body: NetworkAnalyzeRequest):
+def start_network_analyze(body: NetworkAnalyzeRequest, user: User = Depends(get_current_user)):
+    _check(body.project_id, user)
     task_id = uuid.uuid4().hex[:12]
     _tasks[task_id] = {
         "status": "running", "step": "init", "detail": "",

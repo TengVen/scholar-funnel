@@ -35,7 +35,6 @@ logs/
 
 # ── 内部文档/临时文件 ──
 md/
-tt.py
 
 # ── Claude AI ──
 .claude/
@@ -44,3 +43,4 @@ tt.py
 # ── OS ──
 .DS_Store
 Thumbs.db
+/.workbuddy/

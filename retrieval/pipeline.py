@@ -88,6 +88,17 @@ class TrunkSearchEngine:
             "duplicates": recall_meta.get("duplicates", 0) if recall_meta else 0,
         }
 
+        # ── 2.5 本地语义召回（价值点1：OpenAlex 词法搜不到的同义改写） ──
+        t0 = time.time()
+        semantic_added = self._semantic_recall(project_id, intent, candidates)
+        t1 = time.time()
+        trace["timing"]["step2_5_semantic"] = round(t1 - t0, 1)
+        trace["step2_5_semantic"] = {
+            "semantic_candidates": semantic_added,
+            "merged_total": len(candidates),
+            "label": "本地语义召回（已入库论文向量匹配）",
+        }
+
         # ── 3. Reranker ──
         reranked = []
         t0 = time.time()
@@ -169,6 +180,7 @@ class TrunkSearchEngine:
                     "label": {
                         "step1_decomposition": "LLM 意图拆解",
                         "step2_recall": "OpenAlex 检索",
+                        "step2_5_semantic": "本地语义召回",
                         "step3_rerank": "BGE 重排序",
                         "step4_scoring": "评分",
                         "step5_storage": "入库",
@@ -200,6 +212,63 @@ class TrunkSearchEngine:
             idx = min(int((s - min_s) / bin_width), n_bins - 1)
             counts[idx] += 1
         return {"bins": bins, "counts": counts}
+
+    def _semantic_recall(
+        self,
+        project_id: int,
+        intent,
+        candidates: List[Dict],
+        semantic_limit: int = 15,
+        similarity_threshold: float = 0.72,
+    ) -> int:
+        """
+        本地语义召回：把已入库论文中语义最贴近 query 的候选并入召回池，
+        与 OpenAlex 词法召回合并（按 openalex_id 去重），解决同义改写漏召回。
+
+        副作用：合并结果写入 candidates（原 list 原地扩展）。
+        返回：本次新增的语义候选数。
+        """
+        try:
+            from storage.vector_store import (
+                semantic_recall_papers, ensure_project_embeddings,
+            )
+            # 懒向量化：项目论文若还没 embedding 先补齐（增量，限 200 篇）
+            ensure_project_embeddings(project_id, max_embed=200)
+        except Exception as e:
+            logger.warning(f"语义召回前置向量化失败，跳过语义召回: {e}")
+            return 0
+
+        try:
+            query_text = intent.to_rerank_query()
+        except Exception:
+            query_text = getattr(intent, "raw_query", "") or ""
+
+        try:
+            semantic_papers = semantic_recall_papers(
+                project_id=project_id,
+                query_text=query_text,
+                limit=semantic_limit,
+                similarity_threshold=similarity_threshold,
+            )
+        except Exception as e:
+            logger.warning(f"语义召回失败，降级为纯词法: {e}")
+            return 0
+
+        if not semantic_papers:
+            return 0
+
+        # 与词法候选合并（按 openalex_id 去重，词法优先）
+        existing_ids = {c["id"] for c in candidates}
+        added = 0
+        for p in semantic_papers:
+            if p["id"] in existing_ids:
+                continue
+            candidates.append(p)
+            existing_ids.add(p["id"])
+            added += 1
+        if added:
+            logger.info(f"本地语义召回新增 {added} 篇候选（共 {len(candidates)} 篇）")
+        return added
 
     def _save(self, project_id: int, results: List[Dict]) -> int:
         count = 0

@@ -4,14 +4,15 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from storage import cart as cart_svc
 from api.schemas import CartAddRequest, CartItemOut, CartStatusResponse
 from llm import client as llm
 from storage.mysql_db import get_session
-from storage.models import Paper
+from storage.models import Paper, User
+from utils.auth import get_current_user, get_owned_project
 
 router = APIRouter()
 
@@ -59,11 +60,14 @@ def add_by_openalex(
     project_id: int = Query(...),
     category: str = Query("mainstream"),
     notes: str = "",
+    user: User = Depends(get_current_user),
 ):
     """
     按 OpenAlex ID 将论文加入骨架（网络图谱推荐论文一键加入）。
     论文不在 papers 表时先从 OpenAlex 拉取入库，再复用 add 校验加入。
     """
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
     result = cart_svc.add_by_openalex(
         project_id=project_id,
         openalex_id=openalex_id,
@@ -132,8 +136,10 @@ SUMMARIZE_PROMPT = """\
 
 
 @router.post("/summarize")
-def summarize_cart(project_id: int = Query(...)):
+def summarize_cart(project_id: int = Query(...), user: User = Depends(get_current_user)):
     """AI 生成骨架综述开场段（读骨架论文标题+类别）"""
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
     if project_id in _summarize_cache:
         return {"summary": _summarize_cache[project_id]}
 
@@ -167,8 +173,10 @@ def summarize_cart(project_id: int = Query(...)):
 
 
 @router.get("", response_model=CartStatusResponse)
-def get_cart(project_id: int = Query(...)):
+def get_cart(project_id: int = Query(...), user: User = Depends(get_current_user)):
     """获取项目骨架清单状态"""
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
     items_data = cart_svc.get_items(project_id)
     counts = cart_svc.get_counts(project_id)
     total = sum(counts.values())
@@ -204,8 +212,10 @@ def get_cart(project_id: int = Query(...)):
 
 
 @router.post("")
-def add_to_cart(body: CartAddRequest):
+def add_to_cart(body: CartAddRequest, user: User = Depends(get_current_user)):
     """将论文加入骨架"""
+    with get_session() as session:
+        get_owned_project(session, body.project_id, user)
     result = cart_svc.add(body.project_id, body.paper_id, body.category, body.notes)
     if not result["ok"]:
         raise HTTPException(400, result["error"])
@@ -215,8 +225,10 @@ def add_to_cart(body: CartAddRequest):
 # ── 注意：静态路由必须在 /{paper_id} 之前，否则会被 path 参数匹配 ──
 
 @router.get("/export/bibtex")
-def export_bibtex(project_id: int = Query(...)):
+def export_bibtex(project_id: int = Query(...), user: User = Depends(get_current_user)):
     """导出骨架 BibTeX"""
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
     bibtex = cart_svc.export_bibtex(project_id)
     return PlainTextResponse(
         bibtex,
@@ -226,14 +238,18 @@ def export_bibtex(project_id: int = Query(...)):
 
 
 @router.get("/diagnose")
-def diagnose(project_id: int = Query(...)):
+def diagnose(project_id: int = Query(...), user: User = Depends(get_current_user)):
     """AI 诊断骨架完整性"""
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
     return cart_svc.diagnose(project_id)
 
 
 @router.delete("/{paper_id}")
-def remove_from_cart(project_id: int, paper_id: int):
+def remove_from_cart(project_id: int, paper_id: int, user: User = Depends(get_current_user)):
     """从骨架中移除论文"""
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
     result = cart_svc.remove(project_id, paper_id)
     if not result["ok"]:
         raise HTTPException(400, result["error"])
@@ -245,8 +261,11 @@ def change_category(
     paper_id: int,
     project_id: int = Query(...),
     new_category: str = Query(...),
+    user: User = Depends(get_current_user),
 ):
     """切换论文分类"""
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
     result = cart_svc.change_category(project_id, paper_id, new_category)
     if not result["ok"]:
         raise HTTPException(400, result["error"])

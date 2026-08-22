@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Search, FileText, PanelLeftClose, PanelLeft } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Search, FileText, PanelLeftClose, PanelLeft, User, LogOut, LogIn,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/api";
+import { getCurrentUser, subscribeAuth, apiLogout } from "@/lib/auth";
+import { AuthModal } from "@/components/auth/AuthModal";
 
 interface SidebarProps {
   projects: Project[];
@@ -14,6 +18,15 @@ interface SidebarProps {
 
 export function Sidebar({ projects, activeProject, onSelect }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [user, setUser] = useState(getCurrentUser());
+  const [authOpen, setAuthOpen] = useState(false);
+
+  // 订阅用户状态变化（登录/登出/游客升级后刷新）
+  useEffect(() => subscribeAuth(setUser), []);
+
+  const handleLogout = async () => {
+    await apiLogout();
+  };
 
   return (
     <aside
@@ -75,6 +88,55 @@ export function Sidebar({ projects, activeProject, onSelect }: SidebarProps) {
           </p>
         )}
       </div>
+
+      {/* 用户区 */}
+      <div className="border-t border-line shrink-0">
+        {collapsed ? (
+          <button
+            onClick={() => (user ? handleLogout() : setAuthOpen(true))}
+            title={user ? "退出登录" : "登录/注册"}
+            className="w-full flex justify-center py-2.5 text-ink-muted hover:text-accent"
+          >
+            {user ? <LogOut className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+          </button>
+        ) : user ? (
+          <div className="px-3 py-2.5 flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-accent-light flex items-center justify-center shrink-0">
+              <User className="w-3 h-3 text-accent" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-medium text-ink truncate">{user.username}</p>
+              <p className="text-[10px] text-ink-faint">
+                {user.is_guest ? "游客模式" : user.role === "admin" ? "管理员" : "已登录"}
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="退出登录"
+              className="p-1 rounded hover:bg-paper-warm text-ink-faint hover:text-red-400"
+            >
+              <LogOut className="w-3 h-3" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAuthOpen(true)}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-[12px] text-ink-muted hover:text-accent"
+          >
+            <LogIn className="w-3.5 h-3.5 shrink-0" />
+            登录 / 注册
+          </button>
+        )}
+      </div>
+
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onSuccess={() => {
+          // 登录/升级后刷新项目列表（游客数据归入等场景）
+          window.dispatchEvent(new CustomEvent("auth:changed"));
+        }}
+      />
     </aside>
   );
 }

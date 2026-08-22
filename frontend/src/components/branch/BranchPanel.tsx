@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { CSSProperties } from "react";
 import {
   Loader2, ChevronDown, ChevronUp, ExternalLink, Crosshair, Wand2, Compass,
   Layers, ArrowRight, Package,
@@ -86,7 +87,7 @@ function GroupHeader({
         <span className="text-[11px] text-gold-light tabular-nums font-medium">
           {count} 篇
         </span>
-        {/* 单类分析：与标题同风格 + 鎏金边框 360° 环绕 */}
+        {/* 单类分析：与标题同风格 + 鎏金边框 360° 环绕（按钮保持原样） */}
         <button
           onClick={() => onAnalyze(cat)}
           disabled={analyzing || count === 0 || probeEmpty}
@@ -129,6 +130,8 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
   // ── 本地 UI 输入（不需要缓存，切换标签页可重置） ──
   const [mode, setMode] = useState("probe_match");
   const [probe, setProbe] = useState("");
+  // 当前正在分析哪个分类（""=全量，用于分析中波纹动画）
+  const [analyzingCat, setAnalyzingCat] = useState("");
 
   // ── 从全局 store 读取分析结果（按 projectId + mode，切换标签页/模式不丢失） ──
   const byMode = useBranchStore((s) => s.resultsByProject[projectId] ?? {});
@@ -167,6 +170,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
   // ── 启动分析（category 为空=全量，否则单类） ──
   const handleAnalyze = useCallback(async (category = "") => {
     setAnalyzing(projectId, true);
+    setAnalyzingCat(category);
     setProgress(projectId, "正在启动分析...");
     // 不清空旧结果：分析期间保留原卡片，新结果返回后合并
     try {
@@ -206,6 +210,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
       alert(`分析失败: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setAnalyzing(projectId, false);
+      setAnalyzingCat("");
       setProgress(projectId, "");
     }
   }, [projectId, mode, probe, byMode, setAnalyzing, setProgress, setResult]);
@@ -310,39 +315,9 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
         </button>
       </div>
 
-      {/* Result */}
+      {/* Result：始终显示三类混合视图（已分析→结果卡，未分析→待分析卡） */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {result ? (
-          <>
-            {/* 分析中且已有旧结果：顶部叠加进度条，保留旧卡片 */}
-            {analyzing && (
-              <div className="mb-3 flex items-center gap-2 text-[12px] text-gold-light
-                              bg-accent-light/40 rounded-lg px-4 py-2.5 border border-gold/25">
-                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                <span className="truncate">
-                  正在重新分析：{progress || "准备中..."}
-                </span>
-                <span className="ml-auto text-[11px] text-ink-muted shrink-0">
-                  完成后将自动更新下方结果
-                </span>
-              </div>
-            )}
-            <BranchResultView
-              result={result} mode={mode}
-              analyzing={analyzing}
-              probeEmpty={mode === "probe_match" && !probe.trim()}
-              onAnalyze={(cat) => handleAnalyze(cat)}
-            />
-          </>
-        ) : analyzing ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center space-y-2">
-              <p className="text-[13px] text-ink-faint">
-                正在逐篇分析骨架论文，请耐心等待...
-              </p>
-            </div>
-          </div>
-        ) : cartEmpty ? (
+        {cartEmpty ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center space-y-2">
               <p className="text-[13px] text-ink-faint">
@@ -351,13 +326,32 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
             </div>
           </div>
         ) : (
-          /* 未分析：骨架卡片墙预览（待分析态） */
-          <SkeletonPreviewGrid
-            cart={cart}
-            analyzing={analyzing}
-            probeEmpty={mode === "probe_match" && !probe.trim()}
-            onAnalyze={(cat) => handleAnalyze(cat)}
-          />
+          <>
+            {/* 分析中进度条（叠加在顶部，不黑屏） */}
+            {analyzing && (
+              <div className="mb-3 flex items-center gap-2 text-[12px] text-gold-light
+                              bg-accent-light/40 rounded-lg px-4 py-2.5 border border-gold/25">
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                <span className="truncate">
+                  {analyzingCat
+                    ? `正在深挖「${CATEGORY_GROUPS.find((g) => g.key === analyzingCat)?.label ?? ""}」：${progress || "准备中..."}`
+                    : `正在分析：${progress || "准备中..."}`}
+                </span>
+                <span className="ml-auto text-[11px] text-ink-muted shrink-0">
+                  完成后将自动更新对应分组
+                </span>
+              </div>
+            )}
+            <BranchMixedView
+              cart={cart}
+              result={result}
+              mode={mode}
+              analyzing={analyzing}
+              analyzingCat={analyzingCat}
+              probeEmpty={mode === "probe_match" && !probe.trim()}
+              onAnalyze={(cat) => handleAnalyze(cat)}
+            />
+          </>
         )}
       </div>
     </div>
@@ -365,21 +359,26 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  未分析时的骨架预览卡片墙（待分析态）
+//  三类混合视图：始终展示全部三类
+//  - 已分析（result 中有 paper_id）→ 结果卡 BranchSquareCard
+//  - 未分析 → 待分析卡 SkeletonPreviewCard
+//  - 该组正在分析 → 整组鎏金涟漪波纹 + 半透明降级其他组
 // ══════════════════════════════════════════════════════════
 
-function SkeletonPreviewGrid({
-  cart, analyzing, probeEmpty, onAnalyze,
+function BranchMixedView({
+  cart, result, mode, analyzing, analyzingCat, probeEmpty, onAnalyze,
 }: {
   cart: CartStatus;
+  result: { results: BranchPaperResult[] } | null;
+  mode: string;
   analyzing: boolean;
+  analyzingCat: string;
   probeEmpty: boolean;
   onAnalyze: (cat: string) => void;
 }) {
-  const groups = CATEGORY_GROUPS.map((g) => ({
-    ...g,
-    items: cart.items.filter((it) => it.category === g.key),
-  })).filter((g) => g.items.length > 0);
+  // 已分析论文的 paper_id → 结果 映射
+  const analyzedMap = new Map<number, BranchPaperResult>();
+  result?.results.forEach((p) => analyzedMap.set(p.paper_id, p));
 
   return (
     <div className="space-y-5">
@@ -387,27 +386,62 @@ function SkeletonPreviewGrid({
       <div className="flex items-center gap-2 text-[12px] text-ink-muted bg-paper-warm rounded-lg px-4 py-2.5">
         <Layers className="w-3.5 h-3.5 text-gold-light shrink-0" />
         <span>
-          当前为骨架中的 {cart.total} 篇论文，选择上方模式点击「全量分析」，
-          或点分类旁的「单类分析」只深挖那一类
+          {result && result.results.length > 0
+            ? `已深挖 ${result.results.length} 篇，未分析的分类仍显示待分析卡片`
+            : `当前为骨架中的 ${cart.total} 篇论文，选择上方模式点击「全量分析」，或点分类旁的「单类分析」只深挖那一类`}
         </span>
       </div>
 
-      {groups.map(({ key, label, items }) => (
-        <div key={key}>
-          <GroupHeader
-            cat={key} label={label} count={items.length}
-            analyzing={analyzing} probeEmpty={probeEmpty} onAnalyze={onAnalyze}
-          />
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2.5">
-            {items.map((item) => (
-              <SkeletonPreviewCard key={item.paper_id} item={item} />
-            ))}
+      {CATEGORY_GROUPS.map(({ key, label }) => {
+        const items = cart.items.filter((it) => it.category === key);
+        if (items.length === 0) return null;
+        const isAnalyzing = analyzing && analyzingCat === key;
+        const c = CATEGORY_COLORS[key] ?? CATEGORY_COLORS.mainstream;
+        return (
+          <div
+            key={key}
+            className={`relative rounded-xl transition-opacity ${isAnalyzing ? "" : analyzing ? "opacity-60" : ""}`}
+            style={isAnalyzing ? ({ "--ripple-color": `${c.dot}88` } as CSSProperties) : undefined}
+          >
+            {/* 分析中：鎏金涟漪波纹（三层扩散） */}
+            {isAnalyzing && (
+              <>
+                <span className="ripple-ring absolute inset-0 rounded-xl pointer-events-none" />
+                <span className="ripple-ring-2 absolute inset-0 rounded-xl pointer-events-none" />
+                <span className="ripple-ring-3 absolute inset-0 rounded-xl pointer-events-none" />
+              </>
+            )}
+            {/* 分析中：组容器鎏金亮边 */}
+            <div
+              className={isAnalyzing ? "rounded-xl border border-gold/60 bg-accent-light/20 -m-px" : ""}
+              style={isAnalyzing ? { boxShadow: `0 0 16px ${c.dot}33` } : undefined}
+            />
+            <div className="relative">
+              <GroupHeader
+                cat={key} label={label} count={items.length}
+                analyzing={isAnalyzing} probeEmpty={probeEmpty} onAnalyze={onAnalyze}
+              />
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-2.5">
+                {items.map((item) => {
+                  const analyzed = analyzedMap.get(item.paper_id);
+                  return analyzed ? (
+                    <BranchSquareCard key={item.paper_id} paper={analyzed} mode={mode} />
+                  ) : (
+                    <SkeletonPreviewCard key={item.paper_id} item={item} />
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
+
+// ══════════════════════════════════════════════════════════
+//  待分析卡片（未分析论文的占位卡片）
+// ══════════════════════════════════════════════════════════
 
 function SkeletonPreviewCard({ item }: { item: CartItem }) {
   const authors = (item.authors || []).slice(0, 3).join(", ");
@@ -484,83 +518,6 @@ function SkeletonPreviewCard({ item }: { item: CartItem }) {
           分析后将显示 方法/匹配/发现
         </span>
       </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════
-//  结果视图：按骨架分类分组 + 方形卡片网格
-// ══════════════════════════════════════════════════════════
-
-function BranchResultView({
-  result, mode, analyzing, probeEmpty, onAnalyze,
-}: {
-  result: { results: BranchPaperResult[]; total: number; level_distribution: Record<string, number> };
-  mode: string;
-  analyzing: boolean;
-  probeEmpty: boolean;
-  onAnalyze: (cat: string) => void;
-}) {
-  // 按 category 分组
-  const groups = CATEGORY_GROUPS.map((g) => ({
-    ...g,
-    items: result.results.filter((p) => p.category === g.key),
-  })).filter((g) => g.items.length > 0);
-
-  // 匹配度统计（probe_match 模式）
-  const confCounts = result.results.reduce<Record<string, number>>((acc, p) => {
-    acc[p.probe_confidence] = (acc[p.probe_confidence] || 0) + 1;
-    return acc;
-  }, {});
-
-  return (
-    <div className="space-y-5">
-      {/* 汇总统计条 */}
-      <div className="flex flex-wrap items-center gap-4 text-[12px] text-ink-muted bg-paper-warm rounded-lg px-4 py-2.5">
-        <span>
-          分析完成 <span className="text-ink font-medium tabular-nums">{result.total}</span> 篇
-        </span>
-        {mode === "probe_match" && Object.entries(confCounts).length > 0 && (
-          <span className="flex items-center gap-2">
-            {(["high", "medium", "low", "none"] as const).map((k) => {
-              const n = confCounts[k];
-              if (!n) return null;
-              const conf = CONFIDENCE_MAP[k];
-              return (
-                <span key={k} className={`px-1.5 py-0.5 rounded text-[10.5px] ${conf.cls}`}>
-                  {conf.label} {n}
-                </span>
-              );
-            })}
-          </span>
-        )}
-        {Object.entries(result.level_distribution).map(([k, v]) => (
-          <span key={k} className="text-[11px] text-ink-faint">
-            {k} <span className="text-ink-secondary">{v}篇</span>
-          </span>
-        ))}
-      </div>
-
-      {groups.length === 0 && (
-        <p className="text-[12px] text-ink-faint text-center py-8">
-          暂无分析结果，请先运行分析
-        </p>
-      )}
-
-      {groups.map(({ key, label, items }) => (
-        <div key={key}>
-          <GroupHeader
-            cat={key} label={label} count={items.length}
-            analyzing={analyzing} probeEmpty={probeEmpty} onAnalyze={onAnalyze}
-          />
-          {/* 方形卡片网格 */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2.5">
-            {items.map((paper) => (
-              <BranchSquareCard key={paper.paper_id} paper={paper} mode={mode} />
-            ))}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }

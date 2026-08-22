@@ -184,9 +184,15 @@ function GapCandidateRow({
           )}
           {inCart && <span className="badge-amber">已在骨架</span>}
           <span className={conf.cls}>{conf.text}</span>
-          <span className="text-[11px] text-gold-light tabular-nums font-mono">
-            {c.relevance_score.toFixed(2)}
-          </span>
+          {c.similarity != null ? (
+            <span className="text-[11px] text-violet-300 tabular-nums font-mono">
+              语义 {c.similarity.toFixed(2)}
+            </span>
+          ) : (
+            <span className="text-[11px] text-gold-light tabular-nums font-mono">
+              {c.relevance_score.toFixed(2)}
+            </span>
+          )}
         </div>
       </div>
 

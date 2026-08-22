@@ -14,6 +14,7 @@ import {
   createProject,
   runTrunkSearch,
   runGapSearch,
+  runGapSemantic,
   lookupTitleByTitle,
   listPapers,
   getCart,
@@ -36,6 +37,7 @@ import { NetworkPanel } from "@/components/network/NetworkPanel";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { CartDetail } from "@/components/cart/CartDetail";
 import type { SortSpec } from "@/components/search/PaperList";
+import { ensureGuest } from "@/lib/auth";
 
 type Page = "search" | "cart" | "branch" | "network" | "chat";
 
@@ -76,9 +78,39 @@ export default function Home() {
   const [gapSearching, setGapSearching] = useState(false);
 
   // ── 加载项目列表 ──
-  useEffect(() => {
+  const loadProjectsList = useCallback(() => {
     listProjects().then(setProjects).catch(console.error);
   }, []);
+
+  // ── 启动：确保游客身份（无 token 自动注册游客），再加载项目 ──
+  useEffect(() => {
+    (async () => {
+      await ensureGuest();
+      loadProjectsList();
+    })();
+  }, [loadProjectsList]);
+
+  // ── 认证变化（登录/游客升级/登出）→ 刷新项目列表 ──
+  useEffect(() => {
+    const handler = () => {
+      setActiveProject(null);
+      setActivePage("chat");
+      loadProjectsList();
+    };
+    window.addEventListener("auth:changed", handler);
+    return () => window.removeEventListener("auth:changed", handler);
+  }, [loadProjectsList]);
+
+  // ── 登录过期（401 且 refresh 失败）→ 引导重新登录 ──
+  useEffect(() => {
+    const handler = () => {
+      setActiveProject(null);
+      setActivePage("chat");
+      loadProjectsList();
+    };
+    window.addEventListener("auth:expired", handler);
+    return () => window.removeEventListener("auth:expired", handler);
+  }, [loadProjectsList]);
 
   // ── 监听检索页"去对话页"引导跳转 ──
   useEffect(() => {
@@ -193,18 +225,22 @@ export default function Home() {
   };
 
   // ── 缺口补充检索（重检索）──
-  const handleGapSearch = async (targetCategory: string, constraint = "", threshold = 0.35) => {
+  const handleGapSearch = async (
+    targetCategory: string, constraint = "", threshold = 0.35, mode = "search",
+  ) => {
     if (!activeProject) return;
     setGapSearching(true);
     try {
-      const res = await runGapSearch({
-        project_id: activeProject.id,
-        user_query: activeProject.name,   // 领域描述用项目名
-        tech_probe: activeProject.tech_probe || "",
-        target_category: targetCategory,
-        user_constraint: constraint,
-        score_threshold: threshold,
-      });
+      const res = mode === "semantic"
+        ? await runGapSemantic(activeProject.id, targetCategory, 20, threshold)
+        : await runGapSearch({
+            project_id: activeProject.id,
+            user_query: activeProject.name,   // 领域描述用项目名
+            tech_probe: activeProject.tech_probe || "",
+            target_category: targetCategory,
+            user_constraint: constraint,
+            score_threshold: threshold,
+          });
       setGapResult(res);
       setGapMode(true);
       setActivePage("search");            // 跳到检索页查看重检索结果

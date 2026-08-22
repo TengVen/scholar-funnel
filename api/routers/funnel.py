@@ -10,11 +10,15 @@
     user_input 支持自然语言，系统会自动经过意图解析提取结构化参数。
     例如："我想研究图像修复中用了最小二乘法的论文"
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
 from agents.funnel.graph import run_funnel, resume_funnel, get_funnel_state
+
+from storage.models import User
+from utils.auth import get_current_user, get_owned_project
+from storage.mysql_db import get_session
 
 router = APIRouter()
 
@@ -76,7 +80,9 @@ class FunnelResumeRequest(BaseModel):
 # ── 端点 ──
 
 @router.post("/start")
-def start_funnel(body: FunnelStartRequest):
+def start_funnel(body: FunnelStartRequest, user: User = Depends(get_current_user)):
+    with get_session() as session:
+        get_owned_project(session, body.project_id, user)
     """
     启动漏斗编排。
 

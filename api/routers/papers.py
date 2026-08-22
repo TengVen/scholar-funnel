@@ -1,11 +1,12 @@
 """
 论文列表 API —— 分页、筛选、排序
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from storage.mysql_db import get_session
-from storage.models import Paper, CartItem
+from storage.models import Paper, CartItem, User
 from api.schemas import PaperOut, PaperListResponse
+from utils.auth import get_current_user, get_owned_project
 
 router = APIRouter()
 
@@ -26,9 +27,11 @@ def list_papers(
     min_citations: int = Query(0, ge=0),
     page: int = Query(0, ge=0),
     page_size: int = Query(20, ge=5, le=100),
+    user: User = Depends(get_current_user),
 ):
-    """获取项目下的论文列表（分页）"""
+    """获取项目下的论文列表（分页，仅本人项目）"""
     with get_session() as session:
+        get_owned_project(session, project_id, user)
         q = session.query(Paper).filter_by(project_id=project_id, stage=stage)
 
         # 筛选

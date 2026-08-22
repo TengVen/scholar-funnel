@@ -1,13 +1,14 @@
 """
-MySQL 数据库连接与基础操作
+PostgreSQL 数据库连接与基础操作
 
 Schema 管理策略：
-- 表结构 DDL 统一放在 db/ 目录（01_schema.sql 全量建表 / 02_migrations.sql 增量迁移）
-- init_db() 启动时按顺序执行 db/*.sql，幂等安全
+- 表结构 DDL 统一放在 db/postgres/ 目录（00_init → 01_sys → 02_users → 03_agents → 04_core）
+- init_db() 启动时按顺序执行 db/postgres/*.sql，全部幂等安全
+- 驱动：psycopg3（支持多语句执行 + pgvector 类型）
 """
 import os
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from contextlib import contextmanager
 
@@ -17,43 +18,47 @@ from storage.models import Base
 
 logger = setup_logger("storage")
 
-# db/ 目录下按文件名排序的 SQL 文件（01_schema → 02_migrations → ...）
+# db/postgres/ 目录下按文件名排序的 SQL 文件（00_init → 01_sys → ... → 04_core）
 _SQL_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "db"
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "db", "postgres",
 )
 
 
 # ── 引擎 & Session 工厂（全局单例）──
 engine = create_engine(
-    settings.mysql_url,
+    settings.postgres_url,
     echo=False,                 # 调试时改为 True 可看到 SQL 日志
     pool_pre_ping=True,         # 自动检测断连
     pool_size=5,
     max_overflow=10,
 )
 
-SessionFactory = sessionmaker(bind=engine)
+SessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def _execute_sql_file(path: str):
-    """执行单个 SQL 文件（支持多语句）"""
+    """执行单个 SQL 文件（psycopg3 原生支持多语句与 DO 块）"""
     with open(path, encoding="utf-8") as f:
         sql = f.read()
-    # 跳过纯注释/空内容
     stripped = sql.strip()
     if not stripped:
         return
-    with engine.begin() as conn:
-        for statement in conn.connection.driver_connection.cursor().execute(sql):
-            pass  # 依次消费结果集，避免 pending result
+    # 用 psycopg3 独立连接执行（SQLAlchemy engine 不支持多语句原生透传）
+    import psycopg
+    conninfo = settings.postgres_url.replace(
+        "postgresql+psycopg://", "postgresql://", 1
+    )
+    with psycopg.connect(conninfo) as conn:
+        conn.execute(sql)
     logger.info(f"已执行 SQL 文件: {os.path.basename(path)}")
 
 
 def init_db():
-    """创建所有表（如果不存在），并执行增量迁移"""
-    # SQLAlchemy 建表（确保 ORM 元数据与库结构一致）
+    """创建所有表（如果不存在），并执行 db/postgres/*.sql 幂等初始化"""
+    # SQLAlchemy 建表（确保 ORM 元数据与库结构一致；已有表自动跳过）
     Base.metadata.create_all(engine)
-    # 按序执行 db/*.sql（01 全量 schema 幂等建表，02+ 增量迁移）
+    # 按序执行 db/postgres/*.sql（00 扩展/ENUM/函数 → 01 系统表 → 02 用户 → 03 Agent → 04 业务）
     if os.path.isdir(_SQL_DIR):
         for fname in sorted(os.listdir(_SQL_DIR)):
             if fname.endswith(".sql"):

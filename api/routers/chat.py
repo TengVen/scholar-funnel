@@ -1,40 +1,77 @@
 """
 Chat API - ask → confirm → search (background)
+
+会话落库（阶段3）：对话状态存 ai_conversations / ai_messages，
+按用户隔离（每个用户只能看/续自己的会话）。
+后台检索任务仍为内存态（短生命周期，task_id 随机）。
 """
 import json
-import uuid
+import secrets
 import threading
+import uuid
 from datetime import datetime
-from dataclasses import dataclass, field
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.schemas import ChatMessage, ChatRequest, ChatResponse
 from llm import client as llm
 from retrieval.pipeline import TrunkSearchEngine
 from storage.mysql_db import get_session
-from storage.models import Project
+from storage.models import Conversation, Message, Project, User
+from utils.auth import get_current_user, get_owned_project
 
 router = APIRouter()
 
-# ── Memory stores ──
-
-@dataclass
-class ConversationState:
-    id: str
-    title: str = "new"
-    messages: list[dict] = field(default_factory=list)
-    stage: str = "greeting"
-    params: dict = field(default_factory=dict)
-    project_id: int | None = None
-
-_conversations: dict[str, ConversationState] = {}
+# 后台检索任务（内存，短生命周期）
 _search_tasks: dict[str, dict] = {}
 
-def _get_conv(conv_id: str) -> ConversationState:
-    if conv_id not in _conversations:
-        _conversations[conv_id] = ConversationState(id=conv_id)
-    return _conversations[conv_id]
+
+# ── 会话读写（库） ──
+
+def _get_conv(session, conv_id: str, user: User) -> Conversation:
+    """取当前用户的会话；不存在则创建（归属当前用户）"""
+    conv = (
+        session.query(Conversation)
+        .filter(Conversation.uuid == conv_id, Conversation.user_id == user.id)
+        .first()
+    )
+    if conv is None:
+        conv = Conversation(
+            uuid=conv_id[:32] or secrets.token_hex(16),
+            user_id=user.id,
+            title="new",
+            stage="greeting",
+            params={},
+        )
+        session.add(conv)
+        session.commit()
+    return conv
+
+
+def _conv_messages(session, conv: Conversation) -> list[dict]:
+    """按时间取会话消息"""
+    rows = (
+        session.query(Message)
+        .filter(Message.conversation_id == conv.id)
+        .order_by(Message.id.asc())
+        .all()
+    )
+    return [{"role": m.role, "content": m.content or ""} for m in rows]
+
+
+def _append_message(session, conv: Conversation, user_id: int, role: str, content: str):
+    """追加消息并更新会话计数/时间"""
+    session.add(Message(
+        uuid=secrets.token_hex(16),
+        conversation_id=conv.id,
+        user_id=user_id,
+        role=role,
+        content=content,
+    ))
+    conv.message_count = (conv.message_count or 0) + 1
+    conv.last_message_at = datetime.utcnow()
+    session.commit()
+
 
 ANALYZE_PROMPT = """\
 你是一个学术检索助手。根据用户与助手的对话，做两件事：
@@ -72,7 +109,7 @@ ANALYZE_PROMPT = """\
 
 
 @router.post("/message", response_model=ChatResponse)
-def send_message(body: ChatRequest):
+def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
     # 若前端携带自定义 LLM 配置（api_key / base_url / model），先应用
     if body.llm_config:
         try:
@@ -82,72 +119,87 @@ def send_message(body: ChatRequest):
                 model=body.llm_config.get("model"),
             )
         except Exception:
-            # 配置失败不阻塞对话，仍使用默认配置
             pass
 
-    conv = _get_conv(body.conversation_id)
-    conv.messages.append({"role": "user", "content": body.message})
+    with get_session() as session:
+        conv = _get_conv(session, body.conversation_id, user)
+        _append_message(session, conv, user.id, "user", body.message)
 
-    lines = []
-    for m in conv.messages[-8:]:
-        tag = "user" if m["role"] == "user" else "assistant"
-        lines.append(f"{tag}: {m['content'][:500]}")
-    text = "\n".join(lines)
+        rows = _conv_messages(session, conv)
+        lines = []
+        for m in rows[-8:]:
+            tag = "user" if m["role"] == "user" else "assistant"
+            lines.append(f"{tag}: {m['content'][:500]}")
+        text = "\n".join(lines)
 
-    if conv.stage == "confirming":
-        keywords = ("start", "confirm", "ok", "begin", "yes", "go",
-                    "开始", "确认", "好的", "可以", "行", "嗯", "是")
-        if any(kw in body.message for kw in keywords):
-            if conv.params.get("user_query"):
-                conv.stage = "searching"
-                return ChatResponse(
-                    conversation_id=conv.id, reply="", stage="searching",
-                    params=conv.params)
+        # confirming 阶段：确认开始
+        if conv.stage == "confirming":
+            keywords = ("start", "confirm", "ok", "begin", "yes", "go",
+                        "开始", "确认", "好的", "可以", "行", "嗯", "是")
+            if any(kw in body.message for kw in keywords):
+                if (conv.params or {}).get("user_query"):
+                    conv.stage = "searching"
+                    session.commit()
+                    return ChatResponse(
+                        conversation_id=conv.uuid, reply="", stage="searching",
+                        params=conv.params)
 
-    try:
-        raw = llm.chat_json(
-            ANALYZE_PROMPT.format(conversation=text, current_year=datetime.now().year),
-            temperature=0.3)
-        analysis = json.loads(raw)
-    except Exception as e:
-        reply = f"sorry, cannot parse: {e}"
-        conv.messages.append({"role": "assistant", "content": reply})
-        return ChatResponse(conversation_id=conv.id, reply=reply, stage=conv.stage)
+        try:
+            raw = llm.chat_json(
+                ANALYZE_PROMPT.format(conversation=text, current_year=datetime.now().year),
+                temperature=0.3)
+            analysis = json.loads(raw)
+        except Exception as e:
+            reply = f"sorry, cannot parse: {e}"
+            _append_message(session, conv, user.id, "assistant", reply)
+            return ChatResponse(conversation_id=conv.uuid, reply=reply, stage=conv.stage or "greeting")
 
-    params = analysis.get("params", {})
-    if not params.get("user_query"):
-        conv.stage = "greeting"
-        reply = "你想研究什么方向？能再说具体一些吗？"
-    elif analysis.get("all_complete"):
-        conv.params = params
-        conv.stage = "confirming"
-        reply = _format_params_summary(params)
-    else:
-        conv.stage = "greeting"
-        reply = analysis.get("next_question", "能再说详细一些吗？")
+        params = analysis.get("params", {})
+        if not params.get("user_query"):
+            conv.stage = "greeting"
+            reply = "你想研究什么方向？能再说具体一些吗？"
+        elif analysis.get("all_complete"):
+            conv.params = params
+            conv.stage = "confirming"
+            reply = _format_params_summary(params)
+        else:
+            conv.stage = "greeting"
+            reply = analysis.get("next_question", "能再说详细一些吗？")
 
-    conv.messages.append({"role": "assistant", "content": reply})
-    return ChatResponse(
-        conversation_id=conv.id, reply=reply, stage=conv.stage,
-        params=conv.params if conv.stage == "confirming" else {})
+        session.commit()
+        _append_message(session, conv, user.id, "assistant", reply)
+        return ChatResponse(
+            conversation_id=conv.uuid, reply=reply, stage=conv.stage or "greeting",
+            params=conv.params if conv.stage == "confirming" else {})
 
 
 # ── Background search ──
 
-def _run_search(task_id: str, conv_id: str, params: dict):
+def _run_search(task_id: str, conv_id: str, params: dict, user_id: int):
     task = _search_tasks[task_id]
-    conv = _get_conv(conv_id)
     try:
         task["detail"] = "creating project..."
         with get_session() as session:
             p = Project(
                 name=params.get("user_query", "chat")[:80],
                 user_query=params.get("user_query", ""),
-                tech_probe=params.get("tech_probe", ""))
+                tech_probe=params.get("tech_probe", ""),
+                user_id=user_id,
+            )
             session.add(p)
             session.flush()
             project_id = p.id
-        conv.project_id = project_id
+            # 会话关联项目
+            conv = (
+                session.query(Conversation)
+                .filter(Conversation.uuid == conv_id, Conversation.user_id == user_id)
+                .first()
+            )
+            if conv:
+                conv.project_id = project_id
+                conv.title = params.get("user_query", "new")[:30]
+                conv.stage = "greeting"
+                session.commit()
 
         task["detail"] = "searching..."
         engine = TrunkSearchEngine()
@@ -160,8 +212,6 @@ def _run_search(task_id: str, conv_id: str, params: dict):
             score_threshold=params.get("score_threshold", 0.0),
             top_k=params.get("top_k", 100))
 
-        conv.stage = "greeting"
-        conv.title = params.get("user_query", "new")[:30]
         task["result"] = {"ok": True, "project_id": project_id, "result": result}
         task["status"] = "done"
     except Exception as e:
@@ -170,18 +220,23 @@ def _run_search(task_id: str, conv_id: str, params: dict):
 
 
 @router.post("/search/start")
-def start_chat_search(body: dict):
+def start_chat_search(body: dict, user: User = Depends(get_current_user)):
     conv_id = body.get("conversation_id", "")
-    conv = _get_conv(conv_id)
-    params = body.get("params") or conv.params
+    params = body.get("params") or {}
     if not params.get("user_query"):
         raise HTTPException(400, "missing user_query")
+
+    # 校验会话归属
+    with get_session() as session:
+        _get_conv(session, conv_id, user)
 
     task_id = uuid.uuid4().hex[:12]
     _search_tasks[task_id] = {
         "status": "running", "detail": "", "result": None, "error": None}
     threading.Thread(
-        target=_run_search, args=(task_id, conv_id, params), daemon=True).start()
+        target=_run_search,
+        args=(task_id, conv_id, params, user.id),
+        daemon=True).start()
     return {"task_id": task_id}
 
 
@@ -205,13 +260,52 @@ def get_search_result(task_id: str):
     return task["result"]
 
 
+# ── 会话列表（按用户） ──
+
+@router.get("/conversations")
+def list_conversations(user: User = Depends(get_current_user)):
+    """当前用户的会话列表（按最后消息倒序）"""
+    with get_session() as session:
+        rows = (
+            session.query(Conversation)
+            .filter(Conversation.user_id == user.id)
+            .order_by(Conversation.last_message_at.desc().nullslast(), Conversation.id.desc())
+            .limit(100)
+            .all()
+        )
+        return [
+            {
+                "conversation_id": c.uuid,
+                "title": c.title,
+                "stage": c.stage,
+                "project_id": c.project_id,
+                "message_count": c.message_count or 0,
+                "created_at": c.created_at.isoformat() if c.created_at else "",
+                "last_message_at": c.last_message_at.isoformat() if c.last_message_at else "",
+            }
+            for c in rows
+        ]
+
+
 @router.get("/history")
-def get_history(conversation_id: str):
-    conv = _get_conv(conversation_id)
-    return {
-        "conversation_id": conv.id, "messages": conv.messages,
-        "stage": conv.stage, "params": conv.params,
-        "project_id": conv.project_id, "title": conv.title}
+def get_history(conversation_id: str, user: User = Depends(get_current_user)):
+    with get_session() as session:
+        conv = (
+            session.query(Conversation)
+            .filter(Conversation.uuid == conversation_id, Conversation.user_id == user.id)
+            .first()
+        )
+        if conv is None:
+            raise HTTPException(404, "会话不存在")
+        messages = _conv_messages(session, conv)
+        return {
+            "conversation_id": conv.uuid,
+            "messages": messages,
+            "stage": conv.stage,
+            "params": conv.params or {},
+            "project_id": conv.project_id,
+            "title": conv.title,
+        }
 
 
 def _format_params_summary(params: dict) -> str:
