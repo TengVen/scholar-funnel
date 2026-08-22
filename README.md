@@ -43,25 +43,29 @@ Text degradation chain: HTML full text → LLM recall → abstract (PDF support 
 
 ## Tech Stack
 
-- **Frontend**: Streamlit
-- **Database**: MySQL + SQLAlchemy
+- **Frontend**: Next.js (React 19 + Tailwind)
+- **Database**: MySQL + SQLAlchemy（DDL 见 db/ 目录）
 - **Search**: OpenAlex API
-- **Reranker**: BGE (BAAI/bge-reranker-base) with ONNX Runtime
+- **Reranker**: BGE (bge-reranker-large) with ONNX Runtime
 - **LLM**: DeepSeek / Kimi / OpenAI (configurable)
 - **Visualization**: ECharts
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# 1. 后端
 pip install -r requirements.txt
+# 配置 .env：MYSQL_URL, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
+# 初始化数据库（首次启动自动执行 db/*.sql）
+uvicorn api.main:app --reload --port 8000
 
-# Configure (edit .env)
-# MYSQL_URL, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
-
-# Run
-streamlit run app.py
+# 2. 前端（另开终端）
+cd frontend
+npm install
+npm run dev
+# 浏览器访问 http://localhost:3000
 ```
+
 
 ## How It Works
 
