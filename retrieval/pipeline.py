@@ -204,23 +204,51 @@ class TrunkSearchEngine:
     def _save(self, project_id: int, results: List[Dict]) -> int:
         count = 0
         with get_session() as session:
-            deleted = (
-                session.query(Paper)
-                .filter_by(project_id=project_id, stage="trunk")
-                .delete(synchronize_session=False)
+            # ── 1. 本项目已入骨架的 paper_id（删除时必须排除，否则撞外键崩溃） ──
+            cart_ids = [
+                cid for (cid,) in (
+                    session.query(CartItem.paper_id)
+                    .filter_by(project_id=project_id)
+                    .all()
+                )
+            ]
+
+            # ── 2. 删除旧 trunk（排除已在骨架中的，保留它们的行并稍后更新） ──
+            del_q = session.query(Paper).filter(
+                Paper.project_id == project_id,
+                Paper.stage == "trunk",
             )
+            if cart_ids:
+                del_q = del_q.filter(~Paper.id.in_(cart_ids))
+            deleted = del_q.delete(synchronize_session=False)
             if deleted:
                 logger.info(f"已清理旧 trunk 数据 {deleted} 篇")
 
+            # ── 3. 写入/更新 ──
             for item in results:
                 p = item["paper"]
-                # 跨项目查重：同一 openalex_id 已在库中则跳过
                 existing = (
                     session.query(Paper)
                     .filter_by(openalex_id=p["id"])
                     .first()
                 )
                 if existing:
+                    # 仅更新"属于当前项目"的行；其他项目同 ID 数据不碰
+                    if existing.project_id != project_id:
+                        continue
+                    existing.title = p.get("title", "")
+                    existing.authors = p.get("authors", [])
+                    existing.year = p.get("year", 0)
+                    existing.venue = p.get("venue", "")
+                    existing.doi = p.get("doi")
+                    existing.abstract = p.get("abstract", "")
+                    existing.cited_by_count = p.get("cited_by_count", 0)
+                    existing.is_survey = item["is_survey"]
+                    existing.stage = "trunk"
+                    existing.trunk_score = round(item["final_score"], 2)
+                    existing.keywords = p.get("keywords") or None
+                    existing.github_url = p.get("github_url") or None
+                    count += 1
                     continue
 
                 db_paper = Paper(

@@ -25,17 +25,17 @@ import {
   type SearchResult,
   type GapSearchResult,
 } from "@/lib/api";
-import { Sidebar } from "@/components/Sidebar";
-import { SearchPanel } from "@/components/SearchPanel";
-import { PaperList } from "@/components/PaperList";
-import { GapPanel } from "@/components/GapPanel";
-import { CartPanel } from "@/components/CartPanel";
-import { StatsBar } from "@/components/StatsBar";
-import { BranchPanel } from "@/components/BranchPanel";
-import { NetworkPanel } from "@/components/NetworkPanel";
-import { ChatPanel } from "@/components/ChatPanel";
-import { CartDetail } from "@/components/CartDetail";
-import type { SortSpec } from "@/components/PaperList";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { SearchPanel } from "@/components/search/SearchPanel";
+import { PaperList } from "@/components/search/PaperList";
+import { GapPanel } from "@/components/search/GapPanel";
+import { CartPanel } from "@/components/cart/CartPanel";
+import { StatsBar } from "@/components/search/StatsBar";
+import { BranchPanel } from "@/components/branch/BranchPanel";
+import { NetworkPanel } from "@/components/network/NetworkPanel";
+import { ChatPanel } from "@/components/chat/ChatPanel";
+import { CartDetail } from "@/components/cart/CartDetail";
+import type { SortSpec } from "@/components/search/PaperList";
 
 type Page = "search" | "cart" | "branch" | "network" | "chat";
 

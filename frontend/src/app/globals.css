@@ -1,9 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap');
-
+/* ══════════════════════════════════════════════════════════
+   ① 基础层 Base —— 全局 reset / 滚动条 / 表单焦点 / 选区
+   ══════════════════════════════════════════════════════════ */
 @layer base {
   :root {
     color-scheme: dark;
@@ -40,6 +43,9 @@
   }
 }
 
+/* ══════════════════════════════════════════════════════════
+   ② 组件层 Components —— 卡片 / 按钮 / 徽章 / 输入 / 进度
+   ══════════════════════════════════════════════════════════ */
 @layer components {
   .card {
     @apply bg-paper-white border border-line rounded-lg
@@ -91,8 +97,13 @@
     @apply h-full bg-gradient-to-r from-gold-hover to-gold-light rounded-full
            transition-all duration-500;
   }
+}
 
-  /* ── 炫彩流光环绕（Flowith 风格，鎏金主调） ── */
+/* ══════════════════════════════════════════════════════════
+   ③ 特效层 Effects —— 流光环绕 / 导航分段 / 单类分析按钮
+   ══════════════════════════════════════════════════════════ */
+@layer components {
+  /* 炫彩流光环绕（Flowith 风格，鎏金主调） */
   .glow-shell {
     @apply relative overflow-hidden rounded-2xl;
     isolation: isolate;
@@ -120,7 +131,7 @@
     @apply relative z-[1] m-0.5 rounded-[14px] bg-paper;
   }
 
-  /* ── 导航分段控制器 tab（低饱和珠宝色） ── */
+  /* 导航分段控制器 tab（低饱和珠宝色） */
   .nav-tab {
     color: rgba(139, 138, 128, 0.85);
   }
@@ -134,6 +145,13 @@
   }
 }
 
+/* ══════════════════════════════════════════════════════════
+   ④ 动画层 Animations —— 各 keyframes 及其应用类
+   ── 4.1 通用特效（流光 / 水波 / 鎏金边框） ──
+   ── 4.2 网络星图（呼吸 / 闪烁 / 线索 / 轨道） ──
+   ══════════════════════════════════════════════════════════ */
+
+/* ── 4.1 通用特效 ── */
 @keyframes glow-spin {
   to {
     transform: rotate(360deg);
@@ -149,7 +167,6 @@
     background-position: 200% 50%;
   }
 }
-
 .flow-bar {
   background-size: 200% 100%;
   animation: flow-x 4s linear infinite;
@@ -161,12 +178,12 @@
     transform: rotate(360deg);
   }
 }
-
 .gold-border-rotator {
   animation: spin-border 6s linear infinite;
 }
 
-/* 网络未展开意境：中心节点呼吸 + 虚点闪烁 + 线索流光 */
+/* ── 4.2 网络星图动画 ── */
+/* 中心节点呼吸 */
 @keyframes net-breathe {
   0%, 100% {
     opacity: 0.35;
@@ -177,7 +194,7 @@
     transform: scale(1.06);
   }
 }
-
+/* 虚点闪烁 */
 @keyframes net-twinkle {
   0%, 100% {
     opacity: 0.15;
@@ -186,14 +203,13 @@
     opacity: 0.6;
   }
 }
-
+/* 线索流动 */
 @keyframes net-dash {
   to {
     stroke-dashoffset: -24;
   }
 }
-
-/* 主星自转（缓慢） */
+/* 主星/轨道旋转（缓） */
 @keyframes net-spin {
   to {
     transform: rotate(360deg);
@@ -205,35 +221,28 @@
   transform-origin: center;
   transform-box: fill-box;
 }
-
 .net-twinkle {
   animation: net-twinkle 4s ease-in-out infinite;
 }
-
 .net-dash {
   animation: net-dash 6s linear infinite;
 }
-
 /* 环绕主星的论文星点：轨道旋转（transform-origin 由内联 style 指定） */
 .net-orbit {
   animation: net-spin 26s linear infinite;
 }
-
 /* 分析中：星点快速解析旋转（8s/圈） */
 .net-orbit-fast {
   animation: net-spin 8s linear infinite;
 }
 
+/* ══════════════════════════════════════════════════════════
+   ⑤ 无障碍 Accessibility —— 尊重系统"减少动态效果"
+   ══════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
-  .glow-shell::before {
-    animation: none;
-  }
-  .flow-bar {
-    animation: none;
-  }
-  .gold-border-rotator {
-    animation: none;
-  }
+  .glow-shell::before,
+  .flow-bar,
+  .gold-border-rotator,
   .net-breathe,
   .net-twinkle,
   .net-dash,
