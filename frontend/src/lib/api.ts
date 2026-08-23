@@ -491,3 +491,34 @@ export async function finalizeSearchSummary(
 ): Promise<SearchSummary> {
   return request(`/api/chat/search/${taskId}/summary`, { method: "POST" });
 }
+
+// ── 会话历史 ──
+
+export interface ConversationSummary {
+  conversation_id: string;
+  title: string;
+  stage: string;
+  project_id: number | null;
+  project_ids: number[];
+  message_count: number;
+  created_at: string;
+  last_message_at: string;
+}
+
+export interface ConversationHistory {
+  conversation_id: string;
+  messages: ChatMessage[];
+  stage: string;
+  params: Record<string, unknown>;
+  project_id: number | null;
+  project_ids: number[];
+  title: string;
+}
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  return request("/api/chat/conversations");
+}
+
+export async function getChatHistory(conversationId: string): Promise<ConversationHistory> {
+  return request(`/api/chat/history?conversation_id=${conversationId}`);
+}

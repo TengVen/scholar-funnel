@@ -17,7 +17,7 @@
 -- ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_agents (
   id          BIGSERIAL PRIMARY KEY,                    -- Agent ID
-  uuid        CHAR(32) NOT NULL UNIQUE,                 -- 对外 Agent ID
+  uuid        VARCHAR(32) NOT NULL UNIQUE,              -- 对外 Agent ID
   name        VARCHAR(128) NOT NULL,                    -- Agent 名称（如 Research Agent）
   description TEXT,                                     -- 功能描述
   tenant_id   BIGINT REFERENCES ai_tenants(id),         -- 所属租户（可空=平台级）
@@ -75,7 +75,7 @@ COMMENT ON COLUMN ai_agent_versions.created_at IS '创建时间';
 -- ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_conversations (
   id                 BIGSERIAL PRIMARY KEY,             -- 自增 ID
-  uuid               CHAR(32) NOT NULL UNIQUE,          -- 对外会话 ID
+  uuid               VARCHAR(32) NOT NULL UNIQUE,       -- 对外会话 ID
   user_id            BIGINT NOT NULL REFERENCES ai_users(id) ON DELETE CASCADE, -- 所属用户
   tenant_id          BIGINT REFERENCES ai_tenants(id),  -- 所属租户（可空）
   title              VARCHAR(255),                      -- 会话标题（可 AI 自动生成）
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS ai_conversations (
   cost_total         DECIMAL(18,6) DEFAULT 0,           -- 累计费用
   is_pinned          BOOLEAN DEFAULT FALSE,             -- 是否置顶
   is_shared          BOOLEAN DEFAULT FALSE,             -- 是否开启分享
-  share_uuid         CHAR(32) UNIQUE,                   -- 分享链接 UUID
+  share_uuid         VARCHAR(32) UNIQUE,                -- 分享链接 UUID
   share_password     CHAR(64),                          -- 分享密码哈希
   share_expires_at   TIMESTAMP,                         -- 分享过期时间
   last_message_at    TIMESTAMP,                         -- 最后一条消息时间（排序用）
@@ -138,7 +138,7 @@ END $$;
 -- ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_messages (
   id               BIGSERIAL PRIMARY KEY,               -- 自增 ID
-  uuid             CHAR(32) NOT NULL UNIQUE,            -- 对外消息 ID
+  uuid             VARCHAR(32) NOT NULL UNIQUE,         -- 对外消息 ID
   conversation_id  BIGINT NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE, -- 所属会话
   user_id          BIGINT NOT NULL REFERENCES ai_users(id) ON DELETE CASCADE, -- 发送者用户
   parent_id        BIGINT REFERENCES ai_messages(id),   -- 父消息 ID（支持分支对话）
@@ -190,7 +190,7 @@ END $$;
 -- ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_agent_runs (
   id               BIGSERIAL PRIMARY KEY,               -- 自增 ID
-  uuid             CHAR(32) NOT NULL UNIQUE,            -- 对外 Run ID
+  uuid             VARCHAR(32) NOT NULL UNIQUE,         -- 对外 Run ID
   conversation_id  BIGINT REFERENCES ai_conversations(id) ON DELETE CASCADE, -- 所属会话
   message_id       BIGINT REFERENCES ai_messages(id),   -- 触发 Run 的消息
   agent_id         BIGINT REFERENCES ai_agents(id),     -- 执行 Agent

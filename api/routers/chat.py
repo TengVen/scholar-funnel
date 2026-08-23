@@ -53,16 +53,26 @@ def _conv_messages(session, conv: Conversation, limit: int = 30) -> list[dict]:
         .order_by(Message.id.asc())
         .all()
     )
-    return [{"role": m.role, "content": m.content or ""} for m in rows[-limit:]]
+    return [
+        {
+            "role": m.role,
+            "content": m.content or "",
+            "project_id": m.project_id,   # 检索完成消息关联项目（前端"查看项目"按钮）
+            "project_name": m.project_name if hasattr(m, "project_name") else None,
+        }
+        for m in rows[-limit:]
+    ]
 
 
-def _append_message(session, conv: Conversation, user_id: int, role: str, content: str):
+def _append_message(session, conv: Conversation, user_id: int, role: str, content: str,
+                    project_id: int | None = None, project_name: str | None = None):
     session.add(Message(
         uuid=secrets.token_hex(16),
         conversation_id=conv.id,
         user_id=user_id,
         role=role,
         content=content,
+        project_id=project_id,
     ))
     conv.message_count = (conv.message_count or 0) + 1
     conv.last_message_at = datetime.utcnow()
@@ -157,7 +167,8 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
         )
         if conv:
             _append_message(session, conv, user.id, "assistant",
-                            f"【检索完成】{summary}")
+                            f"【检索完成】{summary}",
+                            project_id=project_id, project_name=project_name)
 
     payload = {
         "summary": summary,
@@ -222,6 +233,19 @@ def get_history(conversation_id: str, user: User = Depends(get_current_user)):
         if conv is None:
             raise HTTPException(404, "会话不存在")
         messages = _conv_messages(session, conv, limit=200)
+        # 补项目名（历史消息的"查看项目"按钮显示友好名称）
+        pids = {m.get("project_id") for m in messages if m.get("project_id")}
+        if pids:
+            name_map = {
+                pid: name for pid, name in (
+                    session.query(Project.id, Project.name)
+                    .filter(Project.id.in_(pids))
+                    .all()
+                )
+            }
+            for m in messages:
+                if m.get("project_id") in name_map:
+                    m["project_name"] = name_map[m["project_id"]]
         return {
             "conversation_id": conv.uuid,
             "messages": messages,

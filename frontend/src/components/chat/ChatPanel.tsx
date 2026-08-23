@@ -6,6 +6,7 @@ import {
   sendChatMessage,
   getChatSearchStatus,
   finalizeSearchSummary,
+  getChatHistory,
   type ChatMessage,
 } from "@/lib/api";
 import {
@@ -18,6 +19,11 @@ import {
 interface ChatPanelProps {
   onProjectCreated: (projectId: number) => void;
   onOpenProject: (projectId: number) => void;   // 查看项目 → 检索页
+  requestedConversationId?: string | null;      // 左侧点历史会话 → 打开它
+  newSignal?: number;                            // 左侧点新对话 → 重置
+  currentProjectId?: number | null;             // 当前项目（会话按项目恢复时记录）
+  onRequestConsumed?: () => void;
+  onConversationChanged?: (cid: string | null, projectId?: number | null) => void;
 }
 
 const SUGGESTIONS = [
@@ -27,17 +33,20 @@ const SUGGESTIONS = [
   "多智能体协作推理的研究现状",
 ];
 
-export function ChatPanel({ onProjectCreated, onOpenProject }: ChatPanelProps) {
-  const [conversationId] = useState(() =>
-    Date.now().toString(36) + Math.random().toString(36).slice(2),
-  );
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content:
-        '你好！我是 Scholar Funnel，可以帮你快速检索学术文献。\n\n你想研究什么方向？随便说，比如：\n"风力发电预测"\n"对比 Transformer 和 CNN 在图像修复中的效果"\n"知识蒸馏在推荐系统中的应用"',
-    },
-  ]);
+const genConvId = () =>
+  Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+export function ChatPanel({
+  onProjectCreated,
+  onOpenProject,
+  requestedConversationId,
+  newSignal,
+  currentProjectId,
+  onRequestConsumed,
+  onConversationChanged,
+}: ChatPanelProps) {
+  const [conversationId, setConversationId] = useState(genConvId);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [stage, setStage] = useState("greeting");
@@ -49,6 +58,46 @@ export function ChatPanel({ onProjectCreated, onOpenProject }: ChatPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const hasConversation = messages.some((m) => m.role === "user");
+
+  // ── 打开历史会话（左侧点击触发，直接加载消息）──
+  const openConversation = async (cid: string) => {
+    try {
+      const h = await getChatHistory(cid);
+      setConversationId(h.conversation_id);
+      setMessages(h.messages || []);
+      setStage(h.stage || "greeting");
+      setConfirmedParams(h.params || {});
+      onConversationChanged?.(h.conversation_id, currentProjectId);
+    } catch (e) {
+      alert(`加载会话失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  // ── 新对话（左侧点击触发）──
+  const newConversation = () => {
+    setConversationId(genConvId());
+    setMessages([]);
+    setStage("greeting");
+    setConfirmedParams({});
+    onConversationChanged?.(null, currentProjectId);
+  };
+
+  // 外部指令：打开历史会话（消费后清空，避免重复加载）
+  useEffect(() => {
+    if (requestedConversationId) {
+      openConversation(requestedConversationId);
+      onRequestConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedConversationId]);
+
+  // 外部指令：新对话
+  useEffect(() => {
+    if (newSignal && newSignal > 0) {
+      newConversation();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newSignal]);
 
   // 配置持久化
   const handleConfigChange = (cfg: ChatConfig) => {
@@ -90,6 +139,8 @@ export function ChatPanel({ onProjectCreated, onOpenProject }: ChatPanelProps) {
         setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
         setStage(res.stage);
       }
+      onConversationChanged?.(conversationId, currentProjectId);   // 当前会话跟随（切页回来可恢复）
+      window.dispatchEvent(new CustomEvent("chat:updated"));   // 刷新左侧会话列表（消息数/时间）
 
       // 主 Agent 发起了 full_search → 异步轮询 → 完成后生成总结
       if (res.task_id) {
@@ -117,6 +168,7 @@ export function ChatPanel({ onProjectCreated, onOpenProject }: ChatPanelProps) {
           ]);
           onProjectCreated(summary.project_id);
           setStage("greeting");
+          window.dispatchEvent(new CustomEvent("chat:updated"));   // 刷新左侧会话列表
         } catch (e) {
           setMessages((prev) => [
             ...prev,
@@ -235,7 +287,7 @@ export function ChatPanel({ onProjectCreated, onOpenProject }: ChatPanelProps) {
         /* ── 对话态：消息流居中 + 底部输入框居中 ── */
         <>
           <div className="flex-1 overflow-y-auto px-6 py-6">
-            <div className="max-w-3xl mx-auto space-y-4">
+            <div className="max-w-4xl mx-auto space-y-4">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap ${

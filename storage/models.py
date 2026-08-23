@@ -295,6 +295,7 @@ class Message(Base):
     content: Mapped[str | None] = mapped_column(Text)
     content_type: Mapped[str | None] = mapped_column(String(16), default="text")
     attachments: Mapped[dict | None] = mapped_column(JSON)
+    project_id: Mapped[int | None] = mapped_column(Integer)   # 关联项目（检索完成消息可跳转）
     feedback: Mapped[int | None] = mapped_column(SmallInteger)
     feedback_comment: Mapped[str | None] = mapped_column(Text)
     is_error: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -54,19 +54,92 @@ def _execute_sql_file(path: str):
     logger.info(f"已执行 SQL 文件: {os.path.basename(path)}")
 
 
+# 基础文件：轻量幂等（扩展/系统表），每次执行开销极小，不走版本追踪
+_BASE_SQL_FILES = ("00_init.sql", "01_sys.sql")
+
+
+def _record_version(conn, fname: str, file_hash: str, description: str = ""):
+    """记录迁移版本（version=文件名，内容哈希变更时自动重放）"""
+    conn.execute(
+        """
+        INSERT INTO sys_schema_versions (version, description, file_hash, applied_at)
+        VALUES (%s, %s, %s, NOW())
+        ON CONFLICT (version) DO UPDATE
+          SET file_hash = EXCLUDED.file_hash,
+              description = EXCLUDED.description,
+              applied_at = NOW()
+        """,
+        (fname, description or fname, file_hash),
+    )
+
+
+def _sql_description(path: str) -> str:
+    """从 SQL 文件头注释提取描述（`-- 内容：xxx`）"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f.read().splitlines()[:10]:
+                line = line.strip()
+                if line.startswith("-- ") and ("内容" in line or "作用" in line):
+                    return line[3:].strip()[:120]
+    except OSError:
+        pass
+    return ""
+
+
 def init_db():
-    """创建所有表（如果不存在），并执行 db/postgres/*.sql 幂等初始化"""
+    """
+    初始化数据库（幂等 + 版本追踪）：
+    - 00/01 基础文件每次执行（轻量幂等：扩展/系统表）
+    - 02+ 业务迁移按 sys_schema_versions 追踪：未执行过 或 内容哈希变化 → 执行并记录
+    - 已执行且未修改的文件启动时直接跳过（零 DDL 开销）
+    """
+    import hashlib
+    import psycopg
+
     # SQLAlchemy 建表（确保 ORM 元数据与库结构一致；已有表自动跳过）
     Base.metadata.create_all(engine)
-    # 按序执行 db/postgres/*.sql（00 扩展/ENUM/函数 → 01 系统表 → 02 用户 → 03 Agent → 04 业务）
-    if os.path.isdir(_SQL_DIR):
-        for fname in sorted(os.listdir(_SQL_DIR)):
-            if fname.endswith(".sql"):
+
+    if not os.path.isdir(_SQL_DIR):
+        return
+
+    sql_files = sorted(
+        f for f in os.listdir(_SQL_DIR) if f.endswith(".sql")
+    )
+    conninfo = settings.postgres_url.replace(
+        "postgresql+psycopg://", "postgresql://", 1
+    )
+
+    with psycopg.connect(conninfo) as conn:
+        for fname in sql_files:
+            path = os.path.join(_SQL_DIR, fname)
+
+            # 基础文件：无条件执行（幂等且快）
+            if fname in _BASE_SQL_FILES:
                 try:
-                    _execute_sql_file(os.path.join(_SQL_DIR, fname))
+                    _execute_sql_file(path)
                 except Exception as e:
-                    # 单个文件失败不阻塞启动（记录日志，人工介入）
                     logger.error(f"SQL 文件执行失败 {fname}: {e}")
+                continue
+
+            # 版本追踪：读内容哈希，与已记录对比
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+            file_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+            prev = conn.execute(
+                "SELECT file_hash FROM sys_schema_versions WHERE version = %s",
+                (fname,),
+            ).fetchone()
+            if prev and prev[0] == file_hash:
+                continue  # 已执行且未修改 → 跳过
+
+            # 新文件 或 内容变更 → 执行并记录
+            try:
+                _execute_sql_file(path)
+                _record_version(conn, fname, file_hash, _sql_description(path))
+            except Exception as e:
+                logger.error(f"SQL 文件执行失败 {fname}: {e}")
+
     logger.info("数据库表初始化完成")
 
 

@@ -9,10 +9,13 @@
 -- ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sys_schema_versions (
   id          BIGSERIAL PRIMARY KEY,                    -- 自增主键
-  version     VARCHAR(50) NOT NULL UNIQUE,              -- 版本号（如 20260822_001）
+  version     VARCHAR(50) NOT NULL UNIQUE,              -- 版本号（如 20260822_001 / 文件名）
   description VARCHAR(255),                             -- 版本描述（本次迁移内容摘要）
+  file_hash   VARCHAR(64),                              -- 迁移文件内容哈希（内容变更自动重放）
   applied_at  TIMESTAMP DEFAULT NOW()                   -- 执行时间
 );
+-- 兼容旧表：补 file_hash 列（幂等）
+ALTER TABLE sys_schema_versions ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);
 COMMENT ON TABLE sys_schema_versions IS '数据库 Schema 版本记录（迁移框架用）';
 COMMENT ON COLUMN sys_schema_versions.id IS '自增主键';
 COMMENT ON COLUMN sys_schema_versions.version IS '版本号（如 20260822_001）';

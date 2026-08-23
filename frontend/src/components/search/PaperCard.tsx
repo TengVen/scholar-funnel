@@ -84,15 +84,33 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
 
   return (
     <div className="card px-5 py-4 transition-colors group">
-      {/* Title + badges */}
+      {/* 头部：左侧（标题+Meta）与右侧指标列独立排版，互不撑高 */}
       <div className="flex items-start justify-between gap-3">
-        <h3 className="font-serif text-[15px] font-semibold leading-snug flex-1
-                     bg-gradient-to-br from-gold-bright via-gold-light to-gold
-                     bg-clip-text text-transparent">
-          {paper.title}
-        </h3>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-serif text-[15px] font-semibold leading-snug
+                       bg-gradient-to-br from-gold-bright via-gold-light to-gold
+                       bg-clip-text text-transparent">
+            {paper.title}
+          </h3>
 
-        {/* 核心指标竖排：年份 / 被引 / 相关度（图标列固定宽度，天然对齐） */}
+          {/* Meta line（含徽章）—— 紧贴标题，不受右侧指标列高度影响 */}
+          <div className="flex items-center gap-2 mt-1 text-[12px] text-ink-muted">
+            {paper.is_survey && <span className="badge-blue">综述</span>}
+            {paper.arxiv_id && (
+              <span className="badge bg-violet-500/15 text-violet-300">arXiv</span>
+            )}
+            {paper.cited_by_count > 100 && <span className="badge-amber">高被引</span>}
+            {meta.length > 0 && <span>{meta.join(" · ")}</span>}
+            {authorDisplay && (
+              <>
+                <span className="text-line">|</span>
+                <span className="truncate">{authorDisplay}</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* 核心指标竖排：年份 / 被引 / 相关度（独立列，不影响左侧排版） */}
         <div className="flex flex-col gap-1.5 shrink-0 pl-3 border-l border-line-light">
           {paper.year && (
             <span className="flex items-center gap-1.5 justify-end text-[12px] text-ink leading-none" title="发布年份">
@@ -119,22 +137,6 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             </span>
           )}
         </div>
-      </div>
-
-      {/* Meta line（含徽章） */}
-      <div className="flex items-center gap-2 mt-1 text-[12px] text-ink-muted">
-        {paper.is_survey && <span className="badge-blue">综述</span>}
-        {paper.arxiv_id && (
-          <span className="badge bg-violet-500/15 text-violet-300">arXiv</span>
-        )}
-        {paper.cited_by_count > 100 && <span className="badge-amber">高被引</span>}
-        {meta.length > 0 && <span>{meta.join(" · ")}</span>}
-        {authorDisplay && (
-          <>
-            <span className="text-line">|</span>
-            <span className="truncate">{authorDisplay}</span>
-          </>
-        )}
       </div>
 
       {/* Keywords —— 玻璃质感徽章，每个关键词不同清透色 */}

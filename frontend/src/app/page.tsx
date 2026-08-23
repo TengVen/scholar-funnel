@@ -20,11 +20,13 @@ import {
   getCart,
   addToCart,
   removeFromCart,
+  listConversations,
   type Project,
   type Paper,
   type CartStatus,
   type SearchResult,
   type GapSearchResult,
+  type ConversationSummary,
 } from "@/lib/api";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SearchPanel } from "@/components/search/SearchPanel";
@@ -60,6 +62,12 @@ export default function Home() {
   // ── 状态 ──
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  // 每个项目最后使用的会话（切对话页时按当前项目恢复；无记录 → 新对话）
+  const [lastConvForProject, setLastConvForProject] = useState<Record<number, string>>({});
+  const [chatOpenConvId, setChatOpenConvId] = useState<string | null>(null);  // 待打开的历史会话
+  const [chatNewSignal, setChatNewSignal] = useState(0);                      // 新对话信号
   const [papers, setPapers] = useState<Paper[]>([]);
   const [paperTotal, setPaperTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -82,24 +90,38 @@ export default function Home() {
     listProjects().then(setProjects).catch(console.error);
   }, []);
 
-  // ── 启动：确保游客身份（无 token 自动注册游客），再加载项目 ──
+  // ── 加载会话列表 ──
+  const loadConversations = useCallback(() => {
+    listConversations().then(setConversations).catch(console.error);
+  }, []);
+
+  // ── 启动：确保游客身份（无 token 自动注册游客），再加载项目与会话 ──
   useEffect(() => {
     (async () => {
       await ensureGuest();
       loadProjectsList();
+      loadConversations();
     })();
-  }, [loadProjectsList]);
+  }, [loadProjectsList, loadConversations]);
 
-  // ── 认证变化（登录/游客升级/登出）→ 刷新项目列表 ──
+  // ── 认证变化（登录/游客升级/登出）→ 刷新项目与会话 ──
   useEffect(() => {
     const handler = () => {
       setActiveProject(null);
       setActivePage("chat");
       loadProjectsList();
+      loadConversations();
     };
     window.addEventListener("auth:changed", handler);
     return () => window.removeEventListener("auth:changed", handler);
-  }, [loadProjectsList]);
+  }, [loadProjectsList, loadConversations]);
+
+  // ── 对话产生新消息/新项目 → 刷新会话列表 ──
+  useEffect(() => {
+    const handler = () => loadConversations();
+    window.addEventListener("chat:updated", handler);
+    return () => window.removeEventListener("chat:updated", handler);
+  }, [loadConversations]);
 
   // ── 登录过期（401 且 refresh 失败）→ 引导重新登录 ──
   useEffect(() => {
@@ -387,6 +409,18 @@ export default function Home() {
                 }
               });
             }}
+            requestedConversationId={chatOpenConvId ?? lastConvForProject[activeProject?.id ?? -1]}
+            newSignal={chatNewSignal}
+            currentProjectId={activeProject?.id ?? null}
+            onRequestConsumed={() => setChatOpenConvId(null)}
+            onConversationChanged={(cid, pid) => {
+              setActiveConversationId(cid);
+              // 记录当前项目最后使用的会话（切对话页时按项目恢复）
+              if (cid) {
+                const key = pid ?? -1;
+                setLastConvForProject((prev) => ({ ...prev, [key]: cid }));
+              }
+            }}
           />
         );
     }
@@ -398,9 +432,25 @@ export default function Home() {
       <Sidebar
         projects={projects}
         activeProject={activeProject}
+        conversations={conversations}
+        activeConversationId={activeConversationId}
         onSelect={(p) => {
           setActiveProject(p);
+          setActiveConversationId(null);   // 切项目 → 清除会话高亮（会话按项目恢复）
           setActivePage("search");
+        }}
+        onSelectConversation={(cid) => {
+          // 点会话 → 打开对话页并加载该会话历史
+          setChatOpenConvId(cid);
+          setActiveConversationId(cid);
+          setActivePage("chat");
+        }}
+        onNewConversation={() => {
+          // 新对话 → 重置对话页
+          setChatOpenConvId(null);
+          setActiveConversationId(null);
+          setChatNewSignal((n) => n + 1);
+          setActivePage("chat");
         }}
         onNewProject={handleNewProject}
       />

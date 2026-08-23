@@ -39,7 +39,7 @@ END $$;
 -- ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_users (
   id          BIGSERIAL PRIMARY KEY,                    -- 用户 ID（业务层不暴露）
-  uuid        CHAR(32) NOT NULL UNIQUE,                 -- 对外用户 ID（usr_ 前缀，防遍历）
+  uuid        VARCHAR(32) NOT NULL UNIQUE,              -- 对外用户 ID（usr_ 前缀，防遍历）
   username    VARCHAR(64) NOT NULL UNIQUE,              -- 用户名（支持登录）
   email       VARCHAR(255) UNIQUE,                      -- 邮箱（支持登录 & 找回密码）
   phone       VARCHAR(20) UNIQUE,                       -- 手机号（支持短信登录）
@@ -156,7 +156,7 @@ END $$;
 CREATE TABLE IF NOT EXISTS ai_user_sessions (
   id                 BIGSERIAL PRIMARY KEY,             -- 自增主键
   user_id            BIGINT NOT NULL REFERENCES ai_users(id) ON DELETE CASCADE, -- 关联用户
-  session_id         CHAR(36) NOT NULL UNIQUE,          -- 会话唯一标识（对外）
+  session_id         VARCHAR(36) NOT NULL UNIQUE,       -- 会话唯一标识（对外）
   refresh_token_hash CHAR(64) NOT NULL UNIQUE,          -- Refresh Token SHA-256 哈希
   device_id          VARCHAR(64),                       -- 设备指纹/ID
   device_name        VARCHAR(128),                      -- 设备名称（如 iPhone 15）
@@ -268,7 +268,7 @@ CREATE TABLE IF NOT EXISTS ai_login_logs (
   device_fingerprint VARCHAR(64),                       -- 设备指纹
   status             SMALLINT NOT NULL,                 -- 结果（1=成功 0=失败）
   fail_reason        VARCHAR(128),                      -- 失败原因
-  session_id         CHAR(36),                          -- 关联会话 ID
+  session_id         VARCHAR(36),                       -- 关联会话 ID
   created_at         TIMESTAMP DEFAULT NOW()            -- 记录时间
 );
 COMMENT ON TABLE ai_login_logs IS '登录日志：审计与安全分析（异地登录检测）';

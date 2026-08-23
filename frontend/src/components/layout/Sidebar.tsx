@@ -3,21 +3,35 @@
 import { useEffect, useState } from "react";
 import {
   Search, FileText, PanelLeftClose, PanelLeft, User, LogOut, LogIn,
+  MessageSquare, Plus, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project } from "@/lib/api";
+import type { Project, ConversationSummary } from "@/lib/api";
 import { getCurrentUser, subscribeAuth, apiLogout } from "@/lib/auth";
 import { AuthModal } from "@/components/auth/AuthModal";
 
 interface SidebarProps {
   projects: Project[];
   activeProject: Project | null;
+  conversations: ConversationSummary[];
+  activeConversationId: string | null;
   onSelect: (p: Project) => void;
+  onSelectConversation: (cid: string) => void;
+  onNewConversation: () => void;
   onNewProject: (query: string, techProbe: string) => void;
 }
 
-export function Sidebar({ projects, activeProject, onSelect }: SidebarProps) {
+export function Sidebar({
+  projects,
+  activeProject,
+  conversations,
+  activeConversationId,
+  onSelect,
+  onSelectConversation,
+  onNewConversation,
+}: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [convsOpen, setConvsOpen] = useState(true);
   const [user, setUser] = useState(getCurrentUser());
   const [authOpen, setAuthOpen] = useState(false);
 
@@ -26,6 +40,20 @@ export function Sidebar({ projects, activeProject, onSelect }: SidebarProps) {
 
   const handleLogout = async () => {
     await apiLogout();
+  };
+
+  const fmtTime = (iso: string) => {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      const now = new Date();
+      if (d.toDateString() === now.toDateString()) {
+        return d.toTimeString().slice(0, 5);
+      }
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    } catch {
+      return "";
+    }
   };
 
   return (
@@ -59,10 +87,65 @@ export function Sidebar({ projects, activeProject, onSelect }: SidebarProps) {
         </button>
       </div>
 
-      {/* Project list */}
+      {/* 新对话按钮 */}
+      {!collapsed && (
+        <div className="px-3 pt-3 pb-1 shrink-0">
+          <button
+            onClick={onNewConversation}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-gold/30 bg-accent-light/20 text-[12.5px] text-gold-light hover:bg-accent-light/40 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            新对话
+          </button>
+        </div>
+      )}
+
+      {/* 主体：会话历史 + 项目 */}
       <div className="flex-1 overflow-y-auto py-2">
+        {/* 会话历史分组 */}
         {!collapsed && (
-          <p className="px-3 mb-1 text-[10px] font-medium text-ink-faint uppercase tracking-widest">
+          <div className="mb-1">
+            <button
+              onClick={() => setConvsOpen(!convsOpen)}
+              className="w-full flex items-center gap-1 px-3 py-1 text-[10px] font-medium text-ink-faint uppercase tracking-widest hover:text-ink-muted"
+            >
+              {convsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              对话历史
+            </button>
+            {convsOpen && (
+              <div className="space-y-0.5">
+                {conversations.length === 0 ? (
+                  <p className="px-3 py-1.5 text-[11.5px] text-ink-faint">暂无对话</p>
+                ) : (
+                  conversations.map((c) => (
+                    <button
+                      key={c.conversation_id}
+                      onClick={() => onSelectConversation(c.conversation_id)}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-[13px] transition-colors",
+                        activeConversationId === c.conversation_id
+                          ? "bg-accent-light text-accent font-medium"
+                          : "text-ink-secondary hover:bg-paper-warm",
+                      )}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate flex-1">
+                        {c.title && c.title !== "new" ? c.title : "未命名对话"}
+                      </span>
+                      <span className="text-[10px] text-ink-faint shrink-0">
+                        {fmtTime(c.last_message_at || c.created_at)}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 项目分组 */}
+        {!collapsed && (
+          <p className="px-3 mb-1 mt-2 text-[10px] font-medium text-ink-faint uppercase tracking-widest">
             Projects
           </p>
         )}
@@ -133,7 +216,6 @@ export function Sidebar({ projects, activeProject, onSelect }: SidebarProps) {
         open={authOpen}
         onClose={() => setAuthOpen(false)}
         onSuccess={() => {
-          // 登录/升级后刷新项目列表（游客数据归入等场景）
           window.dispatchEvent(new CustomEvent("auth:changed"));
         }}
       />
