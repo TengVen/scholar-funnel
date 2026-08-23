@@ -482,6 +482,20 @@ export async function getLLMConfig(): Promise<{ ok: boolean; model: string }> {
   return request("/api/settings/llm");
 }
 
+// ── 系统公告 ──
+
+export interface Announcement {
+  id: number;
+  level: "info" | "warning" | "danger";
+  title: string;
+  content: string;
+  created_at: string;
+}
+
+export async function getAnnouncements(): Promise<Announcement[]> {
+  return request("/api/announcements");
+}
+
 export async function getChatSearchStatus(taskId: string): Promise<TaskStatus> {
   return request(`/api/chat/search/status?task_id=${taskId}`);
 }

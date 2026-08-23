@@ -308,3 +308,18 @@ class Message(Base):
     error_detail: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Announcement(Base):
+    """系统公告（对话页铃铛展示，后台可随时增改）"""
+    __tablename__ = "ai_announcements"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    level: Mapped[str] = mapped_column(String(16), default="info")  # info / warning / danger
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    start_at: Mapped[datetime | None] = mapped_column(DateTime)
+    end_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -52,7 +52,12 @@ export function ChatPanel({
   const [stage, setStage] = useState("greeting");
   const [confirmedParams, setConfirmedParams] = useState<Record<string, unknown>>({});
   const [searching, setSearching] = useState(false);
-  const [config, setConfig] = useState<ChatConfig>(() => loadConfig());
+  const [config, setConfig] = useState<ChatConfig>(DEFAULT_CONFIG);
+  // 水合完成后再加载 localStorage 配置：服务端无 localStorage，
+  // 若首屏直接用 loadConfig()，服务端/客户端 HTML 会不一致 → hydration 报错
+  useEffect(() => {
+    setConfig(loadConfig());
+  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);

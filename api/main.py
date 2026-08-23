@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from storage.mysql_db import init_db
 from api.routers import (
     auth, projects, papers, search, cart, branch, network, chat, funnel, settings,
-    admin,
+    admin, announcements,
 )
 
 
@@ -50,6 +50,7 @@ app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(funnel.router, prefix="/api/funnel", tags=["funnel"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(announcements.router, prefix="/api/announcements", tags=["announcements"])
 
 # uvicorn api.main:app --reload
 @app.get("/api/health")
