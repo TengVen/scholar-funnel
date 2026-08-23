@@ -97,7 +97,7 @@ def add_by_openalex(
     with get_session() as session:
         paper = (
             session.query(Paper)
-            .filter_by(openalex_id=openalex_id)
+            .filter_by(openalex_id=openalex_id, project_id=project_id)
             .first()
         )
         if not paper:

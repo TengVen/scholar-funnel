@@ -157,6 +157,7 @@ def get_cart(project_id: int = Query(...), user: User = Depends(get_current_user
         CartItemOut(
             cart_id=it["cart_id"],
             paper_id=it["paper_id"],
+            openalex_id=it.get("openalex_id", ""),
             category=it["category"],
             title=it["title"],
             authors=it.get("authors") or [],

@@ -293,18 +293,15 @@ class TrunkSearchEngine:
             if deleted:
                 logger.info(f"已清理旧 trunk 数据 {deleted} 篇")
 
-            # ── 3. 写入/更新 ──
+            # ── 3. 写入/更新（按 openalex_id + project_id 定位，支持跨项目各自收录）──
             for item in results:
                 p = item["paper"]
                 existing = (
                     session.query(Paper)
-                    .filter_by(openalex_id=p["id"])
+                    .filter_by(openalex_id=p["id"], project_id=project_id)
                     .first()
                 )
                 if existing:
-                    # 仅更新"属于当前项目"的行；其他项目同 ID 数据不碰
-                    if existing.project_id != project_id:
-                        continue
                     existing.title = p.get("title", "")
                     existing.authors = p.get("authors", [])
                     existing.year = p.get("year", 0)
@@ -476,7 +473,7 @@ class TrunkSearchEngine:
                 p = item["paper"]
                 existing = (
                     session.query(Paper)
-                    .filter_by(openalex_id=p["id"])
+                    .filter_by(openalex_id=p["id"], project_id=project_id)
                     .first()
                 )
                 if existing:

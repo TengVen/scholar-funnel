@@ -153,6 +153,7 @@ def get_stored_results(project_id: int, mode: str = "") -> list[BranchPaperResul
                 probe_match=ar.probe_match or False,
                 probe_confidence=ar.probe_confidence or "none",
                 optimization_method=ar.optimization_method or "",
+                key_findings=ar.key_findings or "",
             ))
         return results
 
@@ -445,6 +446,7 @@ def _save_result(paper_id: int, result: BranchPaperResult):
             existing.probe_match = result.probe_match
             existing.probe_confidence = result.probe_confidence
             existing.optimization_method = result.optimization_method
+            existing.key_findings = result.key_findings
         else:
             # 新建记录
             ar = AnalysisResult(
@@ -456,6 +458,7 @@ def _save_result(paper_id: int, result: BranchPaperResult):
                 probe_match=result.probe_match,
                 probe_confidence=result.probe_confidence,
                 optimization_method=result.optimization_method,
+                key_findings=result.key_findings,
             )
             session.add(ar)
 

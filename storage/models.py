@@ -42,11 +42,13 @@ class Paper(Base):
     __table_args__ = (
         Index("idx_project_stage", "project_id", "stage"),
         Index("idx_cited", "cited_by_count"),
+        # openalex_id 改为 per-project 唯一：同一篇 OA 论文可被不同项目各自收录
+        UniqueConstraint("openalex_id", "project_id", name="uniq_paper_openalex_project"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("ai_projects.id"), nullable=False)
-    openalex_id: Mapped[str] = mapped_column(String(50), unique=True)
+    openalex_id: Mapped[str] = mapped_column(String(50))
     title: Mapped[str] = mapped_column(Text, nullable=False)
     authors: Mapped[dict | None] = mapped_column(JSON)
     year: Mapped[int | None] = mapped_column(SmallInteger)
@@ -104,6 +106,9 @@ class AnalysisResult(Base):
     )
     key_formulas: Mapped[dict | None] = mapped_column(JSON)
     optimization_method: Mapped[str | None] = mapped_column(String(255))
+    key_findings: Mapped[str | None] = mapped_column(
+        Text, default="", doc="分支深挖关键发现（LLM 产出，持久化避免刷新丢失）"
+    )
     analyzed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # 关系
