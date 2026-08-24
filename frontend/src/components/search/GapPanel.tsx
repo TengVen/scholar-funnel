@@ -3,7 +3,8 @@
 import {
   Sparkles, Check, Plus, Loader2, ExternalLink, Github, ArrowLeft, Inbox,
 } from "lucide-react";
-import type { GapCandidate, GapSearchResult } from "@/lib/api";
+import type { GapCandidate, GapSearchResult } from "@/types/dto";
+import { CATEGORY_META, CONFIDENCE_LABEL } from "@/config/categories";
 
 interface GapPanelProps {
   result: GapSearchResult | null;
@@ -12,18 +13,6 @@ interface GapPanelProps {
   onAddToCart: (paperId: number, category?: string) => void;
   onExit: () => void;
 }
-
-const CATEGORY_META: Record<string, { label: string; desc: string }> = {
-  foundation: { label: "奠基理论", desc: "定义核心问题的基础工作" },
-  mainstream: { label: "主流方法", desc: "当前主流技术路线" },
-  frontier: { label: "最新前沿", desc: "近两年最新进展" },
-};
-
-const CONFIDENCE_LABEL: Record<string, { text: string; cls: string }> = {
-  high: { text: "高置信", cls: "badge-green" },
-  medium: { text: "中置信", cls: "badge-amber" },
-  low: { text: "低置信", cls: "bg-red-500/15 text-red-400 badge" },
-};
 
 export function GapPanel({
   result,
@@ -168,7 +157,7 @@ function GapCandidateRow({
   onAddToCart: (paperId: number, category?: string) => void;
 }) {
   const authors = (c.authors || []).slice(0, 3).join(", ");
-  const conf = CONFIDENCE_LABEL[c.confidence] ?? CONFIDENCE_LABEL.medium;
+  const conf = CONFIDENCE_LABEL[c.confidence as "high" | "medium" | "low"] ?? CONFIDENCE_LABEL.medium;
 
   return (
     <div className="card px-5 py-4">

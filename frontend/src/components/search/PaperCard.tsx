@@ -5,35 +5,15 @@ import {
   ExternalLink, Plus, Check, ChevronDown, ChevronUp, Github,
   Calendar, Quote, Target, Sparkles, Loader2,
 } from "lucide-react";
-import { classifyPaper, type Paper } from "@/lib/api";
+import { classifyPaper } from "@/lib/api/cart";
+import type { Paper } from "@/types/dto";
+import { KEYWORD_COLORS } from "@/config/keywords";
+import { CATEGORIES, CATEGORY_NOTES } from "@/config/categories";
 
 interface PaperCardProps {
   paper: Paper;
   onAddToCart: (paperId: number, category?: string, notes?: string) => void;
 }
-
-// 关键词玻璃徽章配色：清透冷调，按序循环
-const KEYWORD_COLORS = [
-  { bg: "rgba(94, 205, 196, 0.12)", border: "rgba(94, 205, 196, 0.32)", text: "#8FE3DA" }, // 淡青
-  { bg: "rgba(120, 170, 255, 0.12)", border: "rgba(120, 170, 255, 0.32)", text: "#9FC4FF" }, // 淡蓝
-  { bg: "rgba(140, 220, 160, 0.12)", border: "rgba(140, 220, 160, 0.32)", text: "#A9E8BC" }, // 淡绿
-  { bg: "rgba(180, 160, 240, 0.12)", border: "rgba(180, 160, 240, 0.32)", text: "#C4B4F5" }, // 淡紫
-  { bg: "rgba(110, 200, 230, 0.12)", border: "rgba(110, 200, 230, 0.32)", text: "#8FD8EC" }, // 青蓝
-];
-
-// 骨架分类选项
-const CART_CATEGORIES = [
-  { key: "foundation", label: "奠基理论", desc: "定义核心问题的基础工作" },
-  { key: "mainstream", label: "主流方法", desc: "当前主流技术路线" },
-  { key: "frontier", label: "最新前沿", desc: "近两年最新进展" },
-];
-
-// 手动选择分类时的默认理由
-const CATEGORY_NOTES: Record<string, string> = {
-  foundation: "手动选择：奠基理论类",
-  mainstream: "手动选择：主流方法类",
-  frontier: "手动选择：最新前沿类",
-};
 
 export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
   const [expanded, setExpanded] = useState(false);
@@ -219,7 +199,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
               <p className="px-3 pb-1 pt-0.5 text-[10px] text-ink-faint tracking-wide">
                 加入为哪一类？
               </p>
-              {CART_CATEGORIES.map((cat) => (
+              {CATEGORIES.map((cat) => (
                 <button
                   key={cat.key}
                   onClick={() => handleAdd(cat.key, CATEGORY_NOTES[cat.key])}

@@ -7,14 +7,14 @@ import {
   getChatSearchStatus,
   finalizeSearchSummary,
   getChatHistory,
-  type ChatMessage,
-} from "@/lib/api";
-import {
-  ChatConfigBar,
-  loadConfig,
-  DEFAULT_CONFIG,
-  type ChatConfig,
-} from "./ChatConfigBar";
+} from "@/lib/api/chat";
+import type { ChatMessage, SearchSummary } from "@/types/dto";
+import { ChatConfigBar } from "./ChatConfigBar";
+import type { ChatConfig } from "@/types/domain";
+import { DEFAULT_CONFIG, SUGGESTIONS } from "@/config/chat";
+import { STORAGE_KEYS } from "@/config/storage";
+import { useLocalStorageConfig, normalizeChatConfig } from "@/hooks/useLocalStorageConfig";
+import { useTaskPolling } from "@/hooks/useTaskPolling";
 
 interface ChatPanelProps {
   onProjectCreated: (projectId: number) => void;
@@ -25,13 +25,6 @@ interface ChatPanelProps {
   onRequestConsumed?: () => void;
   onConversationChanged?: (cid: string | null, projectId?: number | null) => void;
 }
-
-const SUGGESTIONS = [
-  "风力发电功率预测",
-  "Transformer 与 CNN 在图像修复中的效果对比",
-  "知识蒸馏在推荐系统中的应用",
-  "多智能体协作推理的研究现状",
-];
 
 const genConvId = () =>
   Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -51,13 +44,43 @@ export function ChatPanel({
   const [sending, setSending] = useState(false);
   const [stage, setStage] = useState("greeting");
   const [confirmedParams, setConfirmedParams] = useState<Record<string, unknown>>({});
-  const [searching, setSearching] = useState(false);
-  const [config, setConfig] = useState<ChatConfig>(DEFAULT_CONFIG);
-  // 水合完成后再加载 localStorage 配置：服务端无 localStorage，
-  // 若首屏直接用 loadConfig()，服务端/客户端 HTML 会不一致 → hydration 报错
-  useEffect(() => {
-    setConfig(loadConfig());
-  }, []);
+
+  // 对话配置：localStorage 由 hook 管理（水合后加载，首屏默认值保证 SSR 一致）
+  const [config, setConfig] = useLocalStorageConfig<ChatConfig>(
+    STORAGE_KEYS.chatConfig,
+    DEFAULT_CONFIG,
+    normalizeChatConfig,
+  );
+
+  // 主 Agent 发起 full_search 后的异步检索轮询（统一走 useTaskPolling）
+  const { running: searching, run: runSearchPoll } = useTaskPolling<SearchSummary>({
+    getStatus: getChatSearchStatus,
+    getResult: finalizeSearchSummary,
+    onResult: (summary) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: summary.summary,
+          project_id: summary.project_id,
+          project_name: summary.project_name,
+        },
+      ]);
+      onProjectCreated(summary.project_id);
+      setStage("greeting");
+      window.dispatchEvent(new CustomEvent("chat:updated")); // 刷新左侧会话列表
+    },
+    onError: (e) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `检索失败：${e instanceof Error ? e.message : String(e)}。你可以修改需求后重试。`,
+        },
+      ]);
+    },
+    intervalMs: 3000,
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -104,16 +127,6 @@ export function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newSignal]);
 
-  // 配置持久化
-  const handleConfigChange = (cfg: ChatConfig) => {
-    setConfig(cfg);
-    try {
-      localStorage.setItem("scholar_funnel_chat_config", JSON.stringify(cfg));
-    } catch {
-      /* ignore */
-    }
-  };
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -149,42 +162,11 @@ export function ChatPanel({
 
       // 主 Agent 发起了 full_search → 异步轮询 → 完成后生成总结
       if (res.task_id) {
-        setSearching(true);
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: "检索已启动，正在后台执行（预计 1-2 分钟）..." },
         ]);
-        try {
-          while (true) {
-            await new Promise((r) => setTimeout(r, 3000));
-            const status = await getChatSearchStatus(res.task_id);
-            if (status.status === "done") break;
-            if (status.status === "error") throw new Error(status.error || "search failed");
-          }
-          const summary = await finalizeSearchSummary(res.task_id);
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: summary.summary,
-              project_id: summary.project_id,
-              project_name: summary.project_name,
-            },
-          ]);
-          onProjectCreated(summary.project_id);
-          setStage("greeting");
-          window.dispatchEvent(new CustomEvent("chat:updated"));   // 刷新左侧会话列表
-        } catch (e) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: `检索失败：${e instanceof Error ? e.message : String(e)}。你可以修改需求后重试。`,
-            },
-          ]);
-        } finally {
-          setSearching(false);
-        }
+        runSearchPoll(res.task_id);
       }
     } catch (e) {
       setMessages((prev) => [
@@ -263,7 +245,7 @@ export function ChatPanel({
 
             {/* 配置工具栏（输入框下方一排） */}
             <div className="mt-3 w-full max-w-3xl flex justify-center">
-              <ChatConfigBar config={config} onChange={handleConfigChange} />
+              <ChatConfigBar config={config} onChange={setConfig} />
             </div>
 
             {/* 示例问题 */}
@@ -360,7 +342,7 @@ export function ChatPanel({
 
               {/* 配置工具栏 */}
               <div className="mt-2 flex justify-center">
-                <ChatConfigBar config={config} onChange={handleConfigChange} />
+                <ChatConfigBar config={config} onChange={setConfig} />
               </div>
 
               {stage === "confirming" && userQuery && (

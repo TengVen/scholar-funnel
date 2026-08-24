@@ -5,35 +5,20 @@ import {
   Loader2, ChevronDown, ChevronUp, ExternalLink, Share2, ArrowRight,
   Plus, Check, Package,
 } from "lucide-react";
-import {
-  startNetworkAnalyze, getNetworkStatus, getNetworkResult,
-  addToCartByOpenAlex,
-  type RecommendedPaper,
-  type NetworkResultResponse,
-  type CartStatus,
-} from "@/lib/api";
-import { useNetworkStore } from "@/lib/stores/networkStore";
+import { startNetworkAnalyze, getNetworkStatus, getNetworkResult } from "@/lib/api/network";
+import type { RecommendedPaper, NetworkResultResponse, CartStatus } from "@/types/dto";
+import type { Category } from "@/types/domain";
+import { useNetworkStore } from "@/stores/networkStore";
+import { useCartStore } from "@/stores/cartStore";
+import { useTaskPolling } from "@/hooks/useTaskPolling";
+import { CATEGORY_COLORS, CATEGORY_GROUPS } from "@/config/categories";
 
 interface NetworkPanelProps {
   projectId: number;
   cart: CartStatus | null;
-  onAddToCart: () => void;
 }
 
-// 分类专属色（与分支页一致）+ 流光渐变对
-const CATEGORY_COLORS: Record<string, { text: string; textBright: string; bar: string; dot: string }> = {
-  foundation: { text: "#7BA7FF", textBright: "#A8C6FF", bar: "linear-gradient(90deg,#5B8FF9,#B7D2FF,#5B8FF9)", dot: "rgba(123,167,255,1)" },
-  mainstream: { text: "#F0CE6E", textBright: "#FFE9A8", bar: "linear-gradient(90deg,#D6B35A,#FFE9A8,#D6B35A)", dot: "rgba(240,206,110,1)" },
-  frontier: { text: "#5FCFBE", textBright: "#A8EADF", bar: "linear-gradient(90deg,#4FAF9F,#A8EADF,#4FAF9F)", dot: "rgba(95,207,190,1)" },
-};
-
-const CATEGORY_GROUPS = [
-  { key: "foundation", label: "奠基理论" },
-  { key: "mainstream", label: "主流方法" },
-  { key: "frontier", label: "最新前沿" },
-];
-
-export function NetworkPanel({ projectId, cart, onAddToCart }: NetworkPanelProps) {
+export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
   // ── 本地 UI 状态（切换标签页可重置） ──
   const [activeTab, setActiveTab] = useState<"backward" | "forward">("backward");
   // 当前查看范围：""=全量，foundation/mainstream/frontier=单类
@@ -50,31 +35,41 @@ export function NetworkPanel({ projectId, cart, onAddToCart }: NetworkPanelProps
   const setAnalyzing = useNetworkStore((s) => s.setAnalyzing);
   const setProgress = useNetworkStore((s) => s.setProgress);
 
-  // ── 启动分析（category 空=全量，否则单类） ──
-  const handleAnalyze = useCallback(async (category = "") => {
-    setAnalyzing(projectId, true);
+  // ── 启动分析（category 空=全量，否则单类）──
+  // 轮询统一走 useTaskPolling；analyzing/progress 同步到 store
+  const analyzeCatRef = useRef("");
+  const { running, run } = useTaskPolling<NetworkResultResponse>({
+    onRun: () => startNetworkAnalyze(projectId, analyzeCatRef.current),
+    getStatus: getNetworkStatus,
+    getResult: getNetworkResult,
+    onProgress: (status) => {
+      setProgress(projectId, status.step ? `${status.step}：${status.detail || "..."}` : "分析中...");
+    },
+    onResult: (res) => {
+      setResult(projectId, analyzeCatRef.current, res);
+    },
+    onError: (e) => {
+      alert(`分析失败: ${e instanceof Error ? e.message : String(e)}`);
+    },
+    intervalMs: 3000,
+  });
+
+  // 分析中状态同步到 store（开始置 true，结束清空进度与高亮分类）
+  useEffect(() => {
+    setAnalyzing(projectId, running);
+    if (!running) {
+      setAnalyzingCat("");
+      setProgress(projectId, "");
+    }
+  }, [running, projectId, setAnalyzing, setProgress]);
+
+  const handleAnalyze = (category = "") => {
+    analyzeCatRef.current = category;
     setAnalyzingCat(category);
     setProgress(projectId, "正在启动分析...");
     setResult(projectId, category, null);
-    try {
-      const { task_id } = await startNetworkAnalyze(projectId, category);
-      while (true) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const status = await getNetworkStatus(task_id);
-        if (status.status === "done") break;
-        if (status.status === "error") throw new Error(status.error || "分析失败");
-        setProgress(projectId, status.step ? `${status.step}：${status.detail || "..."}` : "分析中...");
-      }
-      const res = await getNetworkResult(task_id);
-      setResult(projectId, category, res);
-    } catch (e) {
-      alert(`分析失败: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setAnalyzing(projectId, false);
-      setProgress(projectId, "");
-      setAnalyzingCat("");
-    }
-  }, [projectId, setAnalyzing, setProgress, setResult]);
+    run();
+  };
 
   const cartEmpty = !cart || cart.total === 0;
   const catCounts = (cat: string) =>
@@ -199,7 +194,6 @@ export function NetworkPanel({ projectId, cart, onAddToCart }: NetworkPanelProps
                   paper={paper}
                   projectId={projectId}
                   cart={cart}
-                  onAddToCart={onAddToCart}
                 />
               ))}
               {(activeTab === "backward" ? result.backward : result.forward).length === 0 && (
@@ -245,7 +239,7 @@ function AnalyzingScene({
   cart: CartStatus | null;
   progress: string;
 }) {
-  const c = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.mainstream;
+  const c = CATEGORY_COLORS[category as Category] ?? CATEGORY_COLORS.mainstream;
   const label = CATEGORY_GROUPS.find((g) => g.key === category)?.label ?? "全部骨架";
   const count = category
     ? cart?.items.filter((it) => it.category === category).length ?? 0
@@ -652,15 +646,15 @@ function NetworkChart({ result }: { result: NetworkResultResponse }) {
 }
 
 function RecommendedPaperCard({
-  paper, projectId, cart, onAddToCart,
+  paper, projectId, cart,
 }: {
   paper: RecommendedPaper;
   projectId: number;
   cart: CartStatus | null;
-  onAddToCart: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [adding, setAdding] = useState(false);
+  const addByOpenAlex = useCartStore((s) => s.addByOpenAlex);
   const authors = paper.authors.length > 3
     ? `${paper.authors.slice(0, 3).join(", ")} 等 ${paper.authors.length} 人`
     : paper.authors.join(", ");
@@ -675,9 +669,9 @@ function RecommendedPaperCard({
     if (!paper.openalex_id || inCart || adding) return;
     setAdding(true);
     try {
-      await addToCartByOpenAlex(projectId, paper.openalex_id, recommendCategory,
+      await addByOpenAlex(projectId, paper.openalex_id, recommendCategory,
         `网络图谱${paper.source === "backward" ? "后向追溯" : "前向追踪"}推荐`);
-      onAddToCart(); // 触发刷新骨架
+      // cartStore 内部已自动重载骨架
     } catch (e) {
       alert(`加入失败: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

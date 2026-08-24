@@ -15,46 +15,26 @@ import {
 import {
   diagnoseCart,
   exportBibtex,
-  removeFromCart,
-  changeCategory,
   summarizeCart,
-  type CartStatus,
-  type CartItem,
-} from "@/lib/api";
+} from "@/lib/api/cart";
+import type { CartStatus, CartItem, DiagnosisResult } from "@/types/dto";
+import { useCartStore } from "@/stores/cartStore";
+import { CATEGORIES } from "@/config/categories";
+import { KEYWORD_COLORS } from "@/config/keywords";
+import type { Category } from "@/types/domain";
 
 interface CartDetailProps {
   projectId: number;
   cart: CartStatus | null;
   onRefresh: () => void;
-  onGapSearch: (category: string, constraint?: string, threshold?: number, mode?: string) => void;
-  onTitleLookup: (category: string, title: string) => void;
+  onGapSearch: (category: Category, constraint?: string, threshold?: number, mode?: string) => void;
+  onTitleLookup: (category: Category, title: string) => void;
   gapSearching?: boolean;
 }
 
-const CATEGORIES = [
-  { key: "foundation", label: "奠基理论", limit: 5, desc: "定义核心问题的基础工作" },
-  { key: "mainstream", label: "主流方法", limit: 10, desc: "当前领域的主流技术路线" },
-  { key: "frontier", label: "最新前沿", limit: 5, desc: "近2年的最新进展" },
-];
-
-// 关键词玻璃徽章配色（与检索页一致）
-const KEYWORD_COLORS = [
-  { bg: "rgba(94, 205, 196, 0.12)", border: "rgba(94, 205, 196, 0.32)", text: "#8FE3DA" },
-  { bg: "rgba(120, 170, 255, 0.12)", border: "rgba(120, 170, 255, 0.32)", text: "#9FC4FF" },
-  { bg: "rgba(140, 220, 160, 0.12)", border: "rgba(140, 220, 160, 0.32)", text: "#A9E8BC" },
-  { bg: "rgba(180, 160, 240, 0.12)", border: "rgba(180, 160, 240, 0.32)", text: "#C4B4F5" },
-  { bg: "rgba(110, 200, 230, 0.12)", border: "rgba(110, 200, 230, 0.32)", text: "#8FD8EC" },
-];
-
 export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLookup, gapSearching }: CartDetailProps) {
   const [diagnosing, setDiagnosing] = useState(false);
-  const [diagnosis, setDiagnosis] = useState<{
-    verdict: string;
-    counts: Record<string, number>;
-    total: number;
-    issues: string[];
-    suggestions: string[];
-  } | null>(null);
+  const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
   const [exporting, setExporting] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
@@ -400,10 +380,14 @@ function CartItemRow({
   const [switching, setSwitching] = useState(false);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
+  // 骨架变更走 cartStore（内部调 API + 自动重载 cart）
+  const removeItem = useCartStore((s) => s.removeItem);
+  const switchCategory = useCartStore((s) => s.switchCategory);
+
   const handleRemove = async () => {
     setRemoving(true);
     try {
-      await removeFromCart(projectId, item.paper_id);
+      await removeItem(projectId, item.paper_id);
       onRefresh();
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
@@ -415,7 +399,7 @@ function CartItemRow({
   const handleSwitchCategory = async (newCat: string) => {
     setSwitching(true);
     try {
-      await changeCategory(projectId, item.paper_id, newCat);
+      await switchCategory(projectId, item.paper_id, newCat);
       setShowCategoryMenu(false);
       onRefresh();
     } catch (e) {

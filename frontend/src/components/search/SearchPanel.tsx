@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Search, Loader2, SlidersHorizontal, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project } from "@/lib/api";
+import type { Project } from "@/types/dto";
 
 interface SearchPanelProps {
   activeProject: Project | null;

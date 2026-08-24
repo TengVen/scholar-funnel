@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import { X, LogIn, UserPlus, Sparkles } from "lucide-react";
-import {
-  apiLogin, apiRegister, apiUpgradeGuest, getCurrentUser,
-} from "@/lib/auth";
+import { useAuth } from "@/hooks/useAuth";
 
 interface AuthModalProps {
   open: boolean;
@@ -13,6 +11,7 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
+  const { user, login, register, upgrade } = useAuth();
   const [tab, setTab] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +21,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
 
   if (!open) return null;
 
-  const isGuest = getCurrentUser()?.is_guest;
+  const isGuest = user?.is_guest;
 
   const submit = async () => {
     setError("");
@@ -34,11 +33,11 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     try {
       if (isGuest && tab === "register") {
         // 游客升级：直接升级当前游客账号（数据归入）
-        await apiUpgradeGuest(username.trim(), password, email.trim() || undefined);
+        await upgrade(username.trim(), password, email.trim() || undefined);
       } else if (tab === "login") {
-        await apiLogin(username.trim(), password);
+        await login(username.trim(), password);
       } else {
-        await apiRegister(username.trim(), password, email.trim() || undefined);
+        await register(username.trim(), password, email.trim() || undefined);
       }
       onSuccess?.();
       onClose();

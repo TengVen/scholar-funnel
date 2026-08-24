@@ -1,33 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  Search,
-  Puzzle,
-  GitBranch,
-  Network,
-  MessageSquare,
-  type LucideIcon,
-} from "lucide-react";
-import {
-  listProjects,
-  createProject,
-  runTrunkSearch,
-  runGapSearch,
-  runGapSemantic,
-  lookupTitleByTitle,
-  listPapers,
-  getCart,
-  addToCart,
-  removeFromCart,
-  listConversations,
-  type Project,
-  type Paper,
-  type CartStatus,
-  type SearchResult,
-  type GapSearchResult,
-  type ConversationSummary,
-} from "@/lib/api";
+import { NAV_TABS } from "@/config/nav";
+import { DEFAULT_SORT } from "@/config/search";
+import type { Page, SortSpec, Category } from "@/types/domain";
+import type { Paper, SearchResult, GapSearchResult } from "@/types/dto";
+import { listPapers } from "@/lib/api/search";
+import { runTrunkSearch, runGapSearch, runGapSemantic, lookupTitleByTitle } from "@/lib/api/search";
+import { useProjectStore } from "@/stores/projectStore";
+import { useCartStore } from "@/stores/cartStore";
+import { useAuth } from "@/hooks/useAuth";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { PaperList } from "@/components/search/PaperList";
@@ -38,83 +20,67 @@ import { BranchPanel } from "@/components/branch/BranchPanel";
 import { NetworkPanel } from "@/components/network/NetworkPanel";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { CartDetail } from "@/components/cart/CartDetail";
-import type { SortSpec } from "@/components/search/PaperList";
-import { ensureGuest } from "@/lib/auth";
-
-type Page = "search" | "cart" | "branch" | "network" | "chat";
-
-// 低饱和珠宝色导航
-const NAV_TABS: {
-  key: Page;
-  label: string;
-  icon: LucideIcon;
-  color: string;
-  glow: string;
-}[] = [
-  { key: "chat", label: "对话", icon: MessageSquare, color: "#D6B35A", glow: "rgba(214,179,90,0.18)" },
-  { key: "search", label: "检索", icon: Search, color: "#5B8FF9", glow: "rgba(91,143,249,0.18)" },
-  { key: "cart", label: "骨架", icon: Puzzle, color: "#D4AF37", glow: "rgba(212,175,55,0.18)" },
-  { key: "branch", label: "分支", icon: GitBranch, color: "#9B7ED8", glow: "rgba(155,126,216,0.18)" },
-  { key: "network", label: "网络", icon: Network, color: "#4FAF9F", glow: "rgba(79,175,159,0.18)" },
-];
 
 export default function Home() {
-  // ── 状态 ──
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  // 每个项目最后使用的会话（切对话页时按当前项目恢复；无记录 → 新对话）
-  const [lastConvForProject, setLastConvForProject] = useState<Record<number, string>>({});
-  const [chatOpenConvId, setChatOpenConvId] = useState<string | null>(null);  // 待打开的历史会话
-  const [chatNewSignal, setChatNewSignal] = useState(0);                      // 新对话信号
+  // ── 路由状态（局部 UI 状态，按 spec 用 useState）──
+  const [activePage, setActivePage] = useState<Page>("chat");
+
+  // ── 项目 / 会话（全局共享 → projectStore）──
+  const projects = useProjectStore((s) => s.projects);
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const conversations = useProjectStore((s) => s.conversations);
+  const activeConversationId = useProjectStore((s) => s.activeConversationId);
+  const lastConvForProject = useProjectStore((s) => s.lastConvForProject);
+  const chatOpenConvId = useProjectStore((s) => s.chatOpenConvId);
+  const chatNewSignal = useProjectStore((s) => s.chatNewSignal);
+  const loadProjects = useProjectStore((s) => s.loadProjects);
+  const loadConversations = useProjectStore((s) => s.loadConversations);
+  const selectProject = useProjectStore((s) => s.selectProject);
+  const selectConversation = useProjectStore((s) => s.selectConversation);
+  const newConversation = useProjectStore((s) => s.newConversation);
+  const setActiveProject = useProjectStore((s) => s.setActiveProject);
+  const setActiveConversationId = useProjectStore((s) => s.setActiveConversationId);
+  const setChatOpenConvId = useProjectStore((s) => s.setChatOpenConvId);
+  const rememberLastConversation = useProjectStore((s) => s.rememberLastConversation);
+  const resetSession = useProjectStore((s) => s.resetSession);
+  const createProjectStore = useProjectStore((s) => s.createProject);
+
+  // ── 骨架（全局共享 → cartStore）──
+  const cart = useCartStore((s) => s.cart);
+  const loadCart = useCartStore((s) => s.loadCart);
+  const cartAddItem = useCartStore((s) => s.addItem);
+  const cartRemoveItem = useCartStore((s) => s.removeItem);
+
+  // ── 认证（authStore + useAuth）──
+  const { init: initAuth, user: authUser, initialized: authInitialized } = useAuth();
+
+  // ── 检索页流程状态（页面级，保持 useState）──
   const [papers, setPapers] = useState<Paper[]>([]);
   const [paperTotal, setPaperTotal] = useState(0);
   const [page, setPage] = useState(0);
-  const [cart, setCart] = useState<CartStatus | null>(null);
+  const [sortBy, setSortBy] = useState<SortSpec[]>(DEFAULT_SORT);
+  const [filterSurvey, setFilterSurvey] = useState("all");
+  const [loadingPapers, setLoadingPapers] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
-  const [loadingPapers, setLoadingPapers] = useState(false);
-  const [activePage, setActivePage] = useState<Page>("chat");
-
-  // ── 排序/筛选状态 ──
-  const [sortBy, setSortBy] = useState<SortSpec[]>([{ field: "trunk_score", order: "desc" }]);
-  const [filterSurvey, setFilterSurvey] = useState("all");
-  // ── 缺口补充检索（重检索）状态 ──
-  const [gapMode, setGapMode] = useState(false);          // 是否显示重检索视图
+  const [gapMode, setGapMode] = useState(false);            // 是否显示重检索视图
   const [gapResult, setGapResult] = useState<GapSearchResult | null>(null);
   const [gapSearching, setGapSearching] = useState(false);
 
-  // ── 加载项目列表 ──
-  const loadProjectsList = useCallback(() => {
-    listProjects().then(setProjects).catch(console.error);
-  }, []);
-
-  // ── 加载会话列表 ──
-  const loadConversations = useCallback(() => {
-    listConversations().then(setConversations).catch(console.error);
-  }, []);
-
-  // ── 启动：确保游客身份（无 token 自动注册游客），再加载项目与会话 ──
+  // ── 启动：认证初始化（游客兜底 / 恢复会话）──
   useEffect(() => {
-    (async () => {
-      await ensureGuest();
-      loadProjectsList();
-      loadConversations();
-    })();
-  }, [loadProjectsList, loadConversations]);
+    initAuth();
+  }, [initAuth]);
 
-  // ── 认证变化（登录/游客升级/登出）→ 刷新项目与会话 ──
+  // ── 认证变化（首次游客 / 登录 / 登出 / 过期）→ 重置当前项目 + 刷新数据 ──
   useEffect(() => {
-    const handler = () => {
-      setActiveProject(null);
-      setActivePage("chat");
-      loadProjectsList();
-      loadConversations();
-    };
-    window.addEventListener("auth:changed", handler);
-    return () => window.removeEventListener("auth:changed", handler);
-  }, [loadProjectsList, loadConversations]);
+    if (!authInitialized) return;
+    resetSession();
+    setActivePage("chat");
+    loadProjects();
+    loadConversations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.id, authInitialized, resetSession, loadProjects, loadConversations]);
 
   // ── 对话产生新消息/新项目 → 刷新会话列表 ──
   useEffect(() => {
@@ -123,29 +89,16 @@ export default function Home() {
     return () => window.removeEventListener("chat:updated", handler);
   }, [loadConversations]);
 
-  // ── 登录过期（401 且 refresh 失败）→ 引导重新登录 ──
+  // ── 跨页导航指令（检索页→对话页 / 分支·网络页→骨架页）──
   useEffect(() => {
-    const handler = () => {
-      setActiveProject(null);
-      setActivePage("chat");
-      loadProjectsList();
+    const toChat = () => setActivePage("chat");
+    const toCart = () => setActivePage("cart");
+    window.addEventListener("navigate-to-chat", toChat);
+    window.addEventListener("navigate-to-cart", toCart);
+    return () => {
+      window.removeEventListener("navigate-to-chat", toChat);
+      window.removeEventListener("navigate-to-cart", toCart);
     };
-    window.addEventListener("auth:expired", handler);
-    return () => window.removeEventListener("auth:expired", handler);
-  }, [loadProjectsList]);
-
-  // ── 监听检索页"去对话页"引导跳转 ──
-  useEffect(() => {
-    const handler = () => setActivePage("chat");
-    window.addEventListener("navigate-to-chat", handler);
-    return () => window.removeEventListener("navigate-to-chat", handler);
-  }, []);
-
-  // ── 监听分支页"去骨架页"引导跳转 ──
-  useEffect(() => {
-    const handler = () => setActivePage("cart");
-    window.addEventListener("navigate-to-cart", handler);
-    return () => window.removeEventListener("navigate-to-cart", handler);
   }, []);
 
   // ── 加载论文和骨架 ──
@@ -171,14 +124,6 @@ export default function Home() {
     },
     [sortBy, filterSurvey],
   );
-
-  const loadCart = useCallback(async (pid: number) => {
-    try {
-      setCart(await getCart(pid));
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
 
   useEffect(() => {
     if (activeProject) {
@@ -210,18 +155,18 @@ export default function Home() {
 
   // ── 创建新项目 ──
   const handleNewProject = async (query: string, techProbe: string) => {
-    const name = query.slice(0, 80);
-    const p = await createProject(name, query, techProbe);
-    setProjects((prev) => [p, ...prev]);
-    setActiveProject(p);
+    try {
+      await createProjectStore(query, techProbe);
+    } catch (e: unknown) {
+      alert(`创建项目失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
-  // ── 加入/移出骨架 ──
+  // ── 加入/移出骨架（cartStore 内部自动重载骨架；检索页额外刷新论文列表）──
   const handleAddToCart = async (paperId: number, category = "mainstream", notes = "") => {
     if (!activeProject) return;
     try {
-      await addToCart(activeProject.id, paperId, category, notes);
-      await loadCart(activeProject.id);
+      await cartAddItem(activeProject.id, paperId, category, notes);
       if (activePage === "search") {
         await loadPapers(activeProject.id, page);
       }
@@ -233,11 +178,7 @@ export default function Home() {
   const handleRemoveFromCart = async (paperId: number) => {
     if (!activeProject) return;
     try {
-      await removeFromCart(activeProject.id, paperId);
-
-      await loadCart(activeProject.id);
-      // 强制从后端重新拉取论文列表，确保 in_cart 与后端一致
-      // （仅当处于检索页时刷新当前列表，其他页无需）
+      await cartRemoveItem(activeProject.id, paperId);
       if (activePage === "search") {
         await loadPapers(activeProject.id, page);
       }
@@ -248,7 +189,7 @@ export default function Home() {
 
   // ── 缺口补充检索（重检索）──
   const handleGapSearch = async (
-    targetCategory: string, constraint = "", threshold = 0.35, mode = "search",
+    targetCategory: Category, constraint = "", threshold = 0.35, mode = "search",
   ) => {
     if (!activeProject) return;
     setGapSearching(true);
@@ -280,7 +221,7 @@ export default function Home() {
   };
 
   // ── 标题直达查找（骨架补充"输入标题"模式）──
-  const handleTitleLookup = async (targetCategory: string, title: string) => {
+  const handleTitleLookup = async (targetCategory: Category, title: string) => {
     if (!activeProject) return;
     setGapSearching(true);
     try {
@@ -309,7 +250,7 @@ export default function Home() {
   // ── 骨架论文 ID 集合（用于网络面板判断是否已加入） ──
   const cartPaperIds = new Set(cart?.items.map((it) => it.paper_id) ?? []);
 
-  // ── 渲染主内容区 ──
+  // ── 渲染主内容区（纯页面组装） ──
   const renderContent = () => {
     // 需要项目的页面
     const needsProject = activePage !== "chat";
@@ -379,30 +320,21 @@ export default function Home() {
       case "branch":
         return <BranchPanel projectId={activeProject!.id} cart={cart} />;
       case "network":
-        return (
-          <NetworkPanel
-            projectId={activeProject!.id}
-            cart={cart}
-            onAddToCart={async () => {
-              await loadCart(activeProject!.id);
-            }}
-          />
-        );
+        return <NetworkPanel projectId={activeProject!.id} cart={cart} />;
       case "chat":
         return (
           <ChatPanel
             onProjectCreated={(pid) => {
-              listProjects().then(setProjects).catch(console.error);
-              // Auto-select the newly created project
-              listProjects().then((ps) => {
-                const found = ps.find((p) => p.id === pid);
+              // 对话里检索完成 → 刷新项目并自动选中新建项目
+              loadProjects().then(() => {
+                const found = useProjectStore.getState().projects.find((p) => p.id === pid);
                 if (found) setActiveProject(found);
               });
             }}
             onOpenProject={(pid) => {
               // 对话里点"查看项目"→ 跳检索页 + 切到该项目
-              listProjects().then((ps) => {
-                const found = ps.find((p) => p.id === pid);
+              loadProjects().then(() => {
+                const found = useProjectStore.getState().projects.find((p) => p.id === pid);
                 if (found) {
                   setActiveProject(found);
                   setActivePage("search");
@@ -415,11 +347,7 @@ export default function Home() {
             onRequestConsumed={() => setChatOpenConvId(null)}
             onConversationChanged={(cid, pid) => {
               setActiveConversationId(cid);
-              // 记录当前项目最后使用的会话（切对话页时按项目恢复）
-              if (cid) {
-                const key = pid ?? -1;
-                setLastConvForProject((prev) => ({ ...prev, [key]: cid }));
-              }
+              rememberLastConversation(cid, pid ?? null);
             }}
           />
         );
@@ -435,21 +363,15 @@ export default function Home() {
         conversations={conversations}
         activeConversationId={activeConversationId}
         onSelect={(p) => {
-          setActiveProject(p);
-          setActiveConversationId(null);   // 切项目 → 清除会话高亮（会话按项目恢复）
+          selectProject(p);
           setActivePage("search");
         }}
         onSelectConversation={(cid) => {
-          // 点会话 → 打开对话页并加载该会话历史
-          setChatOpenConvId(cid);
-          setActiveConversationId(cid);
+          selectConversation(cid);
           setActivePage("chat");
         }}
         onNewConversation={() => {
-          // 新对话 → 重置对话页
-          setChatOpenConvId(null);
-          setActiveConversationId(null);
-          setChatNewSignal((n) => n + 1);
+          newConversation();
           setActivePage("chat");
         }}
         onNewProject={handleNewProject}

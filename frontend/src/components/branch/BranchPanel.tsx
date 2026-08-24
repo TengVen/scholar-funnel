@@ -3,70 +3,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { CSSProperties } from "react";
 import {
-  Loader2, ChevronDown, ChevronUp, ExternalLink, Crosshair, Wand2, Compass,
+  Loader2, ChevronDown, ChevronUp, ExternalLink, Crosshair,
   Layers, ArrowRight, Package,
 } from "lucide-react";
 import {
   startBranchAnalyze, getBranchStatus, getBranchResult, getBranchResults,
-  type BranchPaperResult, type CartStatus, type CartItem,
-} from "@/lib/api";
-import { useBranchStore } from "@/lib/stores/branchStore";
+} from "@/lib/api/branch";
+import type { BranchPaperResult, BranchAnalyzeResponse, CartStatus, CartItem } from "@/types/dto";
+import type { Category } from "@/types/domain";
+import { useBranchStore } from "@/stores/branchStore";
+import { useTaskPolling } from "@/hooks/useTaskPolling";
+import { KEYWORD_COLORS } from "@/config/keywords";
+import { CATEGORY_COLORS, CATEGORY_GROUPS, CONFIDENCE_MAP, LEVEL_LABELS } from "@/config/categories";
+import { BRANCH_MODES } from "@/config/branch";
 
 interface BranchPanelProps {
   projectId: number;
   cart: CartStatus | null;
 }
-
-// 关键词玻璃徽章配色（与检索页一致）
-const KEYWORD_COLORS = [
-  { bg: "rgba(94, 205, 196, 0.12)", border: "rgba(94, 205, 196, 0.32)", text: "#8FE3DA" },
-  { bg: "rgba(120, 170, 255, 0.12)", border: "rgba(120, 170, 255, 0.32)", text: "#9FC4FF" },
-  { bg: "rgba(140, 220, 160, 0.12)", border: "rgba(140, 220, 160, 0.32)", text: "#A9E8BC" },
-  { bg: "rgba(180, 160, 240, 0.12)", border: "rgba(180, 160, 240, 0.32)", text: "#C4B4F5" },
-  { bg: "rgba(110, 200, 230, 0.12)", border: "rgba(110, 200, 230, 0.32)", text: "#8FD8EC" },
-];
-
-const MODES = [
-  {
-    key: "probe_match", label: "探针匹配",
-    desc: "骨架论文是否用了指定技术？",
-    icon: Crosshair,
-  },
-  {
-    key: "ai_suggest", label: "AI 推荐",
-    desc: "让 AI 自动发现核心技术点",
-    icon: Wand2,
-  },
-  {
-    key: "landscape", label: "全景扫描",
-    desc: "逐篇拆解方法论全貌",
-    icon: Compass,
-  },
-];
-
-const CONFIDENCE_MAP: Record<string, { label: string; cls: string }> = {
-  high: { label: "高度匹配", cls: "bg-emerald-500/15 text-emerald-300" },
-  medium: { label: "中等匹配", cls: "bg-amber-500/15 text-amber-300" },
-  low: { label: "低度匹配", cls: "bg-orange-500/15 text-orange-300" },
-  none: { label: "未匹配", cls: "bg-paper-warm text-ink-muted" },
-};
-
-const LEVEL_LABELS: Record<number, string> = {
-  1: "PDF 全文", 2: "HTML 全文", 3: "LLM 回忆", 4: "引用上下文", 5: "仅摘要",
-};
-
-const CATEGORY_GROUPS = [
-  { key: "foundation", label: "奠基理论" },
-  { key: "mainstream", label: "主流方法" },
-  { key: "frontier", label: "最新前沿" },
-];
-
-// 分类专属色（亮色版，与顶部导航珠宝色统一）+ 流光渐变对
-const CATEGORY_COLORS: Record<string, { text: string; textBright: string; bar: string; dot: string }> = {
-  foundation: { text: "#7BA7FF", textBright: "#A8C6FF", bar: "linear-gradient(90deg,#5B8FF9,#B7D2FF,#5B8FF9)", dot: "rgba(123,167,255,1)" },
-  mainstream: { text: "#F0CE6E", textBright: "#FFE9A8", bar: "linear-gradient(90deg,#D6B35A,#FFE9A8,#D6B35A)", dot: "rgba(240,206,110,1)" },
-  frontier: { text: "#5FCFBE", textBright: "#A8EADF", bar: "linear-gradient(90deg,#4FAF9F,#A8EADF,#4FAF9F)", dot: "rgba(95,207,190,1)" },
-};
 
 // 分组标题：专属色 + 水波流光带 + 单类分析按钮
 function GroupHeader({
@@ -76,7 +30,7 @@ function GroupHeader({
   analyzing: boolean; probeEmpty: boolean;
   onAnalyze: (cat: string) => void;
 }) {
-  const c = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.mainstream;
+  const c = CATEGORY_COLORS[cat as Category] ?? CATEGORY_COLORS.mainstream;
   return (
     <div className="mb-2">
       <div className="flex items-center gap-2">
@@ -167,27 +121,25 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
     };
   }, [projectId, mode, result, setResult]);
 
-  // ── 启动分析（category 为空=全量，否则单类） ──
-  const handleAnalyze = useCallback(async (category = "") => {
-    setAnalyzing(projectId, true);
-    setAnalyzingCat(category);
-    setProgress(projectId, "正在启动分析...");
-    // 不清空旧结果：分析期间保留原卡片，新结果返回后合并
-    try {
-      const { task_id } = await startBranchAnalyze({
-        project_id: projectId, mode,
+  // ── 启动分析（category 为空=全量，否则单类）──
+  // 轮询统一走 useTaskPolling；analyzing/progress 同步到 store
+  // 当前分析范围（供 onRun 闭包使用，避免过期捕获）
+  const analyzeCatRef = useRef("");
+  const { running, run } = useTaskPolling<BranchAnalyzeResponse>({
+    onRun: () =>
+      startBranchAnalyze({
+        project_id: projectId,
+        mode,
         probe: mode === "probe_match" ? probe : undefined,
-        category,
-      });
-      while (true) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const status = await getBranchStatus(task_id);
-        if (status.status === "done") break;
-        if (status.status === "error") throw new Error(status.error || "分析失败");
-        const pct = status.total ? ` (${status.current}/${status.total})` : "";
-        setProgress(projectId, `${status.detail || "分析中"}${pct}`);
-      }
-      const res = await getBranchResult(task_id);
+        category: analyzeCatRef.current as Category | "",
+      }),
+    getStatus: getBranchStatus,
+    getResult: getBranchResult,
+    onProgress: (status) => {
+      const pct = status.total ? ` (${status.current}/${status.total})` : "";
+      setProgress(projectId, `${status.detail || "分析中"}${pct}`);
+    },
+    onResult: (res) => {
       // 合并：单类分析只返回该分类的结果，与 store 中已有的同 mode 结果合并（按 paper_id 去重）
       const oldRes = byMode[mode];
       if (oldRes && oldRes.results.length > 0 && res.results.length > 0) {
@@ -206,14 +158,29 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
       } else {
         setResult(projectId, mode, res);
       }
-    } catch (e) {
+    },
+    onError: (e) => {
       alert(`分析失败: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setAnalyzing(projectId, false);
+    },
+    intervalMs: 2000,
+  });
+
+  // 分析中状态同步到 store（开始置 true，结束清空进度与高亮分类）
+  useEffect(() => {
+    setAnalyzing(projectId, running);
+    if (!running) {
       setAnalyzingCat("");
       setProgress(projectId, "");
     }
-  }, [projectId, mode, probe, byMode, setAnalyzing, setProgress, setResult]);
+  }, [running, projectId, setAnalyzing, setProgress]);
+
+  const handleAnalyze = async (category = "") => {
+    analyzeCatRef.current = category;
+    setAnalyzingCat(category);
+    setProgress(projectId, "正在启动分析...");
+    // 不清空旧结果：分析期间保留原卡片，新结果返回后合并
+    run();
+  };
 
   // 骨架是否为空（cart 为空 or total 为 0）
   const cartEmpty = !cart || cart.total === 0;
@@ -273,7 +240,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
 
         {/* 模式选择：卡片式，带图标、场景说明、已分析状态 */}
         <div className="grid grid-cols-3 gap-2">
-          {MODES.map((m) => {
+          {BRANCH_MODES.map((m) => {
             const Icon = m.icon;
             const active = mode === m.key;
             const modeResult = byMode[m.key];

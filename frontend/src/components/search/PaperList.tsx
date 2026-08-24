@@ -6,13 +6,9 @@ import {
   Inbox,
 } from "lucide-react";
 import { PaperCard } from "./PaperCard";
-import type { Paper } from "@/lib/api";
-
-// 排序项：字段 + 独立方向
-export interface SortSpec {
-  field: string;
-  order: string;
-}
+import type { Paper } from "@/types/dto";
+import type { SortSpec } from "@/types/domain";
+import { PAGE_SIZE, SORT_OPTIONS, FILTER_OPTIONS, DEFAULT_SORT } from "@/config/search";
 
 interface PaperListProps {
   papers: Paper[];
@@ -28,20 +24,6 @@ interface PaperListProps {
   onPageChange: (page: number) => void;
   onAddToCart: (paperId: number) => void;
 }
-
-const PAGE_SIZE = 20;
-
-const SORT_OPTIONS = [
-  { value: "trunk_score", label: "相关度" },
-  { value: "cited_by_count", label: "被引量" },
-  { value: "year", label: "年份" },
-];
-
-const FILTER_OPTIONS = [
-  { value: "all", label: "全部" },
-  { value: "survey", label: "综述" },
-  { value: "non_survey", label: "非综述" },
-];
 
 export function PaperList({
   papers,
@@ -73,7 +55,7 @@ export function PaperList({
     } else {
       // 当前 ↑ → 取消
       next = sortBy.filter((s) => s.field !== field);
-      if (next.length === 0) next = [{ field: "trunk_score", order: "desc" }];
+      if (next.length === 0) next = [...DEFAULT_SORT];
     }
     onSortChange(next);
   };

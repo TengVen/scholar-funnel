@@ -1,5 +1,5 @@
 /**
- * 分支深挖结果 store
+ * 分支深挖结果 store（从 lib/stores 迁入，逻辑不变）
  *
  * 解决：切换标签页时 BranchPanel 被卸载，内部 useState 结果丢失的问题。
  *
@@ -14,7 +14,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { BranchAnalyzeResponse } from "@/lib/api";
+import type { BranchAnalyzeResponse } from "@/types/dto";
 
 interface BranchStore {
   /** 分支分析结果（按 projectId + mode 缓存，切项目/切模式不串数据） */

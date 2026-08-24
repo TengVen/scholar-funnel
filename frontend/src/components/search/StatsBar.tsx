@@ -1,14 +1,13 @@
 "use client";
 
-import type { SearchResult } from "@/lib/api";
+import type { SearchResult } from "@/types/dto";
 
 interface StatsBarProps {
   result: SearchResult;
 }
 
 export function StatsBar({ result }: StatsBarProps) {
-  const trace = result.trace as Record<string, Record<string, number>>;
-  const timing = trace?.timing || {};
+  const timing = result.trace?.timing ?? {};
 
   const steps = [
     { label: "意图拆解", key: "step1_decomposition" },

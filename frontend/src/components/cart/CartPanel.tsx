@@ -4,18 +4,13 @@ import { useState } from "react";
 import {
   Package, Trash2, Download, PanelLeftClose, PanelLeft,
 } from "lucide-react";
-import type { CartStatus } from "@/lib/api";
+import type { CartStatus } from "@/types/dto";
+import { CATEGORIES } from "@/config/categories";
 
 interface CartPanelProps {
   cart: CartStatus | null;
   onRemove: (paperId: number) => void;
 }
-
-const CATEGORIES = [
-  { key: "foundation", label: "奠基理论", limit: 5 },
-  { key: "mainstream", label: "主流方法", limit: 10 },
-  { key: "frontier", label: "最新前沿", limit: 5 },
-];
 
 export function CartPanel({ cart, onRemove }: CartPanelProps) {
   const [collapsed, setCollapsed] = useState(false);

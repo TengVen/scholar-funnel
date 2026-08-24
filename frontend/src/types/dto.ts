@@ -1,0 +1,352 @@
+/**
+ * 与后端 DTO 一一对应的类型 —— 纯类型，禁止业务实现
+ *
+ * 依赖方向：dto.ts 依赖 domain.ts（共享联合类型），不依赖任何实现模块。
+ */
+import type {
+  Category,
+  Confidence,
+  AnnouncementLevel,
+  UserRole,
+  TaskStatusState,
+  GapSearchStatus,
+} from "./domain";
+
+// ── Auth ──
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  nickname: string | null;
+  role: UserRole;
+  email: string | null;
+  is_guest: boolean;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  refresh_token: string;
+  user: AuthUser;
+}
+
+// ── Project ──
+
+export interface Project {
+  id: number;
+  name: string;
+  user_query: string;
+  tech_probe: string | null;
+  created_at: string;
+}
+
+// ── Search（主检索）──
+
+export interface SearchRequest {
+  project_id: number;
+  user_query: string;
+  tech_probe?: string;
+  per_query?: number;
+  year_from?: number | null;
+  year_to?: number | null;
+  score_threshold?: number;
+  top_k?: number;
+}
+
+/** 检索 trace：timing 是标准字段，其余透传（后端可能追加） */
+export interface SearchTrace {
+  timing?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+export interface SearchResult {
+  expanded_queries: string[];
+  reasoning: string;
+  total_found: number;
+  after_rerank: number;
+  new_saved: number;
+  survey_count: number;
+  trace: SearchTrace;
+}
+
+// ── Gap Search（缺口补充）──
+
+export interface GapSearchRequest {
+  project_id: number;
+  user_query: string;
+  target_category: Category;
+  tech_probe?: string;
+  user_constraint?: string;
+  per_query?: number;
+  top_k?: number;
+  score_threshold?: number;
+  max_queries?: number;
+}
+
+export interface GapCandidate {
+  paper_id: number | null;
+  openalex_id: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string;
+  abstract: string;
+  cited_by_count: number;
+  is_survey: boolean;
+  keywords: string[];
+  github_url: string | null;
+  relevance_score: number;
+  recommended_category: Category;
+  confidence: Confidence;
+  reason: string;
+  already_in_cart: boolean;
+  already_in_db: boolean;
+  similarity: number | null;
+}
+
+export interface GapSearchResult {
+  target_category: Category | "";
+  candidates: GapCandidate[];
+  expanded_queries: string[];
+  reasoning: string;
+  total_found: number;
+  returned: number;
+  status: GapSearchStatus;
+}
+
+export interface TitleLookupRequest {
+  project_id: number;
+  title: string;
+  target_category: Category;
+}
+
+// ── Paper ──
+
+export interface Paper {
+  id: number;
+  title: string;
+  authors: string[] | null;
+  year: number | null;
+  venue: string | null;
+  doi: string | null;
+  arxiv_id: string | null;
+  abstract: string | null;
+  cited_by_count: number;
+  is_survey: boolean;
+  trunk_score: number | null;
+  keywords: string[];
+  github_url: string | null;
+  in_cart: boolean;
+}
+
+export interface PaperListResponse {
+  papers: Paper[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface PaperListParams {
+  project_id: number;
+  stage?: string;
+  sort_by?: string;
+  sort_order?: string;
+  filter_survey?: string;
+  min_citations?: number;
+  page?: number;
+  page_size?: number;
+}
+
+// ── Cart（骨架）──
+
+export interface CartItem {
+  cart_id: number;
+  paper_id: number;
+  openalex_id: string;
+  category: Category;
+  title: string;
+  authors: string[] | null;
+  year: number | null;
+  venue: string | null;
+  doi: string | null;
+  arxiv_id: string | null;
+  abstract: string | null;
+  cited_by_count: number;
+  is_survey: boolean;
+  keywords: string[];
+  github_url: string | null;
+  notes: string;
+  added_at: string;
+}
+
+export interface CartStatus {
+  items: CartItem[];
+  counts: Record<Category, number>;
+  total: number;
+  full: boolean;
+}
+
+export interface CartClassifyResult {
+  category: Category;
+  reason: string;
+}
+
+/** AI 诊断结果 */
+export interface DiagnosisResult {
+  verdict: string;
+  summary?: string;
+  counts: Record<Category, number>;
+  total: number;
+  issues: string[];
+  suggestions: string[];
+}
+
+// ── 任务轮询通用 ──
+
+export interface TaskStatus {
+  status: TaskStatusState;
+  current?: number;
+  total?: number;
+  detail?: string;
+  step?: string;
+  error?: string | null;
+}
+
+// ── Branch（分支深挖）──
+
+export interface BranchAnalyzeRequest {
+  project_id: number;
+  mode: string;
+  probe?: string;
+  category?: Category | "";
+}
+
+export interface BranchPaperResult {
+  paper_id: number;
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string;
+  doi: string;
+  abstract: string;
+  cited_by_count: number;
+  category: Category;
+  content_level: number;
+  content_source: string;
+  method_summary: string;
+  probe_match: boolean;
+  probe_confidence: Confidence;
+  key_findings: string;
+  optimization_method: string;
+  error: string;
+}
+
+export interface BranchAnalyzeResponse {
+  results: BranchPaperResult[];
+  total: number;
+  mode: string;
+  level_distribution: Record<string, number>;
+}
+
+// ── Network（网络图谱）──
+
+export interface RecommendedPaper {
+  openalex_id: string;
+  title: string;
+  authors: string[];
+  year: number;
+  venue: string;
+  doi: string;
+  cited_by_count: number;
+  abstract: string;
+  source: string;
+  cited_by_n: number;
+  citing_n: number;
+  reason: string;
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  group: string;
+  category: string;
+  year: number;
+  size: number;
+}
+
+export interface GraphEdge {
+  source_id: string;
+  target_id: string;
+  label: string;
+}
+
+/** 网络分析统计（骨架/推荐数量；error 存在表示该范围分析失败） */
+export interface NetworkStats {
+  skeleton_count?: number;
+  backward_count?: number;
+  forward_count?: number;
+  graph_nodes?: number;
+  error?: string;
+}
+
+export interface NetworkResultResponse {
+  backward: RecommendedPaper[];
+  forward: RecommendedPaper[];
+  graph_nodes: GraphNode[];
+  graph_edges: GraphEdge[];
+  stats: NetworkStats;
+}
+
+// ── Chat（对话）──
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  project_id?: number;
+  project_name?: string;
+}
+
+export interface ChatResponse {
+  conversation_id: string;
+  reply: string;
+  stage: string;
+  params: Record<string, unknown>;
+  search_result?: Record<string, unknown> | null;
+  task_id?: string | null;
+}
+
+export interface SearchSummary {
+  summary: string;
+  project_id: number;
+  project_name: string;
+}
+
+export interface ConversationSummary {
+  conversation_id: string;
+  title: string;
+  stage: string;
+  project_id: number | null;
+  project_ids: number[];
+  message_count: number;
+  created_at: string;
+  last_message_at: string;
+}
+
+export interface ConversationHistory {
+  conversation_id: string;
+  messages: ChatMessage[];
+  stage: string;
+  params: Record<string, unknown>;
+  project_id: number | null;
+  project_ids: number[];
+  title: string;
+}
+
+// ── Settings / 公告 ──
+
+export interface Announcement {
+  id: number;
+  level: AnnouncementLevel;
+  title: string;
+  content: string;
+  created_at: string;
+}

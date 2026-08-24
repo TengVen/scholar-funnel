@@ -1,5 +1,5 @@
 /**
- * 网络分析结果 store
+ * 网络分析结果 store（从 lib/stores 迁入，逻辑不变）
  *
  * 解决：切换标签页时 NetworkPanel 被卸载，内部 useState 结果丢失的问题。
  *
@@ -14,7 +14,8 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { NetworkResultResponse } from "@/lib/api";
+import { STORAGE_KEYS } from "@/config/storage";
+import type { NetworkResultResponse } from "@/types/dto";
 
 interface NetworkStore {
   /** 网络分析结果（按 projectId + category 缓存） */
@@ -90,7 +91,7 @@ export const useNetworkStore = create<NetworkStore>()(
         }),
     }),
     {
-      name: "scholar-funnel-network", // localStorage key
+      name: STORAGE_KEYS.networkResults, // localStorage key（统一收口到 config/storage）
       storage: createJSONStorage(() => localStorage),
       // 只持久化结果，不持久化"正在分析"这类瞬时状态
       partialize: (state) => ({

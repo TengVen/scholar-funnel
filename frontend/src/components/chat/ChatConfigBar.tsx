@@ -1,89 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { SlidersHorizontal, Gauge, Cpu, ChevronDown, Check, Bell, Info, AlertTriangle, AlertCircle } from "lucide-react";
-import { setLLMConfig, getAnnouncements, type LLMConfig, type Announcement } from "@/lib/api";
-
-// ── 配置数据模型 ──
-
-export interface ChatConfig {
-  // 检索参数
-  yearFrom: string;
-  yearTo: string;
-  paperType: "all" | "survey" | "original";
-  techProbe: string;
-  // 对话参数
-  temperature: number;
-  // 高级选项
-  topK: number;
-  scoreThreshold: number;
-  // 模型配置
-  llm: LLMConfig;
-}
-
-export const DEFAULT_CONFIG: ChatConfig = {
-  yearFrom: "",
-  yearTo: "",
-  paperType: "all",
-  techProbe: "",
-  temperature: 0.2,
-  topK: 100,
-  scoreThreshold: 0,
-  llm: {},
-};
-
-const STORAGE_KEY = "scholar_funnel_chat_config";
-
-export function loadConfig(): ChatConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_CONFIG;
-    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULT_CONFIG;
-  }
-}
-
-// ── 系统公告（铃铛）──
-
-const ANN_READ_KEY = "scholar_funnel_read_anns";
-
-const ANN_LEVEL_STYLE: Record<string, { color: string; label: string; icon: React.ReactNode; bg: string }> = {
-  info: {
-    color: "#5B8FF9",
-    label: "公告",
-    icon: <Info className="w-3 h-3" />,
-    bg: "rgba(91,143,249,0.10)",
-  },
-  warning: {
-    color: "#c9a24b",
-    label: "提醒",
-    icon: <AlertTriangle className="w-3 h-3" />,
-    bg: "rgba(201,162,75,0.10)",
-  },
-  danger: {
-    color: "#e24b4a",
-    label: "重要",
-    icon: <AlertCircle className="w-3 h-3" />,
-    bg: "rgba(226,75,74,0.10)",
-  },
-};
-
-function loadReadAnns(): Set<number> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(ANN_READ_KEY) || "[]"));
-  } catch {
-    return new Set();
-  }
-}
-
-function saveReadAnns(s: Set<number>) {
-  try {
-    localStorage.setItem(ANN_READ_KEY, JSON.stringify([...s]));
-  } catch {
-    /* ignore */
-  }
-}
+import { SlidersHorizontal, Gauge, Cpu, ChevronDown, Check, Bell } from "lucide-react";
+import { setLLMConfig } from "@/lib/api/settings";
+import type { ChatConfig } from "@/types/domain";
+import { ANN_LEVEL_STYLE, LLM_MODEL_OPTIONS } from "@/config/chat";
+import { useAnnouncements } from "@/hooks/useAnnouncements";
 
 // ── 配置工具栏 ──
 
@@ -97,15 +19,11 @@ interface ChatConfigBarProps {
 export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
   const [openPanel, setOpenPanel] = useState<PanelKey | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [annOpen, setAnnOpen] = useState(false);
-  const [readAnns, setReadAnns] = useState<Set<number>>(loadReadAnns);
   const barRef = useRef<HTMLDivElement>(null);
 
-  // 挂载时拉取系统公告（失败静默，不影响对话）
-  useEffect(() => {
-    getAnnouncements().then(setAnnouncements).catch(() => {});
-  }, []);
+  // 系统公告（数据与未读状态由 hook 管理，组件只负责展示）
+  const { announcements, unreadCount, markAllRead, markRead, isRead } = useAnnouncements();
+  const [annOpen, setAnnOpen] = useState(false);
 
   // 点击外部关闭面板
   useEffect(() => {
@@ -119,36 +37,20 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const unreadCount = announcements.filter((a) => !readAnns.has(a.id)).length;
-
-  const markAllRead = () => {
-    setReadAnns((prev) => {
-      const next = new Set(prev);
-      announcements.forEach((a) => next.add(a.id));
-      saveReadAnns(next);
-      return next;
-    });
-  };
-
-  const markRead = (id: number) => {
-    setReadAnns((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      saveReadAnns(next);
-      return next;
-    });
-  };
-
-  const patch = (p: Partial<ChatConfig>) => onChange({ ...config, ...p });
-  const patchLLM = (p: Partial<LLMConfig>) =>
+  const patchSearch = (p: Partial<ChatConfig["search"]>) =>
+    onChange({ ...config, search: { ...config.search, ...p } });
+  const patchDialog = (p: Partial<ChatConfig["dialog"]>) =>
+    onChange({ ...config, dialog: { ...config.dialog, ...p } });
+  const patchAdvanced = (p: Partial<ChatConfig["advanced"]>) =>
+    onChange({ ...config, advanced: { ...config.advanced, ...p } });
+  const patchLLM = (p: Partial<ChatConfig["llm"]>) =>
     onChange({ ...config, llm: { ...config.llm, ...p } });
 
   const handleSaveLLM = async () => {
     setSaveState("saving");
     try {
       // 仅切换模型，API Key / Base URL 走后台内置配置（不传即沿用 .env 默认值）
-      await setLLMConfig({ model: config.llm.model || "deepseek-v4-flash" });
+      await setLLMConfig({ model: config.llm.model || LLM_MODEL_OPTIONS[0].value });
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 1500);
     } catch {
@@ -222,8 +124,8 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
                   <span className="text-[11px] text-ink-muted">起始年份</span>
                   <input
                     type="number" min={1900} max={2030}
-                    value={config.yearFrom}
-                    onChange={(e) => patch({ yearFrom: e.target.value })}
+                    value={config.search.yearFrom}
+                    onChange={(e) => patchSearch({ yearFrom: e.target.value })}
                     placeholder="不限"
                     className="input mt-1"
                   />
@@ -232,8 +134,8 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
                   <span className="text-[11px] text-ink-muted">结束年份</span>
                   <input
                     type="number" min={1900} max={2030}
-                    value={config.yearTo}
-                    onChange={(e) => patch({ yearTo: e.target.value })}
+                    value={config.search.yearTo}
+                    onChange={(e) => patchSearch({ yearTo: e.target.value })}
                     placeholder="不限"
                     className="input mt-1"
                   />
@@ -242,8 +144,8 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
               <label className="block">
                 <span className="text-[11px] text-ink-muted">论文类型</span>
                 <select
-                  value={config.paperType}
-                  onChange={(e) => patch({ paperType: e.target.value as ChatConfig["paperType"] })}
+                  value={config.search.paperType}
+                  onChange={(e) => patchSearch({ paperType: e.target.value as ChatConfig["search"]["paperType"] })}
                   className="input mt-1"
                 >
                   <option value="all">全部</option>
@@ -255,8 +157,8 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
                 <span className="text-[11px] text-ink-muted">技术探针（可选）</span>
                 <input
                   type="text"
-                  value={config.techProbe}
-                  onChange={(e) => patch({ techProbe: e.target.value })}
+                  value={config.search.techProbe}
+                  onChange={(e) => patchSearch({ techProbe: e.target.value })}
                   placeholder="如：Transformer、GAN、PDE 约束"
                   className="input mt-1"
                 />
@@ -270,12 +172,12 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
               <label className="block">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-ink-muted">温度（创造性）</span>
-                  <span className="text-[11px] text-gold-light tabular-nums">{config.temperature.toFixed(1)}</span>
+                  <span className="text-[11px] text-gold-light tabular-nums">{config.dialog.temperature.toFixed(1)}</span>
                 </div>
                 <input
                   type="range" min={0} max={1.5} step={0.1}
-                  value={config.temperature}
-                  onChange={(e) => patch({ temperature: Number(e.target.value) })}
+                  value={config.dialog.temperature}
+                  onChange={(e) => patchDialog({ temperature: Number(e.target.value) })}
                   className="w-full mt-2 accent-[#c9a24b]"
                 />
                 <span className="text-[10px] text-ink-faint">较低 = 严谨精确，较高 = 发散灵活</span>
@@ -289,24 +191,24 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
               <label className="block">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-ink-muted">召回数量 top_k</span>
-                  <span className="text-[11px] text-gold-light tabular-nums">{config.topK}</span>
+                  <span className="text-[11px] text-gold-light tabular-nums">{config.advanced.topK}</span>
                 </div>
                 <input
                   type="range" min={10} max={300} step={10}
-                  value={config.topK}
-                  onChange={(e) => patch({ topK: Number(e.target.value) })}
+                  value={config.advanced.topK}
+                  onChange={(e) => patchAdvanced({ topK: Number(e.target.value) })}
                   className="w-full mt-2 accent-[#c9a24b]"
                 />
               </label>
               <label className="block">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-ink-muted">相关度阈值</span>
-                  <span className="text-[11px] text-gold-light tabular-nums">{config.scoreThreshold.toFixed(1)}</span>
+                  <span className="text-[11px] text-gold-light tabular-nums">{config.advanced.scoreThreshold.toFixed(1)}</span>
                 </div>
                 <input
                   type="range" min={0} max={1} step={0.05}
-                  value={config.scoreThreshold}
-                  onChange={(e) => patch({ scoreThreshold: Number(e.target.value) })}
+                  value={config.advanced.scoreThreshold}
+                  onChange={(e) => patchAdvanced({ scoreThreshold: Number(e.target.value) })}
                   className="w-full mt-2 accent-[#c9a24b]"
                 />
               </label>
@@ -319,12 +221,13 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
               <label className="block">
                 <span className="text-[11px] text-ink-muted">选择模型</span>
                 <select
-                  value={config.llm.model || "deepseek-v4-flash"}
+                  value={config.llm.model || LLM_MODEL_OPTIONS[0].value}
                   onChange={(e) => patchLLM({ model: e.target.value })}
                   className="input mt-1"
                 >
-                  <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-                  <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+                  {LLM_MODEL_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </label>
               <button
@@ -365,7 +268,8 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
             <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
               {announcements.map((a) => {
                 const st = ANN_LEVEL_STYLE[a.level] ?? ANN_LEVEL_STYLE.info;
-                const read = readAnns.has(a.id);
+                const LevelIcon = st.icon;
+                const read = isRead(a.id);
                 return (
                   <button
                     key={a.id}
@@ -378,7 +282,7 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
                         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0"
                         style={{ color: st.color, background: `${st.color}1f` }}
                       >
-                        {st.icon}
+                        <LevelIcon className="w-3 h-3" />
                         {st.label}
                       </span>
                       <span className="text-[13px] font-medium text-ink truncate">{a.title}</span>
@@ -401,8 +305,8 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
 
 function activeSearchBadge(cfg: ChatConfig): string | undefined {
   const parts: string[] = [];
-  if (cfg.yearFrom || cfg.yearTo) parts.push(`${cfg.yearFrom || "?"}-${cfg.yearTo || "?"}`);
-  if (cfg.paperType !== "all") parts.push(cfg.paperType === "survey" ? "综述" : "原创");
-  if (cfg.techProbe) parts.push(cfg.techProbe);
+  if (cfg.search.yearFrom || cfg.search.yearTo) parts.push(`${cfg.search.yearFrom || "?"}-${cfg.search.yearTo || "?"}`);
+  if (cfg.search.paperType !== "all") parts.push(cfg.search.paperType === "survey" ? "综述" : "原创");
+  if (cfg.search.techProbe) parts.push(cfg.search.techProbe);
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }

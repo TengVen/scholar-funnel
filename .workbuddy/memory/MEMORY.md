@@ -21,7 +21,12 @@
 8. **视觉规范**：深色纸感主题；关键词徽章=玻璃质感淡青多色循环（KEYWORD_COLORS）；指标区竖排图标（蓝/青绿/金色）；金色=相关度/强调
 
 ## 技术栈要点
-- 前端：React 19 + Tailwind + lucide-react；PaperList 导出 SortSpec 类型
+- 前端：React 19 + Tailwind + lucide-react + zustand（stores/）
+- **前端分层铁律（2026-08-24 重构后）**：`types/`(纯类型: dto=后端DTO / domain=领域联合) → `config/`(纯静态数据: nav/categories/keywords/chat/search/branch/storage，KEYWORD_COLORS 等唯一来源) → `lib/`(http.ts 唯一传输层 + tokenStore 叶子 + api/ 按领域拆分 7 文件) → `hooks/`(useTaskPolling 统一轮询 / useAuth / useAnnouncements / useLocalStorageConfig) → `stores/`(zustand: project/cart/auth/branch/network) → `components/`(只 UI) → `app/page.tsx`(只组装)
+- 组件禁止：裸 fetch、localStorage、token 管理、多步编排；复杂编排走 hook/store
+- 认证：authStore 编排（login/register/upgrade/logout/init 游客兜底）+ tokenStore；`auth:changed` 事件已废弃（store 订阅替代）；`auth:expired` 由 http.ts 派发、useAuth 监听
+- ChatConfig 已按 search/dialog/advanced/llm 分组；localStorage key 不变（scholar_funnel_chat_config），旧扁平数据由 normalizeChatConfig 迁移
+- window 事件仅存 3 个：chat:updated / navigate-to-chat / navigate-to-cart
 - 数据库迁移：storage/mysql_db.py 的 init_db 内迁移函数（migrate_trunk_score / migrate_paper_enrich / migrate_gap_support），重启后端自动执行
 - AI 分类/摘要接口：POST /api/cart/classify、POST /api/cart/summarize（均有内存缓存 _classify_cache / _summarize_cache）
 
@@ -30,3 +35,4 @@
 - 多格式导出（Markdown 综述清单：标题/作者/年份/被引/关键词/DOI/理由/摘要）
 - 分支分析结果"图化"（轻量 GraphRAG：把 BranchPanel 分析组装成语义知识图）
 - keywords 存量回填：可写脚本遍历旧论文调 OpenAlex 补 concepts
+- 前端后续：统一 toast 替换 15 处 alert；NetworkPanel 图表拆 components/network/charts/；补 ESLint+noUnusedLocals（详见 md/frontend-refactor-report-2026-08-24.md §3/§6）

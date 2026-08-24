@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Search, FileText, PanelLeftClose, PanelLeft, User, LogOut, LogIn,
   MessageSquare, Plus, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project, ConversationSummary } from "@/lib/api";
-import { getCurrentUser, subscribeAuth, apiLogout } from "@/lib/auth";
-import { AuthModal } from "@/components/auth/AuthModal";
+import type { Project, ConversationSummary } from "@/types/dto";
+import { useAuth } from "@/hooks/useAuth";
+import { AuthModal } from "@/components/common/AuthModal";
 
 interface SidebarProps {
   projects: Project[];
@@ -32,14 +32,13 @@ export function Sidebar({
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [convsOpen, setConvsOpen] = useState(true);
-  const [user, setUser] = useState(getCurrentUser());
   const [authOpen, setAuthOpen] = useState(false);
 
-  // 订阅用户状态变化（登录/登出/游客升级后刷新）
-  useEffect(() => subscribeAuth(setUser), []);
+  // 认证状态由 authStore + useAuth 管理（登录/登出/游客升级自动刷新）
+  const { user, logout } = useAuth();
 
   const handleLogout = async () => {
-    await apiLogout();
+    await logout();
   };
 
   const fmtTime = (iso: string) => {
@@ -215,9 +214,7 @@ export function Sidebar({
       <AuthModal
         open={authOpen}
         onClose={() => setAuthOpen(false)}
-        onSuccess={() => {
-          window.dispatchEvent(new CustomEvent("auth:changed"));
-        }}
+        // 登录成功后 authStore.user 变化 → 页面自动刷新项目/会话，无需手动派发事件
       />
     </aside>
   );
