@@ -62,6 +62,8 @@ export interface ChatConfig {
   advanced: {
     topK: number;
     scoreThreshold: number;
+    /** embedding / rerank 模型来源：local=本地模型，api=SiliconFlow API（本地未识别时后端自动回退 api） */
+    modelProvider: "local" | "api";
   };
   /** 模型配置（后台内置 API Key，仅切换模型） */
   llm: LLMConfig;

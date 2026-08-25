@@ -58,6 +58,20 @@ class Settings:
         default_factory=lambda: os.getenv("LLM_MODEL", "").strip()
     )
 
+    # SiliconFlow（embedding / rerank API 后端，对话页可切换；本地模型仍可用）
+    sf_api_key: str = field(
+        default_factory=lambda: os.getenv("SILICONFLOW_API_KEY", "")
+    )
+    sf_base_url: str = field(
+        default_factory=lambda: os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+    )
+    sf_embedding_model: str = field(
+        default_factory=lambda: os.getenv("SF_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B")
+    )
+    sf_rerank_model: str = field(
+        default_factory=lambda: os.getenv("SF_RERANK_MODEL", "Qwen/Qwen3-Reranker-0.6B")
+    )
+
     google_api_key: str = field(
         default_factory=lambda: os.getenv("GOOGLE_API_KEY", "")
     )

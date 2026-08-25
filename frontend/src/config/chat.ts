@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG: ChatConfig = {
   advanced: {
     topK: 100,
     scoreThreshold: 0,
+    modelProvider: "local",
   },
   llm: {},
 };

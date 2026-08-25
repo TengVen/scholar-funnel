@@ -14,7 +14,22 @@ logger = setup_logger("openalex")
 
 # 礼貌池：加上邮箱可获得更高速率（10万次/天）
 BASE_URL = "https://api.openalex.org"
-POLITE_MAILTO = os.getenv("OPENALEX_EMAIL", "")  # 设置邮箱可获得更高速率
+# 默认邮箱（env 可覆盖）：游客 / 未填邮箱的用户统一用它
+POLITE_MAILTO = os.getenv("OPENALEX_EMAIL", "1257312717@qq.com")
+
+# 请求级 mailto（按当前用户动态设置；空 = 用默认 POLITE_MAILTO）
+_current_mailto: str = ""
+
+
+def set_mailto(email: str | None) -> None:
+    """设置当前请求的 OpenAlex 礼貌邮箱（按用户；空则回退默认）"""
+    global _current_mailto
+    _current_mailto = (email or "").strip()
+
+
+def get_mailto() -> str:
+    """当前生效的 mailto：用户邮箱优先，否则默认邮箱"""
+    return _current_mailto or POLITE_MAILTO
 
 
 @dataclass
@@ -48,7 +63,7 @@ def _make_request(endpoint: str, params: dict | None = None) -> dict:
     """
     if params is None:
         params = {}
-    params["mailto"] = POLITE_MAILTO
+    params["mailto"] = get_mailto()
 
     for attempt in range(3):
         try:

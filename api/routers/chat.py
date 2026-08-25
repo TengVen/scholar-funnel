@@ -86,6 +86,10 @@ def _append_message(session, conv: Conversation, user_id: int, role: str, conten
 
 @router.post("/message", response_model=ChatResponse)
 def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
+    # OpenAlex 礼貌邮箱：用户邮箱优先，否则默认（游客/未填邮箱）
+    from sources import openalex as oa
+    oa.set_mailto(user.email)
+
     if body.llm_config:
         try:
             llm.configure(
@@ -95,6 +99,12 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
             )
         except Exception:
             pass
+        # 模型来源切换（对话页高级配置：'local' / 'api'）→ 全局生效（后续检索/深度调研同样生效）
+        provider = (body.llm_config or {}).get("embedding_provider")
+        if provider in ("local", "api"):
+            from retrieval import embedding, reranker
+            embedding.configure(provider=provider)
+            reranker.configure(provider=provider)
 
     with get_session() as session:
         conv = _get_conv(session, body.conversation_id, user)

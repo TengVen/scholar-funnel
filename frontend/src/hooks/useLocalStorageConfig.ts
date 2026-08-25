@@ -83,6 +83,7 @@ export function normalizeChatConfig(raw: unknown): ChatConfig {
     advanced: {
       topK: num(advSrc.topK, DEFAULT_CONFIG.advanced.topK),
       scoreThreshold: num(advSrc.scoreThreshold, DEFAULT_CONFIG.advanced.scoreThreshold),
+      modelProvider: advSrc.modelProvider === "api" ? "api" : "local",
     },
     llm: src.llm && typeof src.llm === "object" ? (src.llm as ChatConfig["llm"]) : {},
   };

@@ -51,6 +51,8 @@ def add_by_openalex(
     """
     with get_session() as session:
         get_owned_project(session, project_id, user)
+    from sources import openalex as oa
+    oa.set_mailto(user.email)
     result = cart_svc.add_by_openalex(
         project_id=project_id,
         openalex_id=openalex_id,

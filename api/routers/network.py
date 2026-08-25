@@ -18,7 +18,9 @@ from storage.mysql_db import get_session
 router = APIRouter()
 
 def _check(project_id: int, user: User):
-    """校验项目归属（用户隔离）"""
+    """校验项目归属（用户隔离）+ 设置 OpenAlex 礼貌邮箱（用户邮箱优先，否则默认）"""
+    from sources import openalex as oa
+    oa.set_mailto(user.email)
     with get_session() as session:
         get_owned_project(session, project_id, user)
 

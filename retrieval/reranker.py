@@ -1,14 +1,19 @@
 """
-BGE Reranker —— 论文相关性重排序
-- 模块级单例缓存
-- 批量推理
-- ONNX Runtime 加速（如果可用）
+Reranker —— 论文相关性重排序（双后端：本地模型 / SiliconFlow API）
+
+- 本地：BGE Reranker（bge-reranker-large，transformers/ONNX）
+- API：Qwen/Qwen3-Reranker-0.6B（SiliconFlow，POST /rerank）
+- 运行时 configure(provider) 切换：'local' / 'api'
+- 兜底规则：provider 为 local 但本地模型文件不存在 → 自动回退 API
 """
 import os
 import torch
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from transformers import AutoTokenizer
+
+from utils.config import settings
 from utils.log import setup_logger
+from utils.api_post import post_json
 
 logger = setup_logger("reranker")
 
@@ -34,6 +39,36 @@ _model = None
 _device = None
 _loaded = False
 
+# 运行时配置（对话页高级设置写入；缺省自动检测）
+_runtime: dict = {}
+
+
+def _local_available() -> bool:
+    """本地模型是否可用（目录 + config.json 存在）"""
+    return os.path.isdir(_LOCAL_MODEL_PATH) and os.path.exists(
+        os.path.join(_LOCAL_MODEL_PATH, "config.json")
+    )
+
+
+def _provider_default() -> str:
+    """默认 provider：本地模型存在 → local，否则 api"""
+    return "local" if _local_available() else "api"
+
+
+def _resolve_provider(provider: Optional[str]) -> str:
+    """解析实际生效 provider：local 但本地不可用 → 回退 api"""
+    p = (provider or _runtime.get("provider") or _provider_default()).lower()
+    if p == "local" and not _local_available():
+        logger.warning("本地 rerank 模型不可用，回退 API")
+        return "api"
+    return p
+
+
+def configure(provider: Optional[str] = None) -> None:
+    """运行时切换后端：'local' / 'api'（None=不修改；未配置过时走自动检测）"""
+    if provider:
+        _runtime["provider"] = provider.lower()
+
 
 def _ensure_model(model_path: str):
     global _tokenizer, _model, _device, _loaded
@@ -52,9 +87,9 @@ def _ensure_model(model_path: str):
                 provider="CPUExecutionProvider",
             )
             _device = torch.device("cpu")
-            logger.info(f"使用 ONNX Runtime CPU 推理")
+            logger.info("使用 ONNX Runtime CPU 推理")
         else:
-            logger.warning(f"ONNX 模型文件不存在，回退到 PyTorch")
+            logger.warning("ONNX 模型文件不存在，回退到 PyTorch")
             _fallback_pytorch(path)
     else:
         _fallback_pytorch(path)
@@ -74,35 +109,74 @@ def _fallback_pytorch(path: str):
     logger.info(f"使用 PyTorch {device_str}")
 
 
+def _api_rerank(query_text: str, docs: List[str]) -> List[Tuple[int, float]]:
+    """SiliconFlow /rerank：分批打分，返回 [(doc_index, score), ...]"""
+    api_key = _runtime.get("api_key") or settings.sf_api_key
+    base = _runtime.get("base_url") or settings.sf_base_url
+    model = _runtime.get("model") or settings.sf_rerank_model
+    if not api_key:
+        raise RuntimeError("未配置 SiliconFlow API Key（.env 的 SILICONFLOW_API_KEY）")
+
+    scored: List[Tuple[int, float]] = []
+    for i in range(0, len(docs), _MAX_BATCH):
+        batch = docs[i:i + _MAX_BATCH]
+        resp = post_json(
+            f"{base.rstrip('/')}/rerank",
+            {
+                "model": model,
+                "query": query_text,
+                "documents": batch,
+                "top_n": len(batch),
+                "return_documents": False,
+            },
+            api_key,
+        )
+        for r in resp.get("results", []):
+            scored.append((i + r["index"], float(r.get("relevance_score", 0.0))))
+    return scored
+
+
 class ResearchReranker:
-    def __init__(self, model_path: str = None):
-        _ensure_model(model_path or _LOCAL_MODEL_PATH)
+    def __init__(self, model_path: str = None, provider: Optional[str] = None):
+        self.provider = provider
+        if _resolve_provider(provider) == "local":
+            _ensure_model(model_path or _LOCAL_MODEL_PATH)
         self.tokenizer = _tokenizer
         self.model = _model
         self.device = _device
 
-    @torch.no_grad()
+    @staticmethod
+    def _pair_text(p: dict) -> str:
+        return f"Title: {p.get('title', '')} | Abstract: {p.get('abstract', '')[:800]}"
+
     def rerank(self, query_text: str, papers: List[dict]) -> List[Tuple[dict, float]]:
+        """给候选论文按相关性打分并排序，返回 [(paper, score), ...]"""
         if not papers:
             return []
 
-        pairs = [
-            (query_text, f"Title: {p.get('title', '')} | Abstract: {p.get('abstract', '')[:800]}")
-            for p in papers
-        ]
+        if _resolve_provider(self.provider) == "api":
+            docs = [self._pair_text(p) for p in papers]
+            score_map = dict(_api_rerank(query_text, docs))
+            results = [(p, score_map.get(i, 0.0)) for i, p in enumerate(papers)]
+            results.sort(key=lambda x: x[1], reverse=True)
+            return results
+
+        # ── 本地推理 ──
+        if not _loaded:
+            _ensure_model(_LOCAL_MODEL_PATH)
+        pairs = [self._pair_text(p) for p in papers]
 
         all_scores = []
         for i in range(0, len(pairs), _MAX_BATCH):
-            batch_pairs = pairs[i : i + _MAX_BATCH]
-            scores = self._score_batch(batch_pairs)
-            all_scores.extend(scores)
+            batch_pairs = pairs[i:i + _MAX_BATCH]
+            all_scores.extend(self._score_batch(batch_pairs))
 
         results = list(zip(papers, all_scores))
         results.sort(key=lambda x: x[1], reverse=True)
         return results
 
     def _score_batch(self, pairs: List[tuple]) -> List[float]:
-        """给一个 batch 的 pairs 评分"""
+        """给一个 batch 的 pairs 评分（本地后端）"""
         inputs = self.tokenizer(
             pairs, padding=True, truncation=True,
             max_length=_MAX_SEQ_LEN, return_tensors="pt"

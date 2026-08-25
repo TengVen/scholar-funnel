@@ -107,6 +107,8 @@ def _persist_error(thread_id: str, message: str):
 
 @router.post("/start")
 def start_funnel(body: FunnelStartRequest, user: User = Depends(get_current_user)):
+    from sources import openalex as oa
+    oa.set_mailto(user.email)
     with get_session() as session:
         get_owned_project(session, body.project_id, user)
     """
@@ -160,6 +162,8 @@ def resume(body: FunnelResumeRequest, user: User = Depends(get_current_user)):
     pid = _project_id_from_thread(body.thread_id)
     if pid is None:
         raise HTTPException(400, "无效的 thread_id")
+    from sources import openalex as oa
+    oa.set_mailto(user.email)
     with get_session() as session:
         get_owned_project(session, pid, user)
 

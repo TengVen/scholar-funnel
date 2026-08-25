@@ -188,6 +188,34 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
           {openPanel === "advanced" && (
             <div className="space-y-3">
               <p className="text-[11px] font-medium text-ink-faint tracking-wide">高级选项</p>
+
+              <div>
+                <span className="text-[11px] text-ink-muted">向量化 / 重排模型来源</span>
+                <div className="flex items-center gap-1 p-1 mt-1.5 rounded-lg bg-paper-warm border border-line">
+                  {([
+                    { value: "local", label: "本地模型" },
+                    { value: "api", label: "SiliconFlow API" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => patchAdvanced({ modelProvider: opt.value })}
+                      className={`flex-1 px-2 py-1 rounded-md text-[11.5px] transition-colors ${
+                        config.advanced.modelProvider === opt.value
+                          ? "bg-paper-white text-gold-light shadow-sm border border-gold/30"
+                          : "text-ink-muted hover:text-ink"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-ink-faint mt-1">
+                  {config.advanced.modelProvider === "local"
+                    ? "使用本地 BGE 模型（未识别到本地模型时自动回退 API）"
+                    : "使用 Qwen3-Embedding-0.6B / Qwen3-Reranker-0.6B"}
+                </p>
+              </div>
+
               <label className="block">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] text-ink-muted">召回数量 top_k</span>

@@ -265,6 +265,8 @@ export function ChatPanel({
       if (config.llm.api_key) llmConfig.api_key = config.llm.api_key;
       if (config.llm.base_url) llmConfig.base_url = config.llm.base_url;
       if (config.llm.model) llmConfig.model = config.llm.model;
+      // 向量化/重排模型来源（本地 / API）→ 后端全局生效（检索/深度调研同样用）
+      llmConfig.embedding_provider = config.advanced.modelProvider;
 
       const res = await sendChatMessage(conversationId, text, {
         ...(Object.keys(llmConfig).length > 0 ? { llm_config: llmConfig } : {}),
