@@ -162,14 +162,12 @@ export default function Home() {
     }
   };
 
-  // ── 加入/移出骨架（cartStore 内部自动重载骨架；检索页额外刷新论文列表）──
+  // ── 加入/移出骨架（cartStore 内部已自动重载骨架；"已在骨架"标记由 PaperCard 从 store 实时推导，
+  //    论文列表数据未变，无需重拉 → 避免列表闪烁）──
   const handleAddToCart = async (paperId: number, category = "mainstream", notes = "") => {
     if (!activeProject) return;
     try {
       await cartAddItem(activeProject.id, paperId, category, notes);
-      if (activePage === "search") {
-        await loadPapers(activeProject.id, page);
-      }
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : String(e));
     }
@@ -179,9 +177,6 @@ export default function Home() {
     if (!activeProject) return;
     try {
       await cartRemoveItem(activeProject.id, paperId);
-      if (activePage === "search") {
-        await loadPapers(activeProject.id, page);
-      }
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : String(e));
     }

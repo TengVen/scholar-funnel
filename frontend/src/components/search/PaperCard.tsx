@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { classifyPaper } from "@/lib/api/cart";
 import type { Paper } from "@/types/dto";
+import { useCartStore } from "@/stores/cartStore";
 import { KEYWORD_COLORS } from "@/config/keywords";
 import { CATEGORIES, CATEGORY_NOTES } from "@/config/categories";
 
@@ -20,6 +21,11 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [classifying, setClassifying] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // 已在骨架：从全局 cart store 实时推导（增删骨架后自动更新，无需重拉论文列表）
+  const inCart = useCartStore(
+    (s) => s.cart?.items.some((it) => it.paper_id === paper.id) ?? false,
+  );
 
   // 点击外部关闭菜单
   useEffect(() => {
@@ -171,15 +177,15 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
         {/* 加入骨架：点击弹出分类菜单 */}
         <div className="relative" ref={menuRef}>
           <button
-            onClick={() => !paper.in_cart && setMenuOpen(!menuOpen)}
-            disabled={paper.in_cart}
+            onClick={() => !inCart && setMenuOpen(!menuOpen)}
+            disabled={inCart}
             className={
-              paper.in_cart
+              inCart
                 ? "btn-ghost text-success text-[12px] cursor-default"
                 : "btn-secondary text-[12px] flex items-center gap-1"
             }
           >
-            {paper.in_cart ? (
+            {inCart ? (
               <>
                 <Check className="w-3 h-3 inline mr-1" />
                 已加入
@@ -194,7 +200,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
           </button>
 
           {/* 分类菜单 */}
-          {menuOpen && !paper.in_cart && (
+          {menuOpen && !inCart && (
             <div className="absolute left-0 top-full mt-1 w-56 bg-paper-white border border-gold/25 rounded-xl shadow-2xl shadow-black/40 py-1.5 z-20">
               <p className="px-3 pb-1 pt-0.5 text-[10px] text-ink-faint tracking-wide">
                 加入为哪一类？

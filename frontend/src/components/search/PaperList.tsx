@@ -162,16 +162,19 @@ export function PaperList({
         </div>
       </div>
 
-      {/* Paper list */}
+      {/* Paper list：有数据时重拉不清空旧列表（避免闪烁），仅空态才显示 spinner */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-        {loading ? (
+        {loading && papers.length === 0 ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-5 h-5 border-2 border-line border-t-gold rounded-full animate-spin" />
           </div>
         ) : (
-          papers.map((paper) => (
-            <PaperCard key={paper.id} paper={paper} onAddToCart={onAddToCart} />
-          ))
+          <>
+            {loading && <div className="h-0.5 rounded-full bg-line overflow-hidden"><div className="h-full w-1/3 bg-gold/60 rounded-full animate-pulse" /></div>}
+            {papers.map((paper) => (
+              <PaperCard key={paper.id} paper={paper} onAddToCart={onAddToCart} />
+            ))}
+          </>
         )}
       </div>
     </div>
