@@ -13,13 +13,58 @@ from prompt.cart import CLASSIFY_PROMPT, DIAGNOSE_PROMPT
 
 logger = setup_logger("cart")
 
-# ── 每类上限 ──
-LIMITS = {
+# ── 每类上限（默认值；项目可覆盖，存 ai_projects.limits JSON）──
+DEFAULT_LIMITS = {
     "foundation": 5,    # 奠基
     "mainstream": 10,   # 主流
     "frontier": 5,      # 前沿
 }
-TOTAL_LIMIT = 20
+CATEGORY_LIMIT_MAX = 30   # 单类上限
+TOTAL_LIMIT_MAX = 50      # 三类总和上限
+
+
+def get_limits(project_id: int) -> Dict[str, int]:
+    """项目级限额：项目自定义优先（归一化到 1~30），无则回退默认 5/10/5"""
+    with get_session() as session:
+        p = session.get(Project, project_id)
+        raw = p.limits if (p and isinstance(getattr(p, "limits", None), dict)) else None
+
+    if not raw:
+        return dict(DEFAULT_LIMITS)
+
+    limits = {}
+    for cat in DEFAULT_LIMITS:
+        try:
+            v = int(raw.get(cat, DEFAULT_LIMITS[cat]))
+        except (TypeError, ValueError):
+            v = DEFAULT_LIMITS[cat]
+        limits[cat] = max(1, min(v, CATEGORY_LIMIT_MAX))
+    return limits
+
+
+def set_limits(project_id: int, limits: dict) -> Dict:
+    """保存项目限额：校验每类 1~30、总和 ≤ 50；返回 {"ok", "error", "limits"}"""
+    normalized = {}
+    for cat in DEFAULT_LIMITS:
+        try:
+            v = int(limits.get(cat, DEFAULT_LIMITS[cat]))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "限额必须是整数"}
+        if not (1 <= v <= CATEGORY_LIMIT_MAX):
+            return {"ok": False, "error": f"每类限额需在 1~{CATEGORY_LIMIT_MAX} 之间"}
+        normalized[cat] = v
+
+    if sum(normalized.values()) > TOTAL_LIMIT_MAX:
+        return {"ok": False, "error": f"三类总和不能超过 {TOTAL_LIMIT_MAX} 篇"}
+
+    with get_session() as session:
+        p = session.get(Project, project_id)
+        if not p:
+            return {"ok": False, "error": "项目不存在"}
+        p.limits = normalized
+        logger.info(f"更新骨架限额: project={project_id} {normalized}")
+
+    return {"ok": True, "error": "", "limits": normalized}
 
 
 # ══════════════════════════════════════════════════════════
@@ -33,9 +78,12 @@ def add(project_id: int, paper_id: int, category: str, notes: str = "") -> dict:
     返回: {"ok": True/False, "error": "失败原因", "counts": {...}}
     """
     # ── 校验分类名 ──
-    if category not in LIMITS:
+    if category not in DEFAULT_LIMITS:
         logger.warning(f"未知分类: {category}")
         return {"ok": False, "error": f"未知分类: {category}"}
+
+    limits = get_limits(project_id)
+    total_limit = sum(limits.values())
 
     with get_session() as session:
         # 查论文是否存在
@@ -56,17 +104,17 @@ def add(project_id: int, paper_id: int, category: str, notes: str = "") -> dict:
         current_counts = _counts(session, project_id)
         current_total = sum(current_counts.values())
 
-        # 校验该类上限
-        if current_counts.get(category, 0) >= LIMITS[category]:
+        # 校验该类上限（项目级配额）
+        if current_counts.get(category, 0) >= limits[category]:
             return {
                 "ok": False,
-                "error": f"{_cat_label(category)}已达到上限 {LIMITS[category]} 篇，"
+                "error": f"{_cat_label(category)}已达到上限 {limits[category]} 篇，"
                          f"先移除一篇再添加",
             }
 
-        # 校验总数上限
-        if current_total >= TOTAL_LIMIT:
-            return {"ok": False, "error": f"骨架已满（{TOTAL_LIMIT} 篇），请先移除一篇"}
+        # 校验总数上限（= 各类配额之和）
+        if current_total >= total_limit:
+            return {"ok": False, "error": f"骨架已满（{total_limit} 篇），请先移除一篇"}
 
         # 写入
         item = CartItem(
@@ -91,7 +139,7 @@ def add_by_openalex(
     from sources.openalex import get_work_by_id
 
     # ── 校验分类 ──
-    if category not in LIMITS:
+    if category not in DEFAULT_LIMITS:
         return {"ok": False, "error": f"未知分类: {category}"}
 
     with get_session() as session:
@@ -145,8 +193,10 @@ def remove(project_id: int, paper_id: int) -> dict:
 
 def change_category(project_id: int, paper_id: int, new_category: str) -> dict:
     """切换论文分类"""
-    if new_category not in LIMITS:
+    if new_category not in DEFAULT_LIMITS:
         return {"ok": False, "error": f"未知分类: {new_category}"}
+
+    limits = get_limits(project_id)
 
     with get_session() as session:
         item = (
@@ -157,13 +207,13 @@ def change_category(project_id: int, paper_id: int, new_category: str) -> dict:
         if not item:
             return {"ok": False, "error": "该论文不在骨架中"}
 
-        # 校验目标类上限（排除自身）
+        # 校验目标类上限（排除自身；项目级配额）
         current_counts = _counts(session, project_id)
         target_count = current_counts.get(new_category, 0)
-        if item.category != new_category and target_count >= LIMITS[new_category]:
+        if item.category != new_category and target_count >= limits[new_category]:
             return {
                 "ok": False,
-                "error": f"{_cat_label(new_category)}已满（{LIMITS[new_category]} 篇）",
+                "error": f"{_cat_label(new_category)}已满（{limits[new_category]} 篇）",
             }
 
         old = item.category
@@ -247,8 +297,8 @@ def get_total(project_id: int) -> int:
 
 
 def is_full(project_id: int) -> bool:
-    """是否已满"""
-    return get_total(project_id) >= TOTAL_LIMIT
+    """是否已满（按项目级配额之和）"""
+    return get_total(project_id) >= sum(get_limits(project_id).values())
 
 
 def is_in_cart(project_id: int, paper_id: int) -> bool:
@@ -349,7 +399,10 @@ def diagnose(project_id: int) -> dict:
             "suggestions": ["从主干检索结果中选择论文加入骨架"],
         }
 
-    for cat, limit in LIMITS.items():
+    limits = get_limits(project_id)
+    total_limit = sum(limits.values())
+
+    for cat, limit in limits.items():
         count = counts.get(cat, 0)
         label = _cat_label(cat)
         if count == 0:
@@ -362,8 +415,8 @@ def diagnose(project_id: int) -> dict:
             if verdict != "insufficient":
                 verdict = "biased"
 
-    if total < TOTAL_LIMIT:
-        suggestions.append(f"骨架还有 {TOTAL_LIMIT - total} 个空位，可以继续添加")
+    if total < total_limit:
+        suggestions.append(f"骨架还有 {total_limit - total} 个空位，可以继续添加")
 
     # ── 如果已有足够论文，调 LLM 做更深层诊断 ──
     if total >= 5:

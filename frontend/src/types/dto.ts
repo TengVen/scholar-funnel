@@ -39,6 +39,9 @@ export interface Project {
   created_at: string;
 }
 
+/** 项目级骨架限额（每类 1-30，总和 ≤ 50；缺省 5/10/5） */
+export type ProjectLimits = Record<Category, number>;
+
 // ── Search（主检索）──
 
 export interface SearchRequest {

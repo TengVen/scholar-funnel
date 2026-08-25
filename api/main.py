@@ -31,7 +31,13 @@ app = FastAPI(
     lifespan=lifespan,  # ← 新增
 )
 
-# CORS —— 开发阶段允许前端 localhost
+# 请求追踪（X-Request-Id + 耗时日志）
+app.add_middleware(RequestLogMiddleware)
+
+# 限流（分级：登录 10/min、重接口 6-12/min、轮询只读接口默认 120/min，按 IP 滑动窗口）
+app.add_middleware(RateLimitMiddleware)
+
+# CORS —— 放在最外层：让 429/异常响应也能带上 CORS 头（浏览器可读错误详情）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -39,12 +45,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# 请求追踪（X-Request-Id + 耗时日志）
-app.add_middleware(RequestLogMiddleware)
-
-# 限流（登录 10/min、检索/分析 6/min、默认 120/min，按 IP 滑动窗口）
-app.add_middleware(RateLimitMiddleware)
 
 # 注册路由
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

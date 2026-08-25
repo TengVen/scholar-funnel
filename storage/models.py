@@ -22,6 +22,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     user_query: Mapped[str] = mapped_column(Text, nullable=False)
     tech_probe: Mapped[str | None] = mapped_column(Text)
+    limits: Mapped[dict | None] = mapped_column(JSON)   # 项目级骨架限额 {foundation,mainstream,frontier}（空=默认 5/10/5）
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("ai_users.id"), default=None, doc="归属用户（NULL=系统级未归属）"
     )

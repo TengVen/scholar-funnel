@@ -19,6 +19,7 @@
 6. **分类判定哲学**：不用英文关键词匹配（跨领域失效）；领域不变+按类别调年份窗口+规则硬指标+AI 领域感知+人工确认
 7. **摘要清洗**：所有 OpenAlex 摘要必经 _clean_latex（sources/openalex.py），新数据入库前清洗；存量脏数据用 scripts/backfill_latex.py 回填
 8. **视觉规范**：深色纸感主题；关键词徽章=玻璃质感淡青多色循环（KEYWORD_COLORS）；指标区竖排图标（蓝/青绿/金色）；金色=相关度/强调
+9. **骨架限额（2026-08-25）**：三类可**项目级手动配额**（奠基/主流/前沿各自 1~30，总和 ≤ 50）；总量=各类之和（无独立总量配置）；存 `ai_projects.limits` JSON（空=默认 5/10/5）；保存超界阻止，已有论文数>新限额允许保存不删数据；后端 cart 校验全走 `get_limits(project_id)`；前端骨架页「配额」按钮编辑
 
 ## 技术栈要点
 - 前端：React 19 + Tailwind + lucide-react + zustand（stores/）

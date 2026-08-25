@@ -5,9 +5,9 @@
  * activeConversationId / lastConvForProject / chatOpenConvId / chatNewSignal。
  */
 import { create } from "zustand";
-import { listProjects, createProject as apiCreateProject } from "@/lib/api/projects";
+import { listProjects, createProject as apiCreateProject, getProjectLimits, updateProjectLimits } from "@/lib/api/projects";
 import { listConversations } from "@/lib/api/chat";
-import type { ConversationSummary, Project } from "@/types/dto";
+import type { ConversationSummary, Project, ProjectLimits } from "@/types/dto";
 
 interface ProjectStore {
   projects: Project[];
@@ -20,6 +20,8 @@ interface ProjectStore {
   chatOpenConvId: string | null;
   /** 新对话信号（每次 +1 触发 ChatPanel 重置） */
   chatNewSignal: number;
+  /** 项目级骨架限额（按 projectId；未加载的项目回退默认 5/10/5） */
+  limitsByProject: Record<number, ProjectLimits>;
 
   loadProjects: () => Promise<void>;
   loadConversations: () => Promise<void>;
@@ -38,6 +40,10 @@ interface ProjectStore {
   rememberLastConversation: (cid: string | null, pid: number | null) => void;
   /** 认证变化：清当前项目/会话（避免跨用户残留） */
   resetSession: () => void;
+  /** 加载项目限额（失败回退默认） */
+  loadLimits: (projectId: number) => Promise<void>;
+  /** 保存项目限额（错误向上抛，由调用方提示） */
+  saveLimits: (projectId: number, limits: ProjectLimits) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectStore>((set) => ({
@@ -48,6 +54,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   lastConvForProject: {},
   chatOpenConvId: null,
   chatNewSignal: 0,
+  limitsByProject: {},
 
   loadProjects: async () => {
     try {
@@ -94,4 +101,18 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   },
 
   resetSession: () => set({ activeProject: null, activeConversationId: null }),
+
+  loadLimits: async (projectId) => {
+    try {
+      const res = await getProjectLimits(projectId);
+      set((s) => ({ limitsByProject: { ...s.limitsByProject, [projectId]: res.limits } }));
+    } catch {
+      /* 静默：调用方回退默认 */
+    }
+  },
+
+  saveLimits: async (projectId, limits) => {
+    const res = await updateProjectLimits(projectId, limits);
+    set((s) => ({ limitsByProject: { ...s.limitsByProject, [projectId]: res.limits } }));
+  },
 }));

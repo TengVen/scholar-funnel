@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Package, Trash2, Download, PanelLeftClose, PanelLeft,
 } from "lucide-react";
 import type { CartStatus } from "@/types/dto";
+import { useProjectStore } from "@/stores/projectStore";
 import { CATEGORIES } from "@/config/categories";
+import type { Category } from "@/types/domain";
 
 interface CartPanelProps {
   cart: CartStatus | null;
@@ -14,6 +16,18 @@ interface CartPanelProps {
 
 export function CartPanel({ cart, onRemove }: CartPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
+
+  // 项目级限额（动态；检索页侧栏展示 x/limit）
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const limits = useProjectStore((s) => s.limitsByProject[activeProject?.id ?? -1]);
+  const loadLimits = useProjectStore((s) => s.loadLimits);
+  useEffect(() => {
+    if (activeProject) loadLimits(activeProject.id);
+  }, [activeProject?.id, loadLimits]);
+
+  const limOf = (cat: Category) =>
+    limits?.[cat] ?? CATEGORIES.find((c) => c.key === cat)?.limit ?? 5;
+  const totalLimit = CATEGORIES.reduce((acc, c) => acc + limOf(c.key), 0);
 
   // 折叠态：窄条，只显示图标 + 数量
   if (collapsed) {
@@ -54,6 +68,7 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
 
   const grouped = CATEGORIES.map((cat) => ({
     ...cat,
+    limit: limOf(cat.key),
     items: cart.items.filter((it) => it.category === cat.key),
   }));
 
@@ -75,14 +90,14 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
             核心骨架
           </span>
           <span className="text-[12px] text-ink-muted tabular-nums">
-            {cart.total}/20
+            {cart.total}/{totalLimit}
           </span>
         </div>
 
         <div className="progress-track mt-2">
           <div
             className="progress-fill"
-            style={{ width: `${Math.min(cart.total / 20, 1) * 100}%` }}
+            style={{ width: `${Math.min(cart.total / totalLimit, 1) * 100}%` }}
           />
         </div>
 

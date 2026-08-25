@@ -43,7 +43,7 @@ export function SearchPanel({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="描述研究方向，如：图像修复中的偏微分方程方法"
+              placeholder="描述研究方向"
               className="input pl-9"
               disabled={searching}
             />

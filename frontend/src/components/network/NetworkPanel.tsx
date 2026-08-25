@@ -508,14 +508,20 @@ function StarCluster({
 function NetworkChart({ result }: { result: NetworkResultResponse }) {
   const chartRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<{ dispose: () => void } | null>(null);
+  const [chartError, setChartError] = useState(false);
 
   useEffect(() => {
     if (!chartRef.current) return;
+    let disposed = false;
     const init = async () => {
-      const echarts = await import("echarts");
-      if (instanceRef.current) instanceRef.current.dispose();
-      const chart = echarts.init(chartRef.current!);
-      instanceRef.current = chart;
+      try {
+        // 动态加载 echarts：任何失败（chunk 404/网络抖动）降级为文本提示，不拖垮整个面板
+        const echarts = await import("echarts");
+        if (disposed) return;
+        if (instanceRef.current) instanceRef.current.dispose();
+        const chart = echarts.init(chartRef.current!);
+        instanceRef.current = chart;
+        setChartError(false);
 
       // 星图配色：骨架三分类（与全站分类色一致）+ 推荐两类
       const categories = [
@@ -611,10 +617,16 @@ function NetworkChart({ result }: { result: NetworkResultResponse }) {
       });
       const onResize = () => chart.resize();
       window.addEventListener("resize", onResize);
-      return () => window.removeEventListener("resize", onResize);
+      } catch (e) {
+        console.error("echarts 渲染失败，图谱降级", e);
+        setChartError(true);
+      }
     };
     init();
-    return () => { if (instanceRef.current) instanceRef.current.dispose(); };
+    return () => {
+      if (instanceRef.current) instanceRef.current.dispose();
+      disposed = true;
+    };
   }, [result]);
 
   return (
@@ -639,8 +651,14 @@ function NetworkChart({ result }: { result: NetworkResultResponse }) {
             }} />
         ))}
       </div>
-      {/* 图表本体 */}
-      <div ref={chartRef} className="relative" style={{ height: 420 }} />
+      {/* 图表本体（echarts 加载失败时降级为文本提示，不拖垮面板） */}
+      {chartError ? (
+        <div className="relative flex items-center justify-center" style={{ height: 420 }}>
+          <p className="text-[12px] text-ink-faint">图谱组件加载失败，下方论文列表仍可正常使用</p>
+        </div>
+      ) : (
+        <div ref={chartRef} className="relative" style={{ height: 420 }} />
+      )}
     </div>
   );
 }

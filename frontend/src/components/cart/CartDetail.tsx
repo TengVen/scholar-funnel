@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Download,
   Loader2,
@@ -11,14 +11,17 @@ import {
   ArrowLeftRight,
   Github,
   Sparkles,
+  Settings2,
+  Check,
 } from "lucide-react";
 import {
   diagnoseCart,
   exportBibtex,
   summarizeCart,
 } from "@/lib/api/cart";
-import type { CartStatus, CartItem, DiagnosisResult } from "@/types/dto";
+import type { CartStatus, CartItem, DiagnosisResult, ProjectLimits } from "@/types/dto";
 import { useCartStore } from "@/stores/cartStore";
+import { useProjectStore } from "@/stores/projectStore";
 import { CATEGORIES } from "@/config/categories";
 import { KEYWORD_COLORS } from "@/config/keywords";
 import type { Category } from "@/types/domain";
@@ -42,6 +45,54 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
   const [gapConstraint, setGapConstraint] = useState("");
   const [gapMode, setGapMode] = useState<"search" | "title" | "semantic">("search");  // 补充输入模式
   const [gapThreshold, setGapThreshold] = useState(0.35);  // 相关度阈值（关键词补充模式）
+
+  // ── 项目级骨架限额（动态，未加载回退默认） ──
+  const limits = useProjectStore((s) => s.limitsByProject[projectId]);
+  const loadLimits = useProjectStore((s) => s.loadLimits);
+  const saveLimits = useProjectStore((s) => s.saveLimits);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [limitDraft, setLimitDraft] = useState<ProjectLimits | null>(null);
+  const [limitSaving, setLimitSaving] = useState(false);
+
+  useEffect(() => {
+    if (projectId) loadLimits(projectId);
+  }, [projectId, loadLimits]);
+
+  const defaultLimits = (): ProjectLimits => ({
+    foundation: CATEGORIES.find((c) => c.key === "foundation")?.limit ?? 5,
+    mainstream: CATEGORIES.find((c) => c.key === "mainstream")?.limit ?? 10,
+    frontier: CATEGORIES.find((c) => c.key === "frontier")?.limit ?? 5,
+  });
+  const activeLimits = limits ?? defaultLimits();
+  const totalLimit = Object.values(activeLimits).reduce((a, b) => a + b, 0);
+  const limOf = (cat: Category) => activeLimits[cat] ?? defaultLimits()[cat];
+
+  const handleOpenLimitEditor = () => {
+    setLimitDraft({ ...activeLimits });
+    setLimitOpen(true);
+  };
+
+  const handleSaveLimits = async () => {
+    if (!limitDraft) return;
+    const vals = Object.values(limitDraft);
+    if (vals.some((v) => v < 1 || v > 30)) {
+      alert("每类限额需在 1~30 之间");
+      return;
+    }
+    if (vals.reduce((a, b) => a + b, 0) > 50) {
+      alert("三类总和不能超过 50 篇");
+      return;
+    }
+    setLimitSaving(true);
+    try {
+      await saveLimits(projectId, limitDraft);
+      setLimitOpen(false);
+    } catch (e) {
+      alert(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLimitSaving(false);
+    }
+  };
 
   const handleDiagnose = async () => {
     setDiagnosing(true);
@@ -95,6 +146,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
 
   const grouped = CATEGORIES.map((cat) => ({
     ...cat,
+    limit: limOf(cat.key),
     items: cart.items.filter((it) => it.category === cat.key),
   }));
 
@@ -106,15 +158,76 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
           <h2 className="font-serif text-[15px] font-semibold text-ink">
             核心骨架
           </h2>
-          <span className="text-[12px] text-ink-muted tabular-nums">
-            {cart.total}/20
-          </span>
+          <div className="flex items-center gap-2.5">
+            <span className="text-[12px] text-ink-muted tabular-nums">
+              {cart.total}/{totalLimit}
+            </span>
+            <button
+              onClick={handleOpenLimitEditor}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-ink-muted hover:text-ink-secondary border border-line hover:border-line-secondary transition-colors"
+              title="调整每类限额"
+            >
+              <Settings2 className="w-3 h-3" />
+              配额
+            </button>
+          </div>
         </div>
+
+        {/* 配额编辑面板 */}
+        {limitOpen && limitDraft && (
+          <div className="rounded-lg border border-line bg-paper-warm/60 p-3 space-y-2">
+            <p className="text-[11px] text-ink-muted">每类限额（1-30，总和 ≤ 50）</p>
+            <div className="grid grid-cols-3 gap-2">
+              {CATEGORIES.map((cat) => {
+                const current = cart.items.filter((it) => it.category === cat.key).length;
+                return (
+                  <div key={cat.key} className="rounded-md border border-line bg-paper-white px-2.5 py-2">
+                    <p className="text-[11px] text-ink-muted mb-1">{cat.label}</p>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={limitDraft[cat.key]}
+                        onChange={(e) =>
+                          setLimitDraft((d) => d && { ...d, [cat.key]: Number(e.target.value) || 1 })
+                        }
+                        className="input !py-1 w-14 text-center text-[12px] tabular-nums"
+                      />
+                      <span className="text-[10px] text-ink-faint">当前 {current} 篇</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-ink-faint">
+                总量上限：{Object.values(limitDraft).reduce((a, b) => a + b, 0)} / 50
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setLimitOpen(false)}
+                  className="px-2.5 py-1 rounded-md text-[11.5px] text-ink-muted hover:text-ink border border-line"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSaveLimits}
+                  disabled={limitSaving}
+                  className="btn-primary text-[11.5px] flex items-center gap-1"
+                >
+                  {limitSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                  保存配额
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="progress-track">
           <div
             className="progress-fill"
-            style={{ width: `${Math.min(cart.total / 20, 1) * 100}%` }}
+            style={{ width: `${Math.min(cart.total / totalLimit, 1) * 100}%` }}
           />
         </div>
 
