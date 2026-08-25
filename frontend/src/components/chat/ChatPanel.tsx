@@ -1,20 +1,31 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Sparkles, ArrowUp, ExternalLink } from "lucide-react";
+import { Send, Loader2, Sparkles, ArrowUp, ExternalLink, FolderSearch } from "lucide-react";
 import {
   sendChatMessage,
   getChatSearchStatus,
   finalizeSearchSummary,
+  finalizeDeepResearch,
   getChatHistory,
 } from "@/lib/api/chat";
-import type { ChatMessage, SearchSummary } from "@/types/dto";
+import { getFunnelState } from "@/lib/api/funnel";
+import type { ChatMessage, DeepResearchAttachments, SearchSummary } from "@/types/dto";
 import { ChatConfigBar } from "./ChatConfigBar";
+import { MarkdownBody } from "./MarkdownBody";
 import type { ChatConfig } from "@/types/domain";
 import { DEFAULT_CONFIG, SUGGESTIONS } from "@/config/chat";
 import { STORAGE_KEYS } from "@/config/storage";
 import { useLocalStorageConfig, normalizeChatConfig } from "@/hooks/useLocalStorageConfig";
 import { useTaskPolling } from "@/hooks/useTaskPolling";
+
+/** 等待期间的阶段性文案（轮换展示，避免"空白 → 突然跳出一整段"） */
+const EXEC_STAGES = [
+  "正在理解你的问题…",
+  "正在检索相关文献…",
+  "正在分析论文脉络…",
+  "正在组织回答…",
+];
 
 interface ChatPanelProps {
   onProjectCreated: (projectId: number) => void;
@@ -44,6 +55,20 @@ export function ChatPanel({
   const [sending, setSending] = useState(false);
   const [stage, setStage] = useState("greeting");
   const [confirmedParams, setConfirmedParams] = useState<Record<string, unknown>>({});
+
+  // 等待回复期间的执行中占位（轮换文案；收到响应后置 null）
+  const [pendingIdx, setPendingIdx] = useState<number | null>(null);
+  useEffect(() => {
+    if (pendingIdx === null) return;
+    const timer = setInterval(() => {
+      setPendingIdx((i) => (i === null ? null : (i + 1) % EXEC_STAGES.length));
+    }, 2200);
+    return () => clearInterval(timer);
+  }, [pendingIdx !== null]);
+
+  // 深度调研轮询防重复处理（历史恢复用）+ 超时保护
+  const drUpgradedRef = useRef<Set<string>>(new Set());
+  const drPollCountRef = useRef(0);
 
   // 对话配置：localStorage 由 hook 管理（水合后加载，首屏默认值保证 SSR 一致）
   const [config, setConfig] = useLocalStorageConfig<ChatConfig>(
@@ -84,6 +109,97 @@ export function ChatPanel({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 主 Agent 发起 deep_research → 轮询 /funnel/state → 完成后生成结果卡
+  const { run: runDeepResearchPoll } = useTaskPolling<{
+    content: string;
+    attachments: DeepResearchAttachments;
+  }>({
+    getStatus: async (threadId) => {
+      drPollCountRef.current += 1;
+      if (drPollCountRef.current > 240) throw new Error("深度调研超时（约 10 分钟），可重新发起");
+      try {
+        const s = await getFunnelState(threadId);
+        if (s.state?.error) return { status: "error", error: s.state.error };
+        if (s.current_stage === "done" && s.state?.stage_status === "done") {
+          return { status: "done" };
+        }
+        return { status: "running", detail: s.current_stage };
+      } catch {
+        // 任务尚未写入 checkpoint（启动瞬间）→ 视为运行中
+        return { status: "running", detail: "intent" };
+      }
+    },
+    getResult: finalizeDeepResearch,
+    onResult: (res) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: res.content,
+          attachments: res.attachments,
+          project_id: res.attachments.project_id,
+        },
+      ]);
+      onProjectCreated(res.attachments.project_id);
+      window.dispatchEvent(new CustomEvent("chat:updated"));
+    },
+    onError: (e) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `深度调研失败：${e instanceof Error ? e.message : String(e)}。你可以换个说法重新发起。`,
+        },
+      ]);
+    },
+    intervalMs: 2500,
+  });
+
+  // ── 历史恢复：把"运行中"的深度调研卡升级为结果卡 / 结束态（幂等） ──
+  useEffect(() => {
+    messages.forEach((msg, i) => {
+      const att = msg.attachments;
+      if (!att || att.type !== "deep_research" || att.status !== "running") return;
+      if (drUpgradedRef.current.has(att.thread_id)) return;
+      drUpgradedRef.current.add(att.thread_id);
+      (async () => {
+        try {
+          const s = await getFunnelState(att.thread_id);
+          if (s.state?.error) {
+            setMessages((prev) =>
+              prev.map((x, j) => (j === i ? { ...x, content: `深度调研失败：${s.state!.error}` } : x)),
+            );
+            return;
+          }
+          if (s.current_stage !== "done" || s.state?.stage_status !== "done") return; // 仍在跑，保持卡片
+          // 已有结果卡 → 只把启动卡标记结束，避免重复
+          const hasResult = messages.some(
+            (x, j) => j !== i && x.attachments?.type === "deep_research_result" && x.attachments?.thread_id === att.thread_id,
+          );
+          if (hasResult) {
+            setMessages((prev) =>
+              prev.map((x, j) => (j === i ? { ...x, attachments: { ...att, status: "ended" } } : x)),
+            );
+            return;
+          }
+          const res = await finalizeDeepResearch(att.thread_id);
+          setMessages((prev) =>
+            prev.map((x, j) =>
+              j === i
+                ? { ...x, content: res.content, attachments: res.attachments, project_id: res.attachments.project_id }
+                : x,
+            ),
+          );
+        } catch {
+          // funnel 内存态已丢失（服务重启）→ 标记结束，保留已生成内容
+          setMessages((prev) =>
+            prev.map((x, j) => (j === i ? { ...x, attachments: { ...att, status: "ended" } } : x)),
+          );
+        }
+      })();
+    });
+  }, [messages]);
 
   const hasConversation = messages.some((m) => m.role === "user");
 
@@ -142,6 +258,7 @@ export function ChatPanel({
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setSending(true);
+    setPendingIdx(0);   // 显示执行中占位（轮换文案）
 
     try {
       const llmConfig: Record<string, string> = {};
@@ -152,6 +269,7 @@ export function ChatPanel({
       const res = await sendChatMessage(conversationId, text, {
         ...(Object.keys(llmConfig).length > 0 ? { llm_config: llmConfig } : {}),
       });
+      setPendingIdx(null);   // 收到响应，占位结束
 
       if (res.reply) {
         setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
@@ -160,15 +278,36 @@ export function ChatPanel({
       onConversationChanged?.(conversationId, currentProjectId);   // 当前会话跟随（切页回来可恢复）
       window.dispatchEvent(new CustomEvent("chat:updated"));   // 刷新左侧会话列表（消息数/时间）
 
-      // 主 Agent 发起了 full_search → 异步轮询 → 完成后生成总结
+      // 主 Agent 发起异步任务 → 按类型轮询：
+      // - full_search：单次检索 → /chat/search/status + 总结
+      // - deep_research：多智能体调研 → /funnel/state + 结果卡
       if (res.task_id) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "检索已启动，正在后台执行（预计 1-2 分钟）..." },
-        ]);
-        runSearchPoll(res.task_id);
+        if (res.task_type === "deep_research") {
+          drPollCountRef.current = 0;
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: "深度调研已启动：意图解析 → 主干检索 → 骨架候选 → 探针推导（预计 2-5 分钟）",
+              attachments: {
+                type: "deep_research",
+                thread_id: res.task_id!,
+                project_id: 0,
+                status: "running",
+              },
+            },
+          ]);
+          runDeepResearchPoll(res.task_id);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: "检索已启动，正在后台执行（预计 1-2 分钟）..." },
+          ]);
+          runSearchPoll(res.task_id);
+        }
       }
     } catch (e) {
+      setPendingIdx(null);
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: `抱歉，出了点问题：${e instanceof Error ? e.message : String(e)}` },
@@ -277,24 +416,48 @@ export function ChatPanel({
             <div className="max-w-4xl mx-auto space-y-4">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "bg-gradient-to-br from-gold-light to-gold-hover text-[#171614]"
-                      : "card"
-                  }`}>
-                    {msg.content}
-                    {msg.project_id && (
-                      <button
-                        onClick={() => onOpenProject(msg.project_id!)}
-                        className="mt-2.5 flex items-center gap-1.5 btn-secondary text-[12px] !py-1.5"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        查看项目「{msg.project_name || `#${msg.project_id}`}」
-                      </button>
-                    )}
-                  </div>
+                  {msg.attachments?.type === "deep_research_result" ? (
+                    <DeepResearchResultCard
+                      att={msg.attachments}
+                      onOpenProject={() => msg.attachments?.project_id && onOpenProject(msg.attachments.project_id)}
+                    />
+                  ) : msg.attachments?.type === "deep_research" ? (
+                    <DeepResearchRunningCard att={msg.attachments} />
+                  ) : (
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed ${
+                        msg.role === "user"
+                          ? "bg-gradient-to-br from-gold-light to-gold-hover text-[#171614] whitespace-pre-wrap"
+                          : "card"
+                      }`}
+                    >
+                      {msg.role === "user" ? (
+                        msg.content
+                      ) : (
+                        <MarkdownBody content={msg.content} />
+                      )}
+                      {msg.project_id && (
+                        <button
+                          onClick={() => onOpenProject(msg.project_id!)}
+                          className="mt-2.5 flex items-center gap-1.5 btn-secondary text-[12px] !py-1.5"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          查看项目「{msg.project_name || `#${msg.project_id}`}」
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
+
+              {pendingIdx !== null && (
+                <div className="flex justify-start">
+                  <div className="card px-4 py-3 flex items-center gap-2.5 text-[13px] text-ink-muted">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-gold-light shrink-0" />
+                    <span>{EXEC_STAGES[pendingIdx]}</span>
+                  </div>
+                </div>
+              )}
 
               {searching && (
                 <div className="flex justify-start">
@@ -354,6 +517,92 @@ export function ChatPanel({
             </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ── 深度调研结果卡（持久化消息卡） ──
+
+function DeepResearchResultCard({
+  att,
+  onOpenProject,
+}: {
+  att: DeepResearchAttachments;
+  onOpenProject: () => void;
+}) {
+  const stats = att.stats;
+  return (
+    <div className="max-w-[85%] w-[440px] rounded-2xl card overflow-hidden">
+      <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+        <Sparkles className="w-3.5 h-3.5 text-[#C27BA0]" />
+        <p className="text-[13px] font-medium text-ink">深度调研完成</p>
+      </div>
+      {stats && (
+        <div className="px-4 grid grid-cols-4 gap-2 mb-2">
+          <Stat label="召回" value={stats.total_found} />
+          <Stat label="入库" value={stats.saved} />
+          <Stat label="骨架候选" value={stats.candidates} />
+          <Stat label="探针" value={stats.probes} />
+        </div>
+      )}
+      {att.probes && att.probes.length > 0 && (
+        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+          {att.probes.slice(0, 3).map((p) => (
+            <span
+              key={p.probe}
+              className="text-[10.5px] px-2 py-0.5 rounded-full border border-[#C27BA0]/30 text-[#C27BA0]"
+            >
+              {p.probe}
+            </span>
+          ))}
+          {att.probes.length > 3 && (
+            <span className="text-[10.5px] text-ink-faint">+{att.probes.length - 3}</span>
+          )}
+        </div>
+      )}
+      <div className="px-4 pb-3">
+        <button
+          onClick={onOpenProject}
+          className="flex items-center gap-1.5 btn-secondary text-[12px] !py-1.5"
+        >
+          <FolderSearch className="w-3 h-3" />
+          查看检索结果
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-line bg-paper-warm/50 px-2 py-1.5 text-center">
+      <p className="text-[13px] font-medium text-ink tabular-nums">{value}</p>
+      <p className="text-[10px] text-ink-faint">{label}</p>
+    </div>
+  );
+}
+
+// ── 深度调研运行卡（进行中 / 已结束） ──
+
+function DeepResearchRunningCard({ att }: { att: DeepResearchAttachments }) {
+  const ended = att.status === "ended";
+  return (
+    <div className="max-w-[85%] w-[400px] rounded-2xl card px-4 py-3">
+      <div className="flex items-center gap-2">
+        {!ended ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C27BA0]" />
+        ) : (
+          <Sparkles className="w-3.5 h-3.5 text-ink-faint" />
+        )}
+        <p className="text-[13px] text-ink">
+          {ended ? "深度调研已结束（结果见下方卡片，或重新发起）" : "深度调研进行中…"}
+        </p>
+      </div>
+      {!ended && (
+        <p className="text-[11px] text-ink-faint mt-1.5 leading-relaxed">
+          意图解析 → 主干检索 → 骨架候选 → 探针推导，完成后在此展示结果
+        </p>
       )}
     </div>
   );

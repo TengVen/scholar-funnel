@@ -6,6 +6,7 @@ import type {
   ChatResponse,
   ConversationHistory,
   ConversationSummary,
+  DeepResearchAttachments,
   SearchSummary,
   TaskStatus,
 } from "@/types/dto";
@@ -27,6 +28,13 @@ export function getChatSearchStatus(taskId: string): Promise<TaskStatus> {
 
 export function finalizeSearchSummary(taskId: string): Promise<SearchSummary> {
   return request(`/api/chat/search/${taskId}/summary`, { method: "POST" });
+}
+
+/** 深度调研完成：生成结果卡（幂等，重复调用返回既有结果） */
+export function finalizeDeepResearch(
+  threadId: string,
+): Promise<{ content: string; attachments: DeepResearchAttachments }> {
+  return request(`/api/chat/deep-research/${threadId}/finalize`, { method: "POST" });
 }
 
 export function listConversations(): Promise<ConversationSummary[]> {

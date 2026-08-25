@@ -41,6 +41,10 @@ class OpenAlexPaper:
 def _make_request(endpoint: str, params: dict | None = None) -> dict:
     """
     统一的 HTTP 请求方法，带重试和速率控制
+
+    - 429：尊重 Retry-After（无则指数退避），最多 3 次
+    - 5xx / 网络错误：指数退避重试
+    - 其他 HTTP 错误：直接抛出（调用方降级）
     """
     if params is None:
         params = {}
@@ -51,25 +55,42 @@ def _make_request(endpoint: str, params: dict | None = None) -> dict:
             with httpx.Client(timeout=30.0) as client:
                 resp = client.get(f"{BASE_URL}{endpoint}", params=params)
                 if resp.status_code == 429:
-                    # 速率限制，等待后重试
-                    wait = 2 ** attempt
-                    logger.warning(f"速率限制，等待 {wait}s 后重试...")
+                    wait = _retry_after_seconds(resp) or 2 ** attempt
+                    logger.warning(f"速率限制，等待 {wait}s 后重试 (第{attempt + 1}次)...")
                     time.sleep(wait)
                     continue
                 resp.raise_for_status()
                 return resp.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"OpenAlex HTTP {e.response.status_code}")
-            if attempt == 2:
-                raise
-            time.sleep(1)
+            code = e.response.status_code
+            if code >= 500 and attempt < 2:
+                wait = 2 ** attempt
+                logger.warning(f"OpenAlex 服务端错误 {code}，{wait}s 后重试 (第{attempt + 1}次)")
+                time.sleep(wait)
+                continue
+            logger.error(f"OpenAlex HTTP {code}")
+            raise
         except httpx.RequestError as e:
-            logger.error(f"OpenAlex 请求失败: {e}")
-            if attempt == 2:
-                raise
-            time.sleep(1)
+            if attempt < 2:
+                wait = 2 ** attempt
+                logger.warning(f"OpenAlex 请求失败: {e}，{wait}s 后重试 (第{attempt + 1}次)")
+                time.sleep(wait)
+                continue
+            logger.error(f"OpenAlex 请求失败（已重试 3 次）: {e}")
+            raise
 
     return {}
+
+
+def _retry_after_seconds(resp: httpx.Response) -> float | None:
+    """解析 Retry-After 头（支持秒数或 HTTP 日期）"""
+    raw = resp.headers.get("retry-after")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None
 
 
 def _parse_work(work: dict) -> OpenAlexPaper:
@@ -200,7 +221,7 @@ def _reconstruct_abstract(inverted_index: dict | None) -> str:
 
 
 def _clean_latex(text: str) -> str:
-    """
+    r"""
     清洗摘要中的 LaTeX 标记，转成可读纯文本。
     覆盖常见模式：\textbf{}、\textit{}、\text{}、\mathbf{}、$...$、\left \right 等。
     """
@@ -225,6 +246,12 @@ def _clean_latex(text: str) -> str:
 #  公开 API 方法
 # ──────────────────────────────────────────
 
+def filter_term(kw: str) -> str:
+    """OpenAlex filter 值规范化：多词短语加引号，避免被当作 AND 拆开"""
+    kw = kw.strip()
+    return f'"{kw}"' if " " in kw else kw
+
+
 def search_works(
     query: str,
     per_page: int = 50,
@@ -232,13 +259,19 @@ def search_works(
     sort_by: str = "relevance_score:desc",  # ← 改默认：按相关度排，不再只看被引
     year_from: int | None = None,
     year_to: int | None = None,
-    strict_mode: bool = False,  # ← 新增：严格模式
+    strict_mode: bool = False,
+    filter_expr: str | None = None,  # ← 分层查询：调用方构造的 OpenAlex filter 表达式
 ) -> list[OpenAlexPaper]:
     """
     按关键词搜索论文
 
-    strict_mode=True 时，强制要求 query 中的核心词必须出现在
-    标题或摘要中（通过 OpenAlex filter 实现），显著降低噪声
+    分层查询策略（推荐，由 lexical.LexicalRetriever 构造 filter_expr 传入）：
+    - 核心概念：多个核心词 AND，每词"标题或摘要"命中
+      （title.search:A|abstract.search:A,title.search:B|abstract.search:B）
+    - 同义词：组内 OR（title.search:s1|abstract.search:s1|title.search:s2|...）
+    - 辅助概念：弱约束（单个 OR filter，任一命中即可，降低漏召回）
+    多路分别召回后由调用方合并去重，最终交给 Embedding + Reranker 语义过滤。
+    避免旧 strict_mode 的"全部核心词强 AND 到标题"导致候选集合过度收缩。
     """
     params: dict[str, Any] = {
         "search": query,
@@ -247,24 +280,20 @@ def search_works(
         "sort": sort_by,
     }
 
-    # ── 严格模式：用 title.search + abstract.search 强制关键词命中 ──
-    if strict_mode:
-        # 提取 query 中的实词（长度>3）作为强制过滤条件
+    # ── filter：优先使用调用方构造的分层 filter_expr ──
+    if filter_expr:
+        params["filter"] = filter_expr
+    elif strict_mode:
+        # 兼容入口（已不被 lexical 使用）：核心词 AND、每词标题或摘要命中。
+        # 修复旧实现"逗号全 AND 到标题/摘要 + 只取首个关键词"导致的召回坍缩。
         import re
         words = [w for w in re.split(r"[\s\-]+", query.lower()) if len(w) > 3]
-        # 取前 3 个最长的词作为强制条件，避免条件太苛刻导致零结果
         keywords = sorted(set(words), key=len, reverse=True)[:3]
         if keywords:
-            filters = []
-            for kw in keywords:
-                # OpenAlex filter 语法：title.search:kw 或 abstract.search:kw
-                # 用 OR 逻辑（|）放宽一点：标题或摘要出现即可
-                filters.append(f"title.search:{kw}")
-                filters.append(f"abstract.search:{kw}")
-            # 多个 filter 用逗号表示 AND，这里我们只取前两个做 AND
-            # 例如 title.search:diffusion,abstract.search:power
-            if len(filters) >= 2:
-                params["filter"] = f"{filters[0]},{filters[1]}"
+            params["filter"] = ",".join(
+                f"title.search:{filter_term(kw)}|abstract.search:{filter_term(kw)}"
+                for kw in keywords
+            )
 
     # 年份过滤
     if year_from or year_to:

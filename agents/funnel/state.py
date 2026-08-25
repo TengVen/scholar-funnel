@@ -105,6 +105,7 @@ class FunnelState(TypedDict, total=False):
     stage_status: StageStatus                       # 当前阶段的状态
     error: Optional[str]                            # 错误信息
     progress: dict                                  # 实时进度详情
+    interrupted: Optional[bool]                     # 是否暂停等待用户确认（step 模式）
 
 
 # ── 阶段名称常量 ──

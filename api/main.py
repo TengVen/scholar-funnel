@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from storage.mysql_db import init_db
+from utils.ratelimit import RateLimitMiddleware
+from utils.request_log import RequestLogMiddleware
 from api.routers import (
     auth, projects, papers, search, cart, branch, network, chat, funnel, settings,
     admin, announcements,
@@ -37,6 +39,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 请求追踪（X-Request-Id + 耗时日志）
+app.add_middleware(RequestLogMiddleware)
+
+# 限流（登录 10/min、检索/分析 6/min、默认 120/min，按 IP 滑动窗口）
+app.add_middleware(RateLimitMiddleware)
 
 # 注册路由
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

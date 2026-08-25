@@ -307,17 +307,20 @@ def _rec_to_paper_dict(rec: dict) -> dict:
 def route_after_intent(state: FunnelState) -> str:
     """
     意图解析后的路由：
-    - 信息不足 → 中断，让用户补充信息
-    - 信息充足 → 进入主干检索
+    - step 模式且信息不足 → 中断，让用户补充信息
+    - 否则（信息充足 / auto 模式）→ 进入主干检索（auto 模式全自动，不中断）
     """
     progress = state.get("progress", {})
     intent_info = progress.get("intent", {})
 
-    if not intent_info.get("all_complete", True):
+    if (
+        state.get("mode") == "step"
+        and not intent_info.get("all_complete", True)
+    ):
         # 信息不足，中断等待用户补充
         return "interrupt"
 
-    # 信息充足，进入主干检索
+    # 信息充足（或 auto 模式），进入主干检索
     return "trunk"
 
 
@@ -438,6 +441,7 @@ def run_funnel(
     paper_type: str = "all",
     year_from: Optional[int] = None,
     year_to: Optional[int] = None,
+    thread_id: Optional[str] = None,
 ) -> dict:
     """
     启动漏斗编排。
@@ -457,6 +461,7 @@ def run_funnel(
         paper_type: 论文类型（可选：all/survey/original）
         year_from: 起始年份（可选）
         year_to: 结束年份（可选）
+        thread_id: 外部指定的线程 ID（异步启动时由调用方生成；缺省自动生成）
 
     Returns:
         {
@@ -468,8 +473,9 @@ def run_funnel(
     """
     graph = _get_graph()
 
-    # 生成唯一的 thread_id
-    thread_id = f"funnel-{project_id}-{uuid.uuid4().hex[:8]}"
+    # 生成唯一的 thread_id（支持外部传入，用于异步启动先返回 thread_id）
+    if not thread_id:
+        thread_id = f"funnel-{project_id}-{uuid.uuid4().hex[:8]}"
 
     # 创建初始状态
     # user_input 作为初始的 user_query 传入，intent_node 会解析并更新
@@ -496,17 +502,31 @@ def run_funnel(
     for event in graph.stream(initial_state, config, stream_mode="values"):
         final_state = event
 
-    # 检查是否被中断
-    snapshot = graph.get_state(config)
-    interrupted = snapshot.next != ()
-
     result_state = dict(final_state) if final_state else dict(initial_state)
+
+    # step 模式：条件边把"暂停"路由到 END（非 LangGraph interrupt()），
+    # 通过 state 显式记录 interrupted，供 get_funnel_state / resume 判断
+    interrupted = mode == "step" and result_state.get("current_stage") != STAGE_DONE
+    result_state["interrupted"] = interrupted
+
+    # 持久化到 checkpoint（供 get_funnel_state / resume 读取）
+    graph.update_state(config, result_state)
 
     return {
         "thread_id": thread_id,
         "state": result_state,
         "interrupted": interrupted,
         "current_stage": result_state.get("current_stage", "intent"),
+    }
+
+
+def _funnel_result(thread_id: str, state: dict, interrupted: bool) -> dict:
+    """统一返回漏斗执行结果"""
+    return {
+        "thread_id": thread_id,
+        "state": state,
+        "interrupted": interrupted,
+        "current_stage": state.get("current_stage", STAGE_DONE),
     }
 
 
@@ -522,12 +542,8 @@ def resume_funnel(
     2. 骨架确认中断：user_input 传 {"skeleton_confirmed": [...], "skeleton_skipped": [...]}
     3. 探针选择中断：user_input 传 {"selected_probe": "..."}
 
-    Args:
-        thread_id: 从 run_funnel 返回的 thread_id
-        user_input: 用户的确认/调整输入
-
-    Returns:
-        同 run_funnel
+    注意：本图的中断采用"条件边路由到 END + 状态标记"实现（非 LangGraph interrupt()），
+    因此恢复时手动续跑"下一个"节点（step 模式每阶段暂停一次），避免从 END 续跑空转。
     """
     graph = _get_graph()
     config = {"configurable": {"thread_id": thread_id}}
@@ -537,59 +553,76 @@ def resume_funnel(
     if not snapshot or not snapshot.values:
         return {"error": "thread not found", "thread_id": thread_id}
 
-    current_state = dict(snapshot.values)
-    current_stage = current_state.get("current_stage", "")
+    state = dict(snapshot.values)
+    current_stage = state.get("current_stage", "")
 
-    # 根据当前中断阶段，处理用户输入
+    # ── 应用用户输入到状态 ──
     if user_input:
         # 意图解析中断：用户补充了信息
-        if current_stage == "intent" and "user_input" in user_input:
-            # 将用户补充的信息追加到 user_query
-            original = current_state.get("user_query", "")
+        if current_stage == "intent" and user_input.get("user_input"):
+            original = state.get("user_query", "")
             supplement = user_input["user_input"]
-            current_state["user_query"] = f"{original} {supplement}".strip()
+            state["user_query"] = f"{original} {supplement}".strip()
 
         # 骨架确认中断
         if "skeleton_confirmed" in user_input:
-            current_state["skeleton_confirmed"] = user_input["skeleton_confirmed"]
+            state["skeleton_confirmed"] = user_input["skeleton_confirmed"]
         if "skeleton_skipped" in user_input:
-            current_state["skeleton_skipped"] = user_input["skeleton_skipped"]
+            state["skeleton_skipped"] = user_input["skeleton_skipped"]
 
         # 探针选择中断
-        if "selected_probe" in user_input:
-            current_state["selected_probe"] = user_input["selected_probe"]
+        if user_input.get("selected_probe"):
+            state["selected_probe"] = user_input["selected_probe"]
 
         # 更新推荐中的用户决策
-        if "skeleton_confirmed" in user_input:
-            confirmed_set = set(user_input["skeleton_confirmed"])
-            for rec in current_state.get("skeleton_recommendations", []):
-                if rec["paper_id"] in confirmed_set:
-                    rec["user_decision"] = "accept"
-                else:
-                    rec["user_decision"] = "skip"
+        if "skeleton_confirmed" in user_input or "skeleton_skipped" in user_input:
+            confirmed_set = set(user_input.get("skeleton_confirmed") or [])
+            for rec in state.get("skeleton_recommendations", []):
+                rec["user_decision"] = "accept" if rec["paper_id"] in confirmed_set else "skip"
 
     logger.info(f"[漏斗] 恢复: thread={thread_id} | stage={current_stage}")
 
-    # 更新状态并恢复执行
-    graph.update_state(config, current_state)
+    # ── 手动续跑：每次只执行"下一个"节点 ──
+    if current_stage == "intent":
+        # 意图解析（可能再次信息不足）
+        state.update(intent_node(state))
+        intent_done = state.get("progress", {}).get("intent", {}).get("all_complete", True)
+        if not intent_done:
+            state["interrupted"] = True
+            graph.update_state(config, state)
+            return _funnel_result(thread_id, state, True)
+        # 意图补全 → 继续主干检索
+        state.update(trunk_node(state))
+        state["interrupted"] = True
+        graph.update_state(config, state)
+        return _funnel_result(thread_id, state, True)
 
-    # 继续执行
-    final_state = None
-    for event in graph.stream(None, config, stream_mode="values"):
-        final_state = event
+    if current_stage == "skeleton":
+        # 主干完成，用户确认后 → 骨架收敛
+        state.update(skeleton_node(state))
+        state["interrupted"] = True
+        graph.update_state(config, state)
+        return _funnel_result(thread_id, state, True)
 
-    # 检查是否再次被中断
-    snapshot = graph.get_state(config)
-    interrupted = snapshot.next != ()
+    if current_stage == "probe":
+        # 骨架确认后 → 探针推导
+        state.update(probe_node(state))
+        interrupted = state.get("stage_status") == "waiting_confirm"
+        state["interrupted"] = interrupted
+        graph.update_state(config, state)
+        return _funnel_result(thread_id, state, interrupted)
 
-    result_state = dict(final_state) if final_state else current_state
+    # done：探针已推导完成；若用户携带探针选择则标记收尾
+    if current_stage == STAGE_DONE:
+        if user_input and user_input.get("selected_probe"):
+            state["stage_status"] = "done"
+            state["interrupted"] = False
+            graph.update_state(config, state)
+            return _funnel_result(thread_id, state, False)
+        return _funnel_result(thread_id, state, bool(state.get("interrupted")))
 
-    return {
-        "thread_id": thread_id,
-        "state": result_state,
-        "interrupted": interrupted,
-        "current_stage": result_state.get("current_stage", STAGE_DONE),
-    }
+    # 未知阶段：原样返回
+    return _funnel_result(thread_id, state, bool(state.get("interrupted")))
 
 
 def get_funnel_state(thread_id: str) -> dict:
@@ -609,7 +642,8 @@ def get_funnel_state(thread_id: str) -> dict:
     return {
         "thread_id": thread_id,
         "state": state,
-        "interrupted": snapshot.next != (),
+        "interrupted": bool(state.get("interrupted", False))
+        or state.get("stage_status") == "waiting_confirm",
         "current_stage": state.get("current_stage", ""),
         "stage_status": state.get("stage_status", ""),
         "progress": state.get("progress", {}),

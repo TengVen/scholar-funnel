@@ -1,7 +1,9 @@
 """
-检索执行 API —— 主干检索 + 缺口补充检索
+检索执行 API —— 主干检索（异步 task + 轮询） + 缺口补充检索
 """
-from fastapi import APIRouter, Depends, HTTPException
+import uuid
+import threading
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.schemas import (
     SearchRequest, SearchResponse,
@@ -21,37 +23,73 @@ def _check(project_id: int, user: User):
         get_owned_project(session, project_id, user)
 
 
+# 主干检索异步任务（内存存储；重启丢失，单机可接受）
+_trunk_tasks: dict[str, dict] = {}
 
 
+def _run_trunk_task(task_id: str, params: dict, user_id: int):
+    """后台执行主干检索（30-120s），完成后写入 task 结果"""
+    task = _trunk_tasks[task_id]
+    try:
+        engine = TrunkSearchEngine()
+        result = engine.search(**params)
+        task["result"] = result
+        task["status"] = "done"
+    except Exception as e:
+        task["status"] = "error"
+        task["error"] = str(e)
 
-@router.post("/trunk", response_model=SearchResponse)
+
+@router.post("/trunk")
 def run_trunk_search(body: SearchRequest, user: User = Depends(get_current_user)):
     _check(body.project_id, user)
     """
-    执行主干检索。
+    启动主干检索（异步）。
 
     这是一个耗时操作（通常 30-120s），包含：
     1. LLM 意图拆解
     2. OpenAlex 文献召回
     3. BGE Reranker 重排
     4. 评分 + 入库
+
+    返回 task_id，前端轮询 /trunk/status → /trunk/result。
     """
-    try:
-        engine = TrunkSearchEngine()
-        result = engine.search(
-            project_id=body.project_id,
-            user_query=body.user_query,
-            tech_probe=body.tech_probe,
-            per_query=body.per_query,
-            year_from=body.year_from,
-            year_to=body.year_to,
-            score_threshold=body.score_threshold,
-            top_k=body.top_k,
-            max_queries=body.max_queries,
-        )
-        return SearchResponse(**result)
-    except Exception as e:
-        raise HTTPException(500, f"检索失败: {str(e)}")
+    task_id = uuid.uuid4().hex[:12]
+    _trunk_tasks[task_id] = {
+        "status": "running", "result": None, "error": None, "user_id": user.id,
+    }
+    threading.Thread(
+        target=_run_trunk_task,
+        args=(task_id, body.model_dump(), user.id),
+        daemon=True,
+    ).start()
+    return {"task_id": task_id, "status": "started"}
+
+
+@router.get("/trunk/status")
+def get_trunk_status(task_id: str = Query(...), user: User = Depends(get_current_user)):
+    """查询主干检索任务状态（轮询用）"""
+    task = _trunk_tasks.get(task_id)
+    if not task:
+        raise HTTPException(404, "task not found")
+    if task.get("user_id") is not None and task["user_id"] != user.id:
+        raise HTTPException(403, "无权访问该任务")
+    return {"status": task["status"], "error": task["error"]}
+
+
+@router.get("/trunk/result", response_model=SearchResponse)
+def get_trunk_result(task_id: str = Query(...), user: User = Depends(get_current_user)):
+    """获取主干检索结果（完成后调用）"""
+    task = _trunk_tasks.get(task_id)
+    if not task:
+        raise HTTPException(404, "task not found")
+    if task.get("user_id") is not None and task["user_id"] != user.id:
+        raise HTTPException(403, "无权访问该任务")
+    if task["status"] == "running":
+        raise HTTPException(202, "still running")
+    if task["status"] == "error":
+        raise HTTPException(500, task["error"])
+    return SearchResponse(**task["result"])
 
 
 @router.post("/gap", response_model=GapSearchResponse)

@@ -2,14 +2,31 @@
 LLM 统一调用接口 —— provider 与 base_url / model 已绑定
 
 支持运行时动态配置：configure() 可在不改 .env 的情况下替换 api_key / base_url / model
+统一错误处理：timeout + 指数退避重试（限流/超时/5xx）+ 归一化为 LLMError
 """
+import time
+
 from openai import OpenAI
+from openai import APIError, APITimeoutError, RateLimitError
+
 from utils.config import settings
+from utils.log import setup_logger
+
+logger = setup_logger("llm")
 
 _client: OpenAI | None = None
 
 # 运行时配置（优先级高于 settings/.env，由 configure() 写入）
 _runtime: dict = {}
+
+# ── 重试参数 ──
+_MAX_RETRIES = 3        # 总尝试次数
+_BASE_DELAY = 1.0       # 退避基数（1s, 2s, 4s）
+_TIMEOUT = 60.0         # 单次请求超时
+
+
+class LLMError(Exception):
+    """统一 LLM 调用错误（对外可读的异常类型）"""
 
 
 def _get_client() -> OpenAI:
@@ -18,6 +35,8 @@ def _get_client() -> OpenAI:
         _client = OpenAI(
             api_key=_runtime.get("api_key") or settings.llm_api_key,
             base_url=_runtime.get("base_url") or settings.llm_base_url,
+            timeout=_TIMEOUT,
+            max_retries=1,  # SDK 自身重试收敛，由 _call_with_retry 统一控制
         )
     return _client
 
@@ -45,6 +64,36 @@ def _resolve_model(model: str | None) -> str:
     return _runtime.get("model") or settings.llm_default_model
 
 
+def _call_with_retry(fn, what: str):
+    """统一重试：RateLimit / Timeout / 5xx 指数退避，其余错误直接归一化抛出"""
+    last_err: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return fn()
+        except RateLimitError as e:
+            last_err = e
+            wait = _BASE_DELAY * (2 ** attempt)
+            logger.warning(f"LLM 限流({what})，{wait:.0f}s 后重试 (第{attempt + 1}次): {e}")
+            time.sleep(wait)
+        except APITimeoutError as e:
+            last_err = e
+            wait = _BASE_DELAY * (2 ** attempt)
+            logger.warning(f"LLM 超时({what})，{wait:.0f}s 后重试 (第{attempt + 1}次): {e}")
+            time.sleep(wait)
+        except APIError as e:
+            last_err = e
+            if attempt < _MAX_RETRIES - 1:
+                wait = _BASE_DELAY * (2 ** attempt)
+                logger.warning(f"LLM API 错误({what})，{wait:.0f}s 后重试 (第{attempt + 1}次): {e}")
+                time.sleep(wait)
+            else:
+                raise LLMError(f"LLM 调用失败({what}): {e}") from e
+        except Exception as e:  # 非 API 类异常（如本地配置错误）不重试
+            raise LLMError(f"LLM 调用失败({what}): {e}") from e
+
+    raise LLMError(f"LLM 调用失败({what}，重试 {_MAX_RETRIES} 次仍失败): {last_err}")
+
+
 def chat(
     prompt: str,
     system: str = "你是一个专业的学术研究助手。",
@@ -55,14 +104,17 @@ def chat(
     client = _get_client()
     model = _resolve_model(model)
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=temperature,
-        max_tokens=max_tokens,
+    response = _call_with_retry(
+        lambda: client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        ),
+        what="chat",
     )
     return response.choices[0].message.content.strip()
 
@@ -77,15 +129,18 @@ def chat_json(
     client = _get_client()
     model = _resolve_model(model)
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=temperature,
-        max_tokens=max_tokens,
-        response_format={"type": "json_object"},
+    response = _call_with_retry(
+        lambda: client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+        ),
+        what="chat_json",
     )
     return response.choices[0].message.content.strip()
 
@@ -129,7 +184,10 @@ def chat_with_tools(
     if tools:
         kwargs["tools"] = tools
 
-    response = client.chat.completions.create(**kwargs)
+    response = _call_with_retry(
+        lambda: client.chat.completions.create(**kwargs),
+        what="chat_with_tools",
+    )
     message = response.choices[0].message
 
     tool_calls = None

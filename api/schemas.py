@@ -274,3 +274,4 @@ class ChatResponse(BaseModel):
     params: dict = {}
     search_result: dict | None = None
     task_id: str | None = None      # full_search 异步任务（前端轮询用）
+    task_type: str | None = None    # "full_search" / "deep_research"（前端按类型选轮询路径）

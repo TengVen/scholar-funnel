@@ -78,6 +78,7 @@ def start_network_analyze(body: NetworkAnalyzeRequest, user: User = Depends(get_
     _tasks[task_id] = {
         "status": "running", "step": "init", "detail": "",
         "result": None, "error": None,
+        "project_id": body.project_id, "user_id": user.id,  # 归属校验用
     }
     threading.Thread(
         target=_run_task, args=(task_id, body.project_id, body.category), daemon=True,
@@ -85,11 +86,18 @@ def start_network_analyze(body: NetworkAnalyzeRequest, user: User = Depends(get_
     return {"task_id": task_id}
 
 
+def _assert_task_owner(task: dict, user: User):
+    """校验 task 归属：仅创建者本人可查询/取结果"""
+    if task.get("user_id") is not None and task["user_id"] != user.id:
+        raise HTTPException(403, "无权访问该任务")
+
+
 @router.get("/status")
-def get_network_status(task_id: str = Query(...)):
+def get_network_status(task_id: str = Query(...), user: User = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(404, "task not found")
+    _assert_task_owner(task, user)
     return {
         "status": task["status"], "step": task["step"],
         "detail": task["detail"], "error": task["error"],
@@ -97,10 +105,11 @@ def get_network_status(task_id: str = Query(...)):
 
 
 @router.get("/result", response_model=NetworkResultResponse)
-def get_network_result(task_id: str = Query(...)):
+def get_network_result(task_id: str = Query(...), user: User = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(404, "task not found")
+    _assert_task_owner(task, user)
     if task["status"] == "running":
         raise HTTPException(202, "still running")
     if task["status"] == "error":

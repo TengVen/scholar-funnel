@@ -298,11 +298,44 @@ export interface NetworkResultResponse {
 
 // ── Chat（对话）──
 
+export interface DeepResearchCandidate {
+  paper_id: number;
+  title: string;
+  year: number;
+  suggested_category: Category;
+  confidence: string;
+  reason: string;
+}
+
+export interface DeepResearchProbe {
+  probe: string;
+  description: string;
+  coverage_ratio: number;
+}
+
+/** 深度调研消息卡附件（持久化在 ai_messages.attachments） */
+export interface DeepResearchAttachments {
+  type: "deep_research" | "deep_research_result";
+  thread_id: string;
+  project_id: number;
+  status?: "running" | "ended";
+  stats?: {
+    total_found: number;
+    saved: number;
+    survey: number;
+    candidates: number;
+    probes: number;
+  };
+  candidates?: DeepResearchCandidate[];
+  probes?: DeepResearchProbe[];
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   project_id?: number;
   project_name?: string;
+  attachments?: DeepResearchAttachments | null;
 }
 
 export interface ChatResponse {
@@ -312,6 +345,7 @@ export interface ChatResponse {
   params: Record<string, unknown>;
   search_result?: Record<string, unknown> | null;
   task_id?: string | null;
+  task_type?: "full_search" | "deep_research" | null;
 }
 
 export interface SearchSummary {
@@ -349,4 +383,99 @@ export interface Announcement {
   title: string;
   content: string;
   created_at: string;
+}
+
+// ── Funnel（漏斗多智能体工作流） ──
+
+export interface SkeletonRecommendation {
+  paper_id: number;
+  title: string;
+  year: number;
+  cited_by_count: number;
+  venue: string;
+  abstract: string;
+  suggested_category: Category;
+  confidence: Confidence;
+  reason: string;
+  user_decision?: "accept" | "skip" | "reassign" | null;
+  user_category?: string | null;
+}
+
+export interface ProbeDerivation {
+  probe: string;
+  description: string;
+  coverage: number;
+  coverage_ratio: number;
+  sample_papers: string[];
+}
+
+export interface FunnelProgress {
+  intent?: {
+    status: string;
+    original_input?: string;
+    parsed_query?: string;
+    parsed_probe?: string;
+    methodology?: string;
+    paper_type?: string;
+    year_from?: number | null;
+    year_to?: number | null;
+    confidence?: string;
+    reasoning?: string;
+    all_complete?: boolean;
+    next_question?: string;
+  };
+  trunk?: {
+    status: string;
+    total_found?: number;
+    after_rerank?: number;
+    new_saved?: number;
+    survey_count?: number;
+  };
+  skeleton?: {
+    status: string;
+    recommended?: number;
+    by_category?: Partial<Record<Category, number>>;
+  };
+  probe?: {
+    status: string;
+    probes_count?: number;
+    top_probe?: string;
+  };
+}
+
+export interface FunnelState {
+  project_id: number;
+  user_query: string;
+  tech_probe: string;
+  mode: "auto" | "step";
+  current_stage: string;
+  stage_status: string;
+  error?: string | null;
+  interrupted?: boolean;
+  progress?: FunnelProgress;
+  trunk_survey_count?: number;
+  skeleton_recommendations?: SkeletonRecommendation[];
+  skeleton_confirmed?: number[];
+  skeleton_skipped?: number[];
+  derived_probes?: ProbeDerivation[];
+  selected_probe?: string;
+}
+
+export interface FunnelStartResponse {
+  thread_id: string;
+  status: string;
+}
+
+export interface FunnelResumeResponse {
+  thread_id: string;
+  status: string;
+}
+
+export interface FunnelStateResponse {
+  thread_id: string;
+  current_stage: string;
+  stage_status: string;
+  interrupted: boolean;
+  progress: FunnelProgress;
+  state: FunnelState;
 }

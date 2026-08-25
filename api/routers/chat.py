@@ -59,13 +59,15 @@ def _conv_messages(session, conv: Conversation, limit: int = 30) -> list[dict]:
             "content": m.content or "",
             "project_id": m.project_id,   # 检索完成消息关联项目（前端"查看项目"按钮）
             "project_name": m.project_name if hasattr(m, "project_name") else None,
+            "attachments": m.attachments,  # 结构化消息卡（深度调研等）
         }
         for m in rows[-limit:]
     ]
 
 
 def _append_message(session, conv: Conversation, user_id: int, role: str, content: str,
-                    project_id: int | None = None, project_name: str | None = None):
+                    project_id: int | None = None, project_name: str | None = None,
+                    attachments: dict | None = None):
     session.add(Message(
         uuid=secrets.token_hex(16),
         conversation_id=conv.id,
@@ -73,6 +75,7 @@ def _append_message(session, conv: Conversation, user_id: int, role: str, conten
         role=role,
         content=content,
         project_id=project_id,
+        attachments=attachments,
     ))
     conv.message_count = (conv.message_count or 0) + 1
     conv.last_message_at = datetime.utcnow()
@@ -120,17 +123,25 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
         reply=agent_result["reply"],
         stage="chat",
         task_id=agent_result.get("task_id"),
+        task_type=agent_result.get("tool_name"),
         params=conv.params or {},
     )
 
 
 # ── 异步检索：状态 / 结果 / 总结 ──
 
+def _assert_task_owner(task: dict, user: User):
+    """校验 task 归属：仅创建者本人可查询/取结果"""
+    if task.get("user_id") is not None and task["user_id"] != user.id:
+        raise HTTPException(403, "无权访问该任务")
+
+
 @router.get("/search/status")
 def get_search_status(task_id: str, user: User = Depends(get_current_user)):
     task = chat_agent.get_search_task(task_id)
     if not task:
         raise HTTPException(404, "task not found")
+    _assert_task_owner(task, user)
     return {"status": task["status"], "detail": task["detail"], "error": task["error"]}
 
 
@@ -143,6 +154,7 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
     task = chat_agent.get_search_task(task_id)
     if not task:
         raise HTTPException(404, "task not found")
+    _assert_task_owner(task, user)
     if task["status"] == "running":
         raise HTTPException(202, "still running")
     if task["status"] == "error":
@@ -158,11 +170,14 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
     # LLM 生成文字总结（基于统计，不塞论文列表）
     summary = _generate_summary(search, project_name)
 
-    # 存会话消息（role=assistant，带项目链接信息）
+    # 存会话消息（role=assistant，带项目链接信息）——按 user 过滤，防跨用户越权
     with get_session() as session:
         conv = (
             session.query(Conversation)
-            .filter(Conversation.project_id == project_id)
+            .filter(
+                Conversation.project_id == project_id,
+                Conversation.user_id == user.id,
+            )
             .first()
         )
         if conv:
@@ -178,6 +193,114 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
     task["summarized"] = True
     task["summary_payload"] = payload
     return payload
+
+
+# ── 深度调研（deep_research）结果卡 ──
+
+def _thread_project_id(thread_id: str) -> int | None:
+    """从 funnel thread_id 提取 project_id（格式: funnel-{project_id}-{hex}）"""
+    parts = thread_id.split("-")
+    if len(parts) >= 2 and parts[0] == "funnel" and parts[1].isdigit():
+        return int(parts[1])
+    return None
+
+
+@router.post("/deep-research/{thread_id}/finalize")
+def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user)):
+    """
+    深度调研完成后：把漏斗结果（骨架候选 + 探针 + 统计）写为一条结果卡消息（attachments），
+    并返回给前端渲染。幂等：同一 thread 已生成过结果卡则直接返回既有结果。
+    """
+    from agents.funnel.graph import get_funnel_state
+
+    # 归属校验：thread_id 内嵌 project_id，必须属于当前用户
+    pid = _thread_project_id(thread_id)
+    if pid is None:
+        raise HTTPException(400, "无效的 thread_id")
+    with get_session() as session:
+        get_owned_project(session, pid, user)
+
+    res = get_funnel_state(thread_id)
+    if "error" in res:
+        raise HTTPException(404, res["error"])
+    state = res.get("state") or {}
+    if state.get("stage_status") == "error":
+        raise HTTPException(500, state.get("error") or "深度调研执行失败")
+    if res.get("interrupted") or state.get("current_stage") != "done" \
+            or state.get("stage_status") != "done":
+        raise HTTPException(202, "任务进行中")
+
+    project_id = state.get("project_id") or pid
+    progress = state.get("progress", {})
+    trunk = progress.get("trunk", {}) or {}
+    recs = state.get("skeleton_recommendations") or []
+    probes = state.get("derived_probes") or []
+
+    payload = {
+        "type": "deep_research_result",
+        "thread_id": thread_id,
+        "project_id": project_id,
+        "stats": {
+            "total_found": trunk.get("total_found", 0),
+            "saved": trunk.get("new_saved", 0),
+            "survey": trunk.get("survey_count", 0),
+            "candidates": len(recs),
+            "probes": len(probes),
+        },
+        "candidates": [
+            {
+                "paper_id": r.get("paper_id"),
+                "title": r.get("title", ""),
+                "year": r.get("year", 0),
+                "suggested_category": r.get("suggested_category", "mainstream"),
+                "confidence": r.get("confidence", "medium"),
+                "reason": r.get("reason", ""),
+            }
+            for r in recs[:12]
+        ],
+        "probes": [
+            {
+                "probe": p.get("probe", ""),
+                "description": p.get("description", ""),
+                "coverage_ratio": p.get("coverage_ratio", 0),
+            }
+            for p in probes[:5]
+        ],
+    }
+    content = (
+        f"深度调研完成：主干召回 {payload['stats']['total_found']} 篇、新入库 {payload['stats']['saved']} 篇；"
+        f"AI 推荐骨架候选 {payload['stats']['candidates']} 篇、推导探针 {payload['stats']['probes']} 个。"
+        "骨架候选未自动入库，可到骨架页按需加入。"
+    )
+
+    with get_session() as session:
+        conv = (
+            session.query(Conversation)
+            .filter(Conversation.project_id == project_id, Conversation.user_id == user.id)
+            .first()
+        )
+        if conv:
+            # 幂等：该 thread 已生成过结果卡 → 直接返回既有，避免重复落库
+            for m in (
+                session.query(Message)
+                .filter(Message.conversation_id == conv.id)
+                .order_by(Message.id.asc())
+                .all()
+            ):
+                att = m.attachments
+                if isinstance(att, dict) and att.get("type") == "deep_research_result" \
+                        and att.get("thread_id") == thread_id:
+                    return {"content": m.content or content, "attachments": att}
+            pname = ""
+            proj = session.get(Project, project_id)
+            if proj:
+                pname = proj.name
+            _append_message(
+                session, conv, user.id, "assistant", content,
+                project_id=project_id, project_name=pname, attachments=payload,
+            )
+
+    return {"content": content, "attachments": payload}
 
 
 def _generate_summary(search: dict, project_name: str) -> str:

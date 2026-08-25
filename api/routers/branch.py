@@ -73,6 +73,7 @@ def start_branch_analyze(body: BranchAnalyzeRequest, user: User = Depends(get_cu
     _tasks[task_id] = {
         "status": "running", "current": 0, "total": 0,
         "detail": "", "result": None, "error": None,
+        "project_id": body.project_id, "user_id": user.id,  # 归属校验用
     }
     threading.Thread(
         target=_run_task,
@@ -82,11 +83,18 @@ def start_branch_analyze(body: BranchAnalyzeRequest, user: User = Depends(get_cu
     return {"task_id": task_id}
 
 
+def _assert_task_owner(task: dict, user: User):
+    """校验 task 归属：仅创建者本人可查询/取结果"""
+    if task.get("user_id") is not None and task["user_id"] != user.id:
+        raise HTTPException(403, "无权访问该任务")
+
+
 @router.get("/status")
-def get_branch_status(task_id: str = Query(...)):
+def get_branch_status(task_id: str = Query(...), user: User = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(404, "task not found")
+    _assert_task_owner(task, user)
     return {
         "status": task["status"], "current": task["current"],
         "total": task["total"], "detail": task["detail"],
@@ -95,10 +103,11 @@ def get_branch_status(task_id: str = Query(...)):
 
 
 @router.get("/result", response_model=BranchAnalyzeResponse)
-def get_branch_result(task_id: str = Query(...)):
+def get_branch_result(task_id: str = Query(...), user: User = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(404, "task not found")
+    _assert_task_owner(task, user)
     if task["status"] == "running":
         raise HTTPException(202, "still running")
     if task["status"] == "error":

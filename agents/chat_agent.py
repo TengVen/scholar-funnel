@@ -83,7 +83,34 @@ TOOL_SKELETON_STATUS = {
     },
 }
 
-TOOLS = [TOOL_FULL_SEARCH, TOOL_LOCAL_SEARCH, TOOL_GAP_SEARCH, TOOL_SKELETON_STATUS]
+TOOL_DEEP_RESEARCH = {
+    "type": "function",
+    "function": {
+        "name": "deep_research",
+        "description": (
+            "执行一次深度调研（多智能体工作流）：意图解析 → 主干检索 → AI 推荐骨架论文（候选，不入库）→ 推导技术探针。"
+            "与 full_search 的区别：full_search 只做单次检索入库；deep_research 会额外给出骨架候选与探针，适合用户说"
+            "'调研/梳理/了解/综述一下某个方向'、'这个方向该读什么'、'帮我建立一个完整的研究脉络' 等系统性诉求。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "user_query": {"type": "string", "description": "研究方向描述（必填）"},
+                "tech_probe": {"type": "string", "description": "技术探针关键词，如 Transformer"},
+                "year_from": {"type": "integer", "description": "起始年份"},
+                "year_to": {"type": "integer", "description": "结束年份"},
+                "paper_type": {"type": "string", "enum": ["all", "survey", "original"], "description": "论文类型"},
+                "methodology": {"type": "string", "description": "方法论偏好"},
+            },
+            "required": ["user_query"],
+        },
+    },
+}
+
+TOOLS = [
+    TOOL_FULL_SEARCH, TOOL_LOCAL_SEARCH, TOOL_GAP_SEARCH, TOOL_SKELETON_STATUS,
+    TOOL_DEEP_RESEARCH,
+]
 
 # Agent 循环最大轮数（防死循环）
 MAX_AGENT_ROUNDS = 4
@@ -152,7 +179,9 @@ def start_full_search(conv_id: str, params: dict, user_id: int) -> dict:
     """启动后台全量检索，返回 task_id"""
     task_id = uuid.uuid4().hex[:12]
     _search_tasks[task_id] = {
-        "status": "running", "detail": "", "result": None, "error": None}
+        "status": "running", "detail": "", "result": None, "error": None,
+        "user_id": user_id,  # 归属校验用
+    }
     threading.Thread(
         target=_run_full_search,
         args=(task_id, conv_id, params, user_id),
@@ -241,9 +270,102 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
                 "message": f"当前骨架：{json.dumps(summary, ensure_ascii=False)}",
             }
 
+        if name == "deep_research":
+            result = start_deep_research(conv, user, args)
+            return {
+                "status": result["status"],
+                "thread_id": result.get("thread_id", ""),
+                "project_id": result.get("project_id"),
+                "message": "深度调研已启动（意图解析→主干检索→骨架候选→探针推导，预计 2-5 分钟）。完成结果会以卡片形式展示在这里。",
+            }
+
         return {"status": "error", "message": f"未知工具: {name}"}
     except Exception as e:
         return {"status": "error", "message": f"工具执行失败: {str(e)}"}
+
+
+# ── 深度调研（deep_research 异步） ──
+
+def start_deep_research(conv: Conversation, user: User, params: dict) -> dict:
+    """
+    启动后台深度调研（复用 agents/funnel 的 LangGraph 工作流，auto 模式）。
+
+    - 创建新项目并关联会话（与 full_search 一致）
+    - 预生成 funnel thread_id，后台线程执行
+    - 写入一条"已启动"消息卡（attachments 持久化 thread_id，切页/多轮后可恢复）
+    """
+    from agents.funnel.graph import run_funnel
+    from storage.models import Message, Project
+
+    thread_id = f"funnel-{uuid.uuid4().hex[:8]}"
+    user_query = params.get("user_query", "")
+
+    def bg():
+        try:
+            with get_session() as session:
+                p = Project(
+                    name=user_query[:80],
+                    user_query=user_query,
+                    tech_probe=params.get("tech_probe", ""),
+                    user_id=user.id,
+                )
+                session.add(p)
+                session.flush()
+                project_id = p.id
+                # 会话关联 + 写启动卡
+                conv_row = (
+                    session.query(Conversation)
+                    .filter(Conversation.uuid == conv.uuid, Conversation.user_id == user.id)
+                    .first()
+                )
+                if conv_row:
+                    ids = list(conv_row.project_ids or [])
+                    if project_id not in ids:
+                        ids.append(project_id)
+                    conv_row.project_ids = ids
+                    conv_row.project_id = project_id
+                    conv_row.title = user_query[:30]
+                session.add(Message(
+                    uuid=uuid.uuid4().hex[:16] + uuid.uuid4().hex[:16],
+                    conversation_id=conv_row.id if conv_row else 0,
+                    user_id=user.id,
+                    role="assistant",
+                    content="深度调研已启动：意图解析 → 主干检索 → 骨架候选 → 探针推导（预计 2-5 分钟，完成后在本消息下方展示结果）",
+                    project_id=project_id,
+                    attachments={
+                        "type": "deep_research",
+                        "thread_id": thread_id,
+                        "project_id": project_id,
+                        "status": "running",
+                    },
+                ))
+                session.commit()
+                task_project_id = project_id
+            # 后台执行漏斗（auto 模式，全自动不中断）
+            run_funnel(
+                project_id=task_project_id,
+                user_input=user_query,
+                tech_probe=params.get("tech_probe", ""),
+                mode="auto",
+                methodology=params.get("methodology", "general"),
+                paper_type=params.get("paper_type", "all"),
+                year_from=params.get("year_from"),
+                year_to=params.get("year_to"),
+                thread_id=thread_id,
+            )
+        except Exception as e:
+            # 把错误写入 funnel 状态，供 finalize 读取展示
+            try:
+                from agents.funnel.graph import _get_graph
+                _get_graph().update_state(
+                    {"configurable": {"thread_id": thread_id}},
+                    {"error": str(e), "stage_status": "error", "interrupted": False},
+                )
+            except Exception:
+                pass
+
+    threading.Thread(target=bg, daemon=True).start()
+    return {"status": "started", "thread_id": thread_id}
 
 
 # ── Agent 主循环 ──
@@ -266,6 +388,7 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
 
     loop_messages = list(messages)
     task_id = None
+    tool_name = None
     tool_summary = None
 
     for _ in range(MAX_AGENT_ROUNDS):
@@ -275,6 +398,7 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
             return {
                 "reply": (content or "").strip(),
                 "task_id": task_id,
+                "tool_name": tool_name,
                 "tool_summary": tool_summary,
             }
         # 1) 追加 assistant 消息（含 tool_calls 结构，tool 消息必须跟在其后）
@@ -296,8 +420,12 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
         # 2) 执行工具并回传结果
         for tc in tool_calls:
             result = execute_tool(tc["name"], tc.get("arguments") or {}, conv, user)
-            if tc["name"] == "full_search" and result.get("task_id"):
-                task_id = result["task_id"]
+            # 异步工具（full_search / deep_research）记录 task_id + 工具类型（前端据此选轮询路径）
+            if tc["name"] in ("full_search", "deep_research"):
+                tid = result.get("task_id") or result.get("thread_id")
+                if tid:
+                    task_id = tid
+                    tool_name = tc["name"]
             if tc["name"] != "full_search":
                 tool_summary = result.get("message", "")
             loop_messages.append({
@@ -307,4 +435,7 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
             })
 
     # 超出轮数兜底
-    return {"reply": "好的，已处理。有什么想继续深入的吗？", "task_id": task_id, "tool_summary": tool_summary}
+    return {
+        "reply": "好的，已处理。有什么想继续深入的吗？",
+        "task_id": task_id, "tool_name": tool_name, "tool_summary": tool_summary,
+    }

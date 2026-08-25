@@ -12,10 +12,29 @@ import type {
   PaperListResponse,
 } from "@/types/dto";
 
-// ── 主检索 ──
+// ── 主检索（异步 task + 轮询） ──
 
-export function runTrunkSearch(body: SearchRequest): Promise<SearchResult> {
-  return request("/api/search/trunk", { method: "POST", body: JSON.stringify(body) });
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 启动主干检索并等待完成。
+ * 后端 /trunk 已异步化（30-120s），此处内部完成 start → poll → result，
+ * 对调用方保持"一次调用返回完整结果"的语义。
+ */
+export async function runTrunkSearch(body: SearchRequest): Promise<SearchResult> {
+  const { task_id } = await request<{ task_id: string; status: string }>(
+    "/api/search/trunk",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+  for (;;) {
+    await sleep(2500);
+    const st = await request<{ status: string; error?: string | null }>(
+      `/api/search/trunk/status?task_id=${task_id}`,
+    );
+    if (st.status === "done") break;
+    if (st.status === "error") throw new Error(st.error || "检索失败");
+  }
+  return request<SearchResult>(`/api/search/trunk/result?task_id=${task_id}`);
 }
 
 // ── 缺口补充 ──

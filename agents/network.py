@@ -3,6 +3,7 @@
 四种分析：后向追溯 / 前向追踪 / 共被引聚类 / 作者脉络
 """
 import json
+import concurrent.futures
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
@@ -129,6 +130,31 @@ def run_analysis(
 #  后向追溯
 # ══════════════════════════════════════════════════════════
 
+def _fetch_skeleton_refs(skeleton: list[dict]) -> dict[str, set[str]]:
+    """
+    并行获取每篇骨架论文的引用列表（每篇仅调一次 OpenAlex），构建引用缓存。
+    供后向追溯与图谱构建复用，避免同一骨架论文被重复拉取（原实现最多 300 次串行调用）。
+    """
+    refs_map: dict[str, set[str]] = {}
+    targets = [(p["openalex_id"], p) for p in skeleton if p.get("openalex_id")]
+    if not targets:
+        return refs_map
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(oa.get_references, oid): oid
+            for oid, _ in targets
+        }
+        for future in concurrent.futures.as_completed(futures):
+            oid = futures[future]
+            try:
+                refs_map[oid] = set(future.result() or [])
+            except Exception as e:
+                refs_map[oid] = set()
+                logger.warning(f"获取 referenced_works 失败 ({oid}): {e}")
+    return refs_map
+
+
 def _backward_tracing(
     skeleton: list[dict], skeleton_ids: set[str],
 ) -> list[RecommendedPaper]:
@@ -136,22 +162,15 @@ def _backward_tracing(
     后向追溯：统计骨架论文的参考文献，找出被多篇共同引用的论文。
     这些论文可能是用户遗漏的奠基理论。
     """
-    # 获取每篇骨架论文的 referenced_works
+    # 并行获取每篇骨架论文的 referenced_works（每篇一次）
     ref_counter = Counter()
-    fetch_errors = 0
+    refs_map = _fetch_skeleton_refs(skeleton)
+    fetch_errors = sum(1 for refs in refs_map.values() if not refs)
 
-    for paper in skeleton:
-        oid = paper["openalex_id"]
-        if not oid:
-            continue
-        try:
-            refs = oa.get_references(oid)
-            for ref_id in refs:
-                if ref_id and ref_id not in skeleton_ids:
-                    ref_counter[ref_id] += 1
-        except Exception as e:
-            fetch_errors += 1
-            logger.warning(f"获取 referenced_works 失败 ({oid}): {e}")
+    for oid, refs in refs_map.items():
+        for ref_id in refs:
+            if ref_id and ref_id not in skeleton_ids:
+                ref_counter[ref_id] += 1
 
     if fetch_errors > 0:
         logger.warning(f"后向追溯: {fetch_errors} 篇论文的参考文献获取失败")
@@ -166,27 +185,33 @@ def _backward_tracing(
     if not candidates:
         return []
 
-    # 批量获取候选论文的元数据
+    # 批量获取候选论文的元数据（并行）
     results = []
-    for ref_id, count in candidates:
-        try:
-            paper = oa.get_work_by_id(ref_id)
-            if paper and paper.title:
-                results.append(RecommendedPaper(
-                    openalex_id=paper.openalex_id,
-                    title=paper.title,
-                    authors=paper.authors,
-                    year=paper.year,
-                    venue=paper.venue,
-                    doi=paper.doi or "",
-                    cited_by_count=paper.cited_by_count,
-                    abstract=paper.abstract,
-                    source="backward",
-                    cited_by_n=count,
-                    reason=f"被 {count} 篇骨架论文共同引用",
-                ))
-        except Exception as e:
-            logger.debug(f"获取论文元数据失败 ({ref_id}): {e}")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(oa.get_work_by_id, ref_id): (ref_id, count)
+            for ref_id, count in candidates
+        }
+        for future in concurrent.futures.as_completed(futures):
+            ref_id, count = futures[future]
+            try:
+                paper = future.result()
+                if paper and paper.title:
+                    results.append(RecommendedPaper(
+                        openalex_id=paper.openalex_id,
+                        title=paper.title,
+                        authors=paper.authors,
+                        year=paper.year,
+                        venue=paper.venue,
+                        doi=paper.doi or "",
+                        cited_by_count=paper.cited_by_count,
+                        abstract=paper.abstract,
+                        source="backward",
+                        cited_by_n=count,
+                        reason=f"被 {count} 篇骨架论文共同引用",
+                    ))
+            except Exception as e:
+                logger.debug(f"获取论文元数据失败 ({ref_id}): {e}")
 
     results.sort(key=lambda r: (-r.cited_by_n, -r.cited_by_count))
     return results[:TOP_K]
@@ -207,28 +232,33 @@ def _forward_tracking(
     current_year = datetime.now().year
     year_from = current_year - FORWARD_YEAR_LIMIT
 
-    # 收集每篇候选论文被哪些骨架论文引用
+    # 收集每篇候选论文被哪些骨架论文引用（并行查询）
     citing_counter = Counter()     # openalex_id → 被几篇骨架论文引用
     citing_papers = {}             # openalex_id → OpenAlexPaper
 
-    for paper in skeleton:
-        oid = paper["openalex_id"]
-        if not oid:
-            continue
-        try:
-            works = oa.search_citing_works(
+    targets = [p["openalex_id"] for p in skeleton if p.get("openalex_id")]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(
+                oa.search_citing_works,
                 oid,
                 per_page=FORWARD_PER_PAPER,
                 year_from=year_from,
-            )
-            for w in works:
-                wid = w.openalex_id
-                if wid and wid not in skeleton_ids:
-                    citing_counter[wid] += 1
-                    if wid not in citing_papers:
-                        citing_papers[wid] = w
-        except Exception as e:
-            logger.warning(f"前向追踪查询失败 ({oid}): {e}")
+            ): oid
+            for oid in targets
+        }
+        for future in concurrent.futures.as_completed(futures):
+            oid = futures[future]
+            try:
+                works = future.result()
+                for w in works:
+                    wid = w.openalex_id
+                    if wid and wid not in skeleton_ids:
+                        citing_counter[wid] += 1
+                        if wid not in citing_papers:
+                            citing_papers[wid] = w
+            except Exception as e:
+                logger.warning(f"前向追踪查询失败 ({oid}): {e}")
 
     # 筛选：引用了 >= 1 篇骨架论文，按引用数+被引量排序
     candidates = citing_counter.most_common(TOP_K * 2)
@@ -269,6 +299,12 @@ def _build_graph(
     nodes = []
     edges = []
     seen_ids = set()
+
+    # 骨架引用缓存：每篇骨架论文只抓一次，边判断走内存集合（原实现 O(N×M) 次 OpenAlex 调用）
+    refs_map = _fetch_skeleton_refs(skeleton)
+
+    def _is_referenced_by(skeleton_id: str, ref_id: str) -> bool:
+        return ref_id in refs_map.get(skeleton_id, set())
 
     cat_colors = {
         "foundation": "#E8A838",
@@ -336,15 +372,6 @@ def _build_graph(
             ))
 
     return nodes, edges
-
-
-def _is_referenced_by(skeleton_id: str, ref_id: str) -> bool:
-    """判断 skeleton_id 是否引用了 ref_id（简化：通过 referenced_works 检查）"""
-    try:
-        refs = oa.get_references(skeleton_id)
-        return ref_id in refs
-    except Exception:
-        return False
 
 
 # ══════════════════════════════════════════════════════════

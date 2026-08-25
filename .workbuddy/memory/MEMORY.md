@@ -22,11 +22,20 @@
 
 ## 技术栈要点
 - 前端：React 19 + Tailwind + lucide-react + zustand（stores/）
-- **前端分层铁律（2026-08-24 重构后）**：`types/`(纯类型: dto=后端DTO / domain=领域联合) → `config/`(纯静态数据: nav/categories/keywords/chat/search/branch/storage，KEYWORD_COLORS 等唯一来源) → `lib/`(http.ts 唯一传输层 + tokenStore 叶子 + api/ 按领域拆分 7 文件) → `hooks/`(useTaskPolling 统一轮询 / useAuth / useAnnouncements / useLocalStorageConfig) → `stores/`(zustand: project/cart/auth/branch/network) → `components/`(只 UI) → `app/page.tsx`(只组装)
+- **前端分层铁律（2026-08-24 重构后）**：`types/`(纯类型: dto=后端DTO / domain=领域联合) → `config/`(纯静态数据: nav/categories/keywords/chat/search/branch/storage，KEYWORD_COLORS 等唯一来源) → `lib/`(http.ts 唯一传输层 + tokenStore 叶子 + api/ 按领域拆分 8 文件含 funnel) → `hooks/`(useTaskPolling 统一轮询 / useAuth / useAnnouncements / useLocalStorageConfig) → `stores/`(zustand: project/cart/auth/branch/network) → `components/`(只 UI) → `app/page.tsx`(只组装)
+- **导航 5 tab**：chat/search/cart/branch/network（**无独立 funnel tab**——产品决策：Agent 不作为对象暴露，见下）
+- **Agent 能力定位（2026-08-25 拍板）**：LangGraph 漏斗 = 对话页 chat agent 的 `deep_research` 工具（与 full_search 并列，auto 模式后台跑）。交互=跳转式+持久化：对话发调研意图 → 进行中卡 → 结果卡（统计+「查看检索结果」跳检索页）；骨架候选**只生成不入库**（人跳骨架页手动加）。消息卡存 ai_messages.attachments(JSONB) `{type:"deep_research"|"deep_research_result", thread_id, project_id,...}`，历史加载可恢复/降级。finalize 接口幂等。funnel 路由"仅 step 中断、auto 永不中断"。
 - 组件禁止：裸 fetch、localStorage、token 管理、多步编排；复杂编排走 hook/store
 - 认证：authStore 编排（login/register/upgrade/logout/init 游客兜底）+ tokenStore；`auth:changed` 事件已废弃（store 订阅替代）；`auth:expired` 由 http.ts 派发、useAuth 监听
 - ChatConfig 已按 search/dialog/advanced/llm 分组；localStorage key 不变（scholar_funnel_chat_config），旧扁平数据由 normalizeChatConfig 迁移
 - window 事件仅存 3 个：chat:updated / navigate-to-chat / navigate-to-cart
+- **数据库实际是 PostgreSQL**（storage/mysql_db.py 文件名误导，内部 psycopg3 + db/postgres/ SQL 迁移，sys_schema_versions 追踪；init_db 先 create_all 再跑迁移 SQL）
+- **后端安全基建（2026-08-25）**：utils/ratelimit.py（零依赖内存滑动窗口，登录 10/min、检索/分析 6/min、chat 12/min、默认 120/min，OPTIONS 跳过）+ utils/request_log.py（X-Request-Id + 耗时日志）；均为单进程内存实现
+- **task 归属校验**：branch/network/chat/funnel/search 的 task dict 均存 user_id，status/result 接口 `_assert_task_owner` 校验；funnel thread_id 内嵌 project_id（`funnel-{pid}-{hex}`），/resume /state 经 _project_id_from_thread + get_owned_project 双重校验
+- **/trunk 已异步化（2026-08-25）**：POST /trunk 返回 {task_id}，GET /trunk/status、/trunk/result；前端 runTrunkSearch 内部 start→2.5s 轮询→result（调用方语义不变）
+- **检索分层策略（2026-08-25，勿回退为旧 strict_mode）**：openalex.search_works(filter_expr=...) 透传；lexical._build_layered_jobs 四路召回（核心 AND 每词 title|abstract OR / 同义词 OR / 辅助弱约束 / 宽松 combined_queries）→ 合并去重 → BGE rerank 语义过滤；filter_term() 对多词短语加引号
+- **funnel 后端中断机制（2026-08-25 修复）**：原"条件边→END"非真 interrupt()，resume 从 END 续跑空转 → step 模式卡死。现 run_funnel 显式写 state["interrupted"]；resume_funnel 手动逐节点续跑（intent→trunk、skeleton、probe 各跑一步）；get_funnel_state 判定 = interrupted || stage_status==waiting_confirm；start/resume 均后台线程异步（thread_id 由路由预生成），异常 _persist_error 写 checkpoint
+- LLM 客户端（llm/client.py）：timeout 60s + 指数退避重试 3 次（RateLimit/Timeout/5xx）+ LLMError 归一化
 - 数据库迁移：storage/mysql_db.py 的 init_db 内迁移函数（migrate_trunk_score / migrate_paper_enrich / migrate_gap_support），重启后端自动执行
 - AI 分类/摘要接口：POST /api/cart/classify、POST /api/cart/summarize（均有内存缓存 _classify_cache / _summarize_cache）
 
