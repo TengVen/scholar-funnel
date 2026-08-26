@@ -44,3 +44,4 @@ md/
 .DS_Store
 Thumbs.db
 /.workbuddy/
+/db/

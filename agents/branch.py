@@ -2,8 +2,10 @@
 分支深挖服务 —— 验证骨架论文的方法论覆盖
 三种模式：探针匹配 / AI 推荐探针 / 全景扫描
 
-降级链：摘要 → LLM 回忆 → HTML 全文 → 引用上下文 → 仅摘要
-（MVP 先实现摘要 + LLM 回忆 + HTML 全文，PDF 下载后续补充）
+结构化全文降级链（_fetch_full_text）：
+    GROBID XML → PDF 落盘+分节 → HTML 全文 → LLM 回忆 → 仅摘要
+下游按分析模式用 select_context_for_mode 选节组装 LLM 上下文，
+替代原先 full_text[:8000] 的硬截断。
 """
 import json
 import re
@@ -12,6 +14,8 @@ from dataclasses import dataclass, field
 from storage.mysql_db import get_session
 from storage.models import Paper, CartItem, AnalysisResult, Project
 from sources import openalex as oa
+from sources import pdf_structure
+from sources import tei_parse
 from llm import client as llm
 from utils.log import setup_logger
 from prompt.branch import PROBE_MATCH_PROMPT, LANDSCAPE_PROMPT, AI_SUGGEST_PROMPT
@@ -22,6 +26,86 @@ logger = setup_logger("branch")
 MODE_PROBE = "probe_match"
 MODE_AI_SUGGEST = "ai_suggest"
 MODE_LANDSCAPE = "landscape"
+
+
+# ══════════════════════════════════════════════════════════
+#  结构化全文（替代原先的 flat full_text 字符串）
+# ══════════════════════════════════════════════════════════
+@dataclass
+class StructuredFullText:
+    """分支分析用的结构化全文。
+
+    - sections: 分节列表 [{level,title,page_start,page_end,char_len,text}]
+    - flat: 扁平全文兜底（非结构化来源 / 调试用）
+    - source: grobid_xml | pdf_pymupdf | html_full | llm_recall | abstract_only | none
+    - level: 兼容旧语义（2=有全文, 3=LLM回忆, 5=仅摘要）
+    - pdf_path: 落盘的 PDF 路径（PDF 来源时）
+    """
+    title: str | None
+    abstract: str
+    sections: list
+    source: str
+    level: int
+    flat: str
+    pdf_path: str | None = None
+
+
+# 各分析模式优先选取的章节关键词（命中标题即纳入上下文）
+_MODE_SECTION_KEYWORDS = {
+    MODE_PROBE: ["method", "model", "architecture", "approach", "experiment",
+                 "evaluation", "result", "study", "framework"],
+    MODE_AI_SUGGEST: ["method", "model", "architecture", "conclusion", "discussion"],
+    MODE_LANDSCAPE: None,  # None = 全部章节
+}
+
+
+def select_context_for_mode(sft: StructuredFullText, mode: str, paper: dict,
+                            budget: int = 8000) -> str:
+    """
+    按分析模式从结构化全文中选节组装 LLM 上下文。
+
+    关键改进（替代原先 full_text[:8000] 硬截断）：
+      - 永远先放 title + abstract；
+      - 按模式关键词匹配章节（landscape 用全部章节）；
+      - 预算内按文档序补节；仅在「最后一节」超出预算时才截断该节内部，
+        绝不在句中腰斩一节。
+    非结构化来源（llm_recall/abstract_only）无 sections，直接截断 flat。
+    """
+    parts: list[str] = []
+    if sft.title:
+        parts.append(f"Title: {sft.title}")
+    if sft.abstract:
+        parts.append(f"Abstract: {sft.abstract}")
+    used = sum(len(p) for p in parts) + 2 * len(parts)
+
+    sections = sft.sections or []
+    if not sections:
+        remaining = sft.flat or paper.get("abstract", "") or ""
+        avail = budget - used
+        if avail > 0:
+            parts.append(remaining[:avail])
+        return "\n\n".join(parts)
+
+    kws = _MODE_SECTION_KEYWORDS.get(mode)
+    if kws is None:
+        selected = sections
+    else:
+        selected = [s for s in sections if any(k in s["title"].lower() for k in kws)]
+        if not selected:
+            selected = sections  # 模式关键词没命中任何节时退回全部，避免空上下文
+
+    for s in selected:
+        body = s.get("text", "") or ""
+        chunk = f"\n\n## {s['title']}\n{body}"
+        if used + len(chunk) <= budget:
+            parts.append(chunk)
+            used += len(chunk)
+        else:
+            avail = budget - used
+            if avail > 200:
+                parts.append(chunk[:avail])
+            break
+    return "\n\n".join(parts)
 
 
 @dataclass
@@ -165,8 +249,8 @@ def get_stored_results(project_id: int, mode: str = "") -> list[BranchPaperResul
 def _analyze_single_paper(paper: dict, mode: str, probe: str) -> BranchPaperResult:
     """对单篇论文执行分支分析"""
 
-    # ── 第一步：降级链获取全文 ──
-    full_text, content_level, content_source = _fetch_full_text(
+    # ── 第一步：结构化全文降级链 ──
+    sft = _fetch_full_text(
         openalex_id=paper["openalex_id"],
         title=paper["title"],
         abstract=paper["abstract"],
@@ -174,59 +258,116 @@ def _analyze_single_paper(paper: dict, mode: str, probe: str) -> BranchPaperResu
 
     # ── 第二步：根据模式分析 ──
     if mode == MODE_PROBE:
-        return _analyze_probe_match(paper, full_text, content_level,
-                                     content_source, probe)
+        return _analyze_probe_match(paper, sft, probe)
     elif mode == MODE_AI_SUGGEST:
-        return _analyze_ai_suggest(paper, full_text, content_level,
-                                    content_source)
+        return _analyze_ai_suggest(paper, sft)
     else:
-        return _analyze_landscape(paper, full_text, content_level,
-                                   content_source)
+        return _analyze_landscape(paper, sft)
 
 
 # ══════════════════════════════════════════════════════════
 #  降级链：全文获取
 # ══════════════════════════════════════════════════════════
 
-def _fetch_full_text(openalex_id: str, title: str, abstract: str):
+def _fetch_full_text(openalex_id: str, title: str, abstract: str) -> StructuredFullText:
     """
-    五级降级链获取论文全文。
+    结构化全文降级链（替代原先返回扁平字符串的版本）。
+
+    链路（质量从高到低）：
+      Level 2a  GROBID XML（OpenAlex 主源：嵌套分节、零页眉噪声）
+      Level 2b  PDF 落盘 → PyMuPDF 启发式分节（OpenAlex 无 GROBID 时兜底）
+      Level 2c  HTML 全文（扁平，按整篇当单节）
+      Level 3   LLM 回忆（基于标题+摘要，标注[推测]）
+      Level 5   仅摘要
 
     Returns:
-        (full_text, content_level, content_source)
-        - content_level: 1-5（1 最完整，5 仅摘要）
-        - content_source: 来源标签
+        StructuredFullText（sections 可能为空，下游 select_context_for_mode 会兜底）
     """
     short_title = title[:40]
+    paper_oa = oa.get_work_by_id(openalex_id) if openalex_id else None
 
-    # ── Level 2: HTML 全文 ──
-    if not openalex_id:
-        logger.warning(f"[降级链] 论文无 openalex_id，跳过 HTML: {short_title}")
-    else:
-        html_text = oa.fetch_full_text_html(openalex_id)
-        if html_text and len(html_text) > 1000:
-            logger.info(f"[Level 2 ✓] HTML 全文获取成功 ({len(html_text)} 字符): {short_title}")
-            return html_text, 2, "html_full"
-        else:
-            logger.info(f"[Level 2 ✗] HTML 全文获取失败，降级: {short_title}")
+    # ── Level 2a: GROBID XML（结构化主源）──
+    if paper_oa is not None:
+        try:
+            xml = oa.fetch_grobid_xml(openalex_id, paper=paper_oa)
+            if xml:
+                g_abs, g_secs = tei_parse.parse_tei(xml)
+                if g_secs or g_abs:
+                    sections = [{
+                        "level": s.get("level", 1),
+                        "title": s.get("title", ""),
+                        "page_start": 0, "page_end": 0,
+                        "char_len": len(s.get("text", "")),
+                        "text": s.get("text", ""),
+                    } for s in g_secs]
+                    flat = (g_abs or "") + "\n" + "\n".join(s["text"] for s in g_secs)
+                    logger.info(f"[Level 2a ✓] GROBID XML 解析成功 ({len(sections)} 分节): {short_title}")
+                    return StructuredFullText(
+                        title=title, abstract=g_abs or abstract, sections=sections,
+                        source="grobid_xml", level=2, flat=flat,
+                    )
+        except Exception as e:
+            logger.warning(f"[Level 2a ✗] GROBID XML 解析失败，降级: {e}")
 
-    # ── Level 3: LLM 回忆（基于标题+摘要） ──
+    # ── Level 2b: PDF 落盘 → 启发式分节 ──
+    if paper_oa is not None:
+        try:
+            path = oa.download_pdf(openalex_id, title, paper=paper_oa)
+            if path:
+                res = pdf_structure.extract_pdf_sections(path)
+                secs = res.get("sections") or []
+                if secs:
+                    flat = (res.get("abstract") or "") + "\n" + "\n".join(
+                        s.get("text", "") for s in secs)
+                    logger.info(f"[Level 2b ✓] PDF 分节成功 ({len(secs)} 分节, {path}): {short_title}")
+                    return StructuredFullText(
+                        title=title, abstract=res.get("abstract") or abstract,
+                        sections=secs, source="pdf_pymupdf", level=2,
+                        flat=flat, pdf_path=path,
+                    )
+        except Exception as e:
+            logger.warning(f"[Level 2b ✗] PDF 处理失败，降级: {e}")
+
+    # ── Level 2c: HTML 全文（扁平，整篇当单节）──
+    if openalex_id:
+        try:
+            html = oa.fetch_full_text_html(openalex_id)
+            if html and len(html) > 1000:
+                logger.info(f"[Level 2c ✓] HTML 全文获取成功 ({len(html)} 字符): {short_title}")
+                return StructuredFullText(
+                    title=title, abstract=abstract,
+                    sections=[{"level": 1, "title": "Full Text",
+                               "page_start": 0, "page_end": 0,
+                               "char_len": len(html), "text": html}],
+                    source="html_full", level=2, flat=html,
+                )
+        except Exception as e:
+            logger.warning(f"[Level 2c ✗] HTML 获取失败，降级: {e}")
+
+    # ── Level 3: LLM 回忆 ──
     if abstract and len(abstract) > 100:
         logger.info(f"[Level 3] 使用 LLM 回忆: {short_title}")
         recalled = _llm_recall(title, abstract)
         if recalled:
             logger.info(f"[Level 3 ✓] LLM 回忆成功 ({len(recalled)} 字符): {short_title}")
-            return recalled, 3, "llm_recall"
-        else:
-            logger.info(f"[Level 3 ✗] LLM 无把握，降级: {short_title}")
+            return StructuredFullText(
+                title=title, abstract=abstract, sections=[],
+                source="llm_recall", level=3, flat=recalled,
+            )
 
     # ── Level 5: 仅摘要 ──
     if abstract:
         logger.warning(f"[Level 5] 仅使用摘要（准确度最低）: {short_title}")
-        return abstract, 5, "abstract_only"
+        return StructuredFullText(
+            title=title, abstract=abstract, sections=[],
+            source="abstract_only", level=5, flat=abstract,
+        )
 
     logger.warning(f"[Level 5] 无任何内容可用: {short_title}")
-    return "", 5, "none"
+    return StructuredFullText(
+        title=title, abstract="", sections=[],
+        source="none", level=5, flat="",
+    )
 
 
 def _llm_recall(title: str, abstract: str) -> str | None:
@@ -242,7 +383,7 @@ def _llm_recall(title: str, abstract: str) -> str | None:
 2. 核心技术架构（如网络结构、优化目标等）
 3. 关键创新点
 
-请用中文回答，200字以内。如果完全不了解，只说"无把握"。"""
+请用中文回答，500字以内。如果完全不了解，只说"无把握"。"""
 
     try:
         response = llm.chat(prompt, temperature=0.3, max_tokens=500)
@@ -263,18 +404,17 @@ def _llm_recall(title: str, abstract: str) -> str | None:
 
 
 def _analyze_probe_match(
-    paper: dict, full_text: str, content_level: int,
-    content_source: str, probe: str,
+    paper: dict, sft: StructuredFullText, probe: str,
 ) -> BranchPaperResult:
     """探针匹配分析"""
 
-    # 截断文本（避免 token 超限）
-    text_for_llm = full_text[:8000] if full_text else paper.get("abstract", "")
+    # 按模式选节组装上下文（替代原先 full_text[:8000] 硬截断）
+    text_for_llm = select_context_for_mode(sft, MODE_PROBE, paper)
 
     prompt = PROBE_MATCH_PROMPT.format(
         probe=probe,
         title=paper["title"],
-        content_source=content_source,
+        content_source=sft.source,
         content=text_for_llm,
     )
 
@@ -295,8 +435,8 @@ def _analyze_probe_match(
         doi=paper.get("doi", ""),
         abstract=paper.get("abstract", ""),
         cited_by_count=paper.get("cited_by_count", 0),
-        content_level=content_level,
-        content_source=content_source,
+        content_level=sft.level,
+        content_source=sft.source,
         method_summary=data.get("method_summary", ""),
         probe_match=bool(data.get("probe_match", False)),
         probe_confidence=data.get("probe_confidence", "none"),
@@ -310,15 +450,15 @@ def _analyze_probe_match(
 
 
 def _analyze_landscape(
-    paper: dict, full_text: str, content_level: int, content_source: str,
+    paper: dict, sft: StructuredFullText,
 ) -> BranchPaperResult:
     """全景扫描分析（无探针）"""
 
-    text_for_llm = full_text[:8000] if full_text else paper.get("abstract", "")
+    text_for_llm = select_context_for_mode(sft, MODE_LANDSCAPE, paper)
 
     prompt = LANDSCAPE_PROMPT.format(
         title=paper["title"],
-        content_source=content_source,
+        content_source=sft.source,
         content=text_for_llm,
     )
 
@@ -346,8 +486,8 @@ def _analyze_landscape(
         doi=paper.get("doi", ""),
         abstract=paper.get("abstract", ""),
         cited_by_count=paper.get("cited_by_count", 0),
-        content_level=content_level,
-        content_source=content_source,
+        content_level=sft.level,
+        content_source=sft.source,
         method_summary=data.get("method_summary", ""),
         probe_match=False,  # 全景模式不做匹配
         probe_confidence="none",
@@ -361,7 +501,7 @@ def _analyze_landscape(
 
 
 def _analyze_ai_suggest(
-    paper: dict, full_text: str, content_level: int, content_source: str,
+    paper: dict, sft: StructuredFullText,
 ) -> BranchPaperResult:
     """AI 探针推荐分析"""
 
@@ -387,8 +527,8 @@ def _analyze_ai_suggest(
         doi=paper.get("doi", ""),
         abstract=paper.get("abstract", ""),
         cited_by_count=paper.get("cited_by_count", 0),
-        content_level=content_level,
-        content_source=content_source,
+        content_level=sft.level,
+        content_source=sft.source,
         method_summary=data.get("method_summary", ""),
         probe_match=False,
         probe_confidence="none",

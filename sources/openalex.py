@@ -32,6 +32,32 @@ def get_mailto() -> str:
     return _current_mailto or POLITE_MAILTO
 
 
+# ── .env 轻量加载（不依赖 python-dotenv，避免新增依赖）──
+def _load_dotenv() -> None:
+    """读取项目根目录的 .env，填充 os.environ（不覆盖已存在的变量）。"""
+    try:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env_path = os.path.join(root, ".env")
+        if not os.path.exists(env_path):
+            return
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    except Exception:
+        pass
+
+
+_load_dotenv()
+
+# OpenAlex 内容下载密钥（GROBID XML 必需）。无 key 时自动跳过 GROBID 档，
+# 退回 PDF / HTML 兜底链。
+OPENALEX_API_KEY = (os.getenv("OPENALEX_API_KEY") or "").strip()
+
+
 @dataclass
 class OpenAlexPaper:
     """从 OpenAlex API 解析出的论文结构"""
@@ -47,6 +73,9 @@ class OpenAlexPaper:
     is_oa: bool = False
     oa_pdf_url: str | None = None
     oa_landing_url: str | None = None  # HTML 落地页（全文入口）
+    # GROBID XML 可用性（OpenAlex 内容分发；下载需 OPENALEX_API_KEY）
+    has_grobid_xml: bool = False
+    grobid_xml_url: str | None = None
     github_url: str | None = None  # 关联 GitHub 仓库
     concepts: list[str] = field(default_factory=list)
     referenced_works: list[str] = field(default_factory=list)
@@ -98,12 +127,17 @@ def _make_request(endpoint: str, params: dict | None = None) -> dict:
 
 
 def _retry_after_seconds(resp: httpx.Response) -> float | None:
-    """解析 Retry-After 头（支持秒数或 HTTP 日期）"""
+    """解析 Retry-After 头（支持秒数或 HTTP 日期）。
+
+    上限保护：OpenAlex 在超出池限额时可能返回离谱的 Retry-After
+    （实测 63003s），若直接 time.sleep 会把 worker 冻结十几小时。
+    这里封顶到 30s，避免单请求卡死整条分析链路。
+    """
     raw = resp.headers.get("retry-after")
     if not raw:
         return None
     try:
-        return max(0.0, float(raw))
+        return min(30.0, max(0.0, float(raw)))
     except ValueError:
         return None
 
@@ -168,6 +202,17 @@ def _parse_work(work: dict) -> OpenAlexPaper:
     # 提取摘要（OpenAlex 用 inverted index 存储）
     abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
 
+    # 提取 GROBID XML 可用性（OpenAlex 内容分发计划）
+    has_content = work.get("has_content") or {}
+    has_grobid_xml = bool(has_content.get("grobid_xml"))
+    content_urls = work.get("content_urls") or {}
+    gx = content_urls.get("grobid_xml")
+    grobid_xml_url = None
+    if isinstance(gx, dict):
+        grobid_xml_url = gx.get("url")
+    elif isinstance(gx, str):
+        grobid_xml_url = gx
+
     # 提取 GitHub 仓库链接（扫描所有 location 的 URL）
     github_url = None
     for loc in work.get("locations", []):
@@ -204,6 +249,8 @@ def _parse_work(work: dict) -> OpenAlexPaper:
         is_oa=is_oa,
         oa_pdf_url=oa_pdf_url,
         oa_landing_url=oa_landing_url,
+        has_grobid_xml=has_grobid_xml,
+        grobid_xml_url=grobid_xml_url,
         github_url=github_url,
         concepts=concepts,
         referenced_works=[
@@ -488,3 +535,109 @@ def fetch_full_text_html(openalex_id: str) -> str | None:
     except Exception as e:
         logger.warning(f"论文 {openalex_id} HTML 全文获取失败: {e}")
         return None
+
+
+def fetch_grobid_xml(openalex_id: str, paper: "OpenAlexPaper | None" = None) -> str | None:
+    """
+    OpenAlex 主源：下载论文的 GROBID TEI XML（结构化分节、零页眉噪声）。
+    返回 XML 文本，或 None（无 key / 该论文无 GROBID / 下载失败）。
+
+    注：content.openalex.org 返回的是 gzip 压缩体（content-type=application/gzip），
+    需手动解压。
+    """
+    if not OPENALEX_API_KEY:
+        logger.debug("未配置 OPENALEX_API_KEY，跳过 GROBID XML")
+        return None
+    if not openalex_id:
+        return None
+
+    if paper is None:
+        paper = get_work_by_id(openalex_id)
+    if not paper or not paper.has_grobid_xml or not paper.grobid_xml_url:
+        return None
+
+    url = paper.grobid_xml_url
+    try:
+        import gzip
+        with httpx.Client(timeout=40.0, follow_redirects=True) as client:
+            resp = client.get(url, params={"api_key": OPENALEX_API_KEY})
+            if resp.status_code != 200:
+                logger.warning(f"GROBID XML 下载失败 {resp.status_code}: {openalex_id}")
+                return None
+            data = resp.content
+            ct = resp.headers.get("content-type", "")
+            if ct.endswith("gzip") or data[:2] == b"\x1f\x8b":
+                data = gzip.decompress(data)
+            return data.decode("utf-8", "replace")
+    except Exception as e:
+        logger.warning(f"GROBID XML 获取异常: {e}")
+        return None
+
+
+def download_pdf(
+    openalex_id: str,
+    title: str,
+    paper: "OpenAlexPaper | None" = None,
+    save_dir: str | None = None,
+) -> str | None:
+    """
+    兜底源：下载论文 OA PDF 到本地（按论文标题重命名），返回落盘路径或 None。
+
+    - 候选 URL：优先 oa_pdf_url，其次 oa_landing_url（用 %PDF 魔数校验真身）。
+    - 文件命名：<论文标题>.pdf；若同名已存在则追加 openalex_id 防冲突。
+    - 校验：下载体须以 %PDF 开头且 >= 1KB，否则视为非 PDF 返回 None。
+    """
+    if not openalex_id:
+        return None
+    if paper is None:
+        paper = get_work_by_id(openalex_id)
+    if not paper:
+        return None
+
+    candidates = [u for u in (paper.oa_pdf_url, paper.oa_landing_url) if u]
+    if not candidates:
+        return None
+
+    if not save_dir:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        save_dir = os.path.join(root, "data", "pdfs")
+    os.makedirs(save_dir, exist_ok=True)
+
+    base = _sanitize_filename(title)
+    path = os.path.join(save_dir, f"{base}.pdf")
+    if os.path.exists(path):
+        path = os.path.join(save_dir, f"{base}_{openalex_id}.pdf")
+
+    for url in candidates:
+        try:
+            with httpx.Client(
+                timeout=30.0,
+                follow_redirects=True,
+                headers={"User-Agent": "ScholarFunnel/1.0 (research-tool)"},
+            ) as client:
+                resp = client.get(url)
+                resp.raise_for_status()
+                if resp.content[:5] != b"%PDF-":
+                    continue  # 非 PDF（可能是 HTML 落地页），试下一个候选
+                with open(path, "wb") as f:
+                    f.write(resp.content)
+            if os.path.getsize(path) < 1000:
+                os.remove(path)
+                return None
+            logger.info(f"PDF 下载成功: {path}")
+            return path
+        except Exception as e:
+            logger.warning(f"PDF 下载失败 {url[:60]}: {e}")
+            continue
+    return None
+
+
+def _sanitize_filename(name: str, max_len: int = 120) -> str:
+    """把论文标题转成安全的文件名（去非法字符、限长）。"""
+    import re
+    name = (name or "").strip()
+    name = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", name)
+    name = name.strip(". ").rstrip(" .")
+    if len(name) > max_len:
+        name = name[:max_len].rstrip(" .")
+    return name or "untitled"

@@ -15,6 +15,8 @@
 """
 import logging
 from typing import Optional
+import math
+import json
 
 from sqlalchemy import text
 
@@ -118,8 +120,6 @@ def semantic_dedup(papers: list[dict], threshold: float = 0.9) -> list[dict]:
     embedder = get_embedder()
     texts = [_paper_text(p.get("title", ""), p.get("abstract", "")) for p in papers]
     vectors = embedder.encode(texts)
-
-    import math
 
     def cos(a, b):
         dot = sum(x * y for x, y in zip(a, b))
@@ -261,9 +261,6 @@ def semantic_gap_candidates(
             return []
 
         # 2. 计算质心（均值后归一化）
-        import math
-        import json
-
         def _parse_vec(raw) -> list[float]:
             """pgvector 返回的 embedding 可能是 str/bytes，解析成 list[float]"""
             if isinstance(raw, str):
