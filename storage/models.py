@@ -70,6 +70,10 @@ class Paper(Base):
     recommended_category: Mapped[str | None] = mapped_column(
         String(20), default=None, doc="缺口检索推荐类别: foundation/mainstream/frontier"
     )
+    method_profile: Mapped[dict | None] = mapped_column(
+        JSON, default=None,
+        doc="论文方法学画像（PaperProfile 缓存：research_domain/subdomain/research_type/methodology_type/research_objects/candidate_method_families）"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # 关系
@@ -107,6 +111,23 @@ class AnalysisResult(Base):
     )
     key_formulas: Mapped[dict | None] = mapped_column(JSON)
     optimization_method: Mapped[str | None] = mapped_column(String(255))
+    # ── 增强字段（跨领域重构：2026-08-26）──
+    usage_role: Mapped[str | None] = mapped_column(
+        String(20), default="",
+        doc="探针方法使用角色: core/auxiliary/baseline/comparison/mentioned/none"
+    )
+    implementation_or_application: Mapped[str | None] = mapped_column(
+        Text, default="", doc="方法具体实现/应用/实验方式（跨领域，替代 optimization_method）"
+    )
+    probe_relation: Mapped[str | None] = mapped_column(Text, default="", doc="探针与论文方法的关系说明")
+    research_question: Mapped[str | None] = mapped_column(Text, default="", doc="论文核心研究问题")
+    methodology_type: Mapped[str | None] = mapped_column(String(100), default="", doc="主要研究方法论范式")
+    method_category: Mapped[str | None] = mapped_column(String(100), default="", doc="核心方法所属大类/方法体系")
+    method_components: Mapped[dict | None] = mapped_column(JSON, doc="方法组件列表")
+    research_design: Mapped[str | None] = mapped_column(Text, default="", doc="验证设计")
+    key_innovation: Mapped[str | None] = mapped_column(Text, default="", doc="核心创新/主要贡献")
+    limitations: Mapped[str | None] = mapped_column(Text, default="", doc="方法局限性")
+    evidence: Mapped[dict | None] = mapped_column(JSON, doc="方法识别证据列表 [{section,description}]")
     key_findings: Mapped[str | None] = mapped_column(
         Text, default="", doc="分支深挖关键发现（LLM 产出，持久化避免刷新丢失）"
     )

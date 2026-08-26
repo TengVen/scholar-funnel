@@ -4,7 +4,7 @@
  * 单一来源：分类的 key/label/limit/desc、专属色、置信度映射、内容层级标签
  * （此前 CATEGORIES ×2、CATEGORY_COLORS ×2、CATEGORY_GROUPS ×2、KEYWORD_COLORS ×3 散落复制）
  */
-import type { Category, Confidence } from "@/types/domain";
+import type { Category, Confidence, UsageRole } from "@/types/domain";
 
 // ── 分类基本元信息（label + desc + limit，唯一来源）──
 
@@ -75,4 +75,31 @@ export const LEVEL_LABELS: Record<number, string> = {
   3: "LLM 回忆",
   4: "引用上下文",
   5: "仅摘要",
+};
+
+// ── 探针方法使用角色徽章（分支深挖 · 跨领域重构后）──
+// 冷调玻璃徽章（与 KEYWORD_COLORS 同一语言）；金色不进徽章，仅用于"发现/创新"强调行
+// 匹配态（core/auxiliary/baseline/comparison）为彩色，非匹配态（mentioned/none）为灰色
+
+export interface RoleStyle {
+  label: string;
+  dot: string;
+  bg: string;
+  border: string;
+  text: string;
+}
+
+export const ROLE_MAP: Record<UsageRole, RoleStyle> = {
+  core:       { label: "核心方法", dot: "#5FCFBE", bg: "rgba(95,207,190,0.14)",  border: "rgba(95,207,190,0.34)",  text: "#8FE3DA" },
+  auxiliary:  { label: "辅助使用", dot: "#7BA7FF", bg: "rgba(123,167,255,0.14)", border: "rgba(123,167,255,0.34)", text: "#9FC4FF" },
+  baseline:   { label: "基线方法", dot: "#B4A0F0", bg: "rgba(180,160,240,0.14)", border: "rgba(180,160,240,0.34)", text: "#C4B4F5" },
+  comparison: { label: "对比参照", dot: "#6EC8E6", bg: "rgba(110,200,230,0.14)", border: "rgba(110,200,230,0.34)", text: "#8FD8EC" },
+  mentioned:  { label: "仅提及",   dot: "#8A8F98", bg: "rgba(138,143,152,0.14)", border: "rgba(138,143,152,0.34)", text: "#A8ACB4" },
+  none:       { label: "未使用",   dot: "#6E6A62", bg: "rgba(110,106,98,0.14)",  border: "rgba(110,106,98,0.34)",  text: "#8A8680" },
+};
+
+/** 角色是否属于"匹配"（与后端 _compute_probe_match 规则一致，仅展示用） */
+export const ROLE_MATCHED: Record<UsageRole, boolean> = {
+  core: true, auxiliary: true, baseline: true, comparison: true,
+  mentioned: false, none: false,
 };

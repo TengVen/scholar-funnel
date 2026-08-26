@@ -6,6 +6,7 @@
 import type {
   Category,
   Confidence,
+  UsageRole,
   AnnouncementLevel,
   UserRole,
   TaskStatusState,
@@ -240,7 +241,25 @@ export interface BranchPaperResult {
   probe_confidence: Confidence;
   key_findings: string;
   optimization_method: string;
+  /** 跨领域增强字段（可选，旧数据/旧后端缺省） */
+  usage_role?: UsageRole | "";
+  implementation_or_application?: string;
+  probe_relation?: string;
+  research_question?: string;
+  methodology_type?: string;
+  method_category?: string;
+  method_components?: string[];
+  research_design?: string;
+  key_innovation?: string;
+  limitations?: string;
+  evidence?: EvidenceItem[];
   error: string;
+}
+
+/** 方法识别证据（分支深挖） */
+export interface EvidenceItem {
+  section: string;
+  description: string;
 }
 
 export interface BranchAnalyzeResponse {

@@ -15,6 +15,9 @@ export type Category = "foundation" | "mainstream" | "frontier";
 /** 分析置信度 */
 export type Confidence = "high" | "medium" | "low" | "none";
 
+/** 探针方法使用角色（分支深挖，跨领域重构后） */
+export type UsageRole = "core" | "auxiliary" | "baseline" | "comparison" | "mentioned" | "none";
+
 /** 公告级别 */
 export type AnnouncementLevel = "info" | "warning" | "danger";
 

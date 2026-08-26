@@ -197,7 +197,19 @@ class BranchPaperResultOut(BaseModel):
     probe_match: bool = False
     probe_confidence: str = "none"
     key_findings: str = ""
-    optimization_method: str = ""
+    optimization_method: str = ""          # 兼容字段：回填 implementation_or_application
+    # ── 增强字段（跨领域重构，均为可选，旧前端忽略即可）──
+    usage_role: str = ""                   # core/auxiliary/baseline/comparison/mentioned/none
+    implementation_or_application: str = ""
+    probe_relation: str = ""
+    research_question: str = ""
+    methodology_type: str = ""
+    method_category: str = ""
+    method_components: list = []
+    research_design: str = ""
+    key_innovation: str = ""
+    limitations: str = ""
+    evidence: list = []
     error: str = ""
 
 

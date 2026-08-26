@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import {
-  Loader2, ChevronDown, ChevronUp, ExternalLink, Crosshair,
+  Loader2, Crosshair,
   Layers, ArrowRight, Package,
 } from "lucide-react";
 import {
@@ -14,8 +14,10 @@ import type { Category } from "@/types/domain";
 import { useBranchStore } from "@/stores/branchStore";
 import { useTaskPolling } from "@/hooks/useTaskPolling";
 import { KEYWORD_COLORS } from "@/config/keywords";
-import { CATEGORY_COLORS, CATEGORY_GROUPS, CONFIDENCE_MAP, LEVEL_LABELS } from "@/config/categories";
+import { CATEGORY_COLORS, CATEGORY_GROUPS } from "@/config/categories";
 import { BRANCH_MODES } from "@/config/branch";
+import { BranchSquareCard } from "./BranchSquareCard";
+import { LandscapeCard } from "./LandscapeCard";
 
 interface BranchPanelProps {
   projectId: number;
@@ -327,7 +329,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
 
 // ══════════════════════════════════════════════════════════
 //  三类混合视图：始终展示全部三类
-//  - 已分析（result 中有 paper_id）→ 结果卡 BranchSquareCard
+//  - 已分析（result 中有 paper_id）→ 结果卡（landscape 用 LandscapeCard，其余用 BranchSquareCard）
 //  - 未分析 → 待分析卡 SkeletonPreviewCard
 //  - 该组正在分析 → 整组鎏金涟漪波纹 + 半透明降级其他组
 // ══════════════════════════════════════════════════════════
@@ -392,7 +394,11 @@ function BranchMixedView({
                 {items.map((item) => {
                   const analyzed = analyzedMap.get(item.paper_id);
                   return analyzed ? (
-                    <BranchSquareCard key={item.paper_id} paper={analyzed} mode={mode} />
+                    mode === "landscape" ? (
+                      <LandscapeCard key={item.paper_id} paper={analyzed} />
+                    ) : (
+                      <BranchSquareCard key={item.paper_id} paper={analyzed} mode={mode} />
+                    )
                   ) : (
                     <SkeletonPreviewCard key={item.paper_id} item={item} />
                   );
@@ -485,96 +491,6 @@ function SkeletonPreviewCard({ item }: { item: CartItem }) {
           分析后将显示 方法/匹配/发现
         </span>
       </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════
-//  方形卡片（紧凑版）
-// ══════════════════════════════════════════════════════════
-
-function BranchSquareCard({ paper, mode }: { paper: BranchPaperResult; mode: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const confidence = CONFIDENCE_MAP[paper.probe_confidence] || CONFIDENCE_MAP.none;
-  const levelLabel = LEVEL_LABELS[paper.content_level] || "未知";
-
-  return (
-    <div className="card px-4 py-3.5 flex flex-col min-h-[150px]">
-      {/* Top row: title + badges */}
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="font-serif text-[13px] font-semibold text-ink leading-snug flex-1 line-clamp-2">
-          {paper.title}
-        </h4>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {mode === "probe_match" && (
-            <span className={`badge ${confidence.cls}`}>{confidence.label}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Meta */}
-      <div className="flex items-center gap-2 mt-1 text-[11px] text-ink-faint">
-        {paper.year && <span>{paper.year}</span>}
-        {paper.cited_by_count > 0 && (
-          <>
-            <span className="text-line">|</span>
-            <span>被引 {paper.cited_by_count}</span>
-          </>
-        )}
-        <span className="ml-auto badge bg-paper-warm text-ink-muted px-1.5">
-          L{paper.content_level} {levelLabel}
-        </span>
-      </div>
-
-      {/* Method summary */}
-      {paper.method_summary && (
-        <p className="mt-2 text-[12px] text-ink-secondary leading-relaxed line-clamp-3 flex-1">
-          {paper.method_summary}
-        </p>
-      )}
-
-      {/* Findings / optimization */}
-      {(paper.key_findings || paper.optimization_method) && (
-        <div className="mt-1.5 space-y-0.5">
-          {paper.key_findings && (
-            <p className="text-[11px] text-ink-muted line-clamp-2">
-              <span className="text-ink-secondary font-medium">发现：</span>
-              {paper.key_findings}
-            </p>
-          )}
-          {paper.optimization_method && (
-            <p className="text-[11px] text-ink-muted line-clamp-2">
-              <span className="text-ink-secondary font-medium">方法：</span>
-              {paper.optimization_method}
-            </p>
-          )}
-        </div>
-      )}
-
-      {paper.error && <p className="mt-2 text-[11px] text-red-400">{paper.error}</p>}
-
-      {/* Footer */}
-      <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-line-light">
-        {paper.doi && (
-          <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noopener noreferrer"
-            className="btn-ghost text-[11px]">
-            <ExternalLink className="w-2.5 h-2.5 inline mr-0.5" />DOI
-          </a>
-        )}
-        {paper.abstract && (
-          <button onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-0.5 text-[11px] text-ink-faint hover:text-ink-muted transition-colors">
-            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {expanded ? "收起" : "摘要"}
-          </button>
-        )}
-        <div className="flex-1" />
-        <span className="text-[10.5px] text-ink-faint">{paper.content_source}</span>
-      </div>
-
-      {expanded && paper.abstract && (
-        <p className="mt-2 text-[12px] text-ink-secondary leading-relaxed">{paper.abstract}</p>
-      )}
     </div>
   );
 }
