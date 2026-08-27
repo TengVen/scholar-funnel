@@ -24,6 +24,8 @@ interface NetworkStore {
   analyzingByProject: Record<number, boolean>;
   /** 最近一次轮询的进度信息 */
   progressByProject: Record<number, string>;
+  /** 持久化状态是否已恢复（hydration 完成标记；初始化关键逻辑前可据此规避竞态） */
+  _hasHydrated: boolean;
 
   /** 设置某项目某分类的结果（传 null 表示清除） */
   setResult: (
@@ -45,6 +47,7 @@ export const useNetworkStore = create<NetworkStore>()(
       resultsByProject: {},
       analyzingByProject: {},
       progressByProject: {},
+      _hasHydrated: false,
 
       setResult: (projectId, category, result) =>
         set((state) => {
@@ -97,6 +100,11 @@ export const useNetworkStore = create<NetworkStore>()(
       partialize: (state) => ({
         resultsByProject: state.resultsByProject,
       }),
+      // hydration 完成标记：localStorage 为同步存储，恢复在创建时即完成；
+      // 此处置位仅为显式安全网，供"依赖持久化状态的关键初始化"在 hydration 前短路。
+      onRehydrateStorage: () => (state) => {
+        if (state) state._hasHydrated = true;
+      },
     },
   ),
 );

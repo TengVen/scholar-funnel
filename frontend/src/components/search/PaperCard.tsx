@@ -9,6 +9,7 @@ import { classifyPaper } from "@/lib/api/cart";
 import type { Paper } from "@/types/dto";
 import { useCartStore } from "@/stores/cartStore";
 import { KEYWORD_COLORS } from "@/config/keywords";
+import { toast } from "@/lib/toast";
 import { CATEGORIES, CATEGORY_NOTES } from "@/config/categories";
 
 interface PaperCardProps {
@@ -53,7 +54,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
       // AI 分类：带 AI 返回的理由
       onAddToCart(paper.id, res.category, `AI 分类：${res.reason}`);
     } catch (e) {
-      alert(`AI 分类失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`AI 分类失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setClassifying(false);
     }

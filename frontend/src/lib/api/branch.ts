@@ -16,6 +16,13 @@ export function getBranchResult(taskId: string): Promise<BranchAnalyzeResponse> 
   return request(`/api/branch/result?task_id=${taskId}`);
 }
 
-export function getBranchResults(projectId: number, mode = ""): Promise<BranchAnalyzeResponse> {
-  return request(`/api/branch/results?project_id=${projectId}&mode=${mode}`);
+export function getBranchResults(
+  projectId: number,
+  mode = "",
+  signal?: AbortSignal,
+): Promise<BranchAnalyzeResponse> {
+  return request(
+    `/api/branch/results?project_id=${projectId}&mode=${mode}`,
+    signal ? { signal } : undefined,
+  );
 }

@@ -38,6 +38,12 @@ export function resumeFunnel(body: FunnelResumePayload): Promise<FunnelResumeRes
 }
 
 /** 查询漏斗状态（轮询用） */
-export function getFunnelState(threadId: string): Promise<FunnelStateResponse> {
-  return request(`/api/funnel/state?thread_id=${encodeURIComponent(threadId)}`);
+export function getFunnelState(
+  threadId: string,
+  signal?: AbortSignal,
+): Promise<FunnelStateResponse> {
+  return request(
+    `/api/funnel/state?thread_id=${encodeURIComponent(threadId)}`,
+    signal ? { signal } : undefined,
+  );
 }

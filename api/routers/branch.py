@@ -10,6 +10,7 @@ from agents import branch as branch_svc
 
 from storage.models import User
 from utils.auth import get_current_user, get_owned_project
+from utils.task_guard import acquire_or_reuse
 from storage.mysql_db import get_session
 
 router = APIRouter()
@@ -77,23 +78,38 @@ def _run_task(task_id: str, project_id: int, mode: str, probe: str, category: st
         task["error"] = str(e)
 
 
-@router.post("/analyze")
-def start_branch_analyze(body: BranchAnalyzeRequest, user: User = Depends(get_current_user)):
-    _check(body.project_id, user)
-    if body.mode == "probe_match" and not body.probe:
-        raise HTTPException(400, "probe_match mode requires a probe")
+def _start_branch(body: BranchAnalyzeRequest, user: User) -> str:
+    """创建 branch 后台 task 并启动线程，返回 task_id。"""
     task_id = uuid.uuid4().hex[:12]
     _tasks[task_id] = {
         "status": "running", "current": 0, "total": 0,
         "detail": "", "result": None, "error": None,
         "project_id": body.project_id, "user_id": user.id,  # 归属校验用
+        "mode": body.mode, "category": body.category,        # 并发守卫匹配用
     }
     threading.Thread(
         target=_run_task,
         args=(task_id, body.project_id, body.mode, body.probe, body.category),
         daemon=True,
     ).start()
-    return {"task_id": task_id}
+    return task_id
+
+
+@router.post("/analyze")
+def start_branch_analyze(body: BranchAnalyzeRequest, user: User = Depends(get_current_user)):
+    _check(body.project_id, user)
+    if body.mode == "probe_match" and not body.probe:
+        raise HTTPException(400, "probe_match mode requires a probe")
+    # 并发守卫：同一 (project, mode, category) 已有 running task 时复用其 task_id，
+    # 避免快速重复点击起多个 task 同写一 project。
+    task_id, created = acquire_or_reuse(
+        "branch", _tasks,
+        key_match=lambda t: t.get("project_id") == body.project_id
+                        and t.get("mode") == body.mode
+                        and t.get("category", "") == body.category,
+        create=lambda: _start_branch(body, user),
+    )
+    return {"task_id": task_id, "status": "started", "duplicate": not created}
 
 
 def _assert_task_owner(task: dict, user: User):

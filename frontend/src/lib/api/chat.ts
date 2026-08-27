@@ -41,6 +41,12 @@ export function listConversations(): Promise<ConversationSummary[]> {
   return request("/api/chat/conversations");
 }
 
-export function getChatHistory(conversationId: string): Promise<ConversationHistory> {
-  return request(`/api/chat/history?conversation_id=${conversationId}`);
+export function getChatHistory(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<ConversationHistory> {
+  return request(
+    `/api/chat/history?conversation_id=${conversationId}`,
+    signal ? { signal } : undefined,
+  );
 }

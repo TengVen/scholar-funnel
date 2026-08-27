@@ -12,6 +12,7 @@ import { useNetworkStore } from "@/stores/networkStore";
 import { useCartStore } from "@/stores/cartStore";
 import { useTaskPolling } from "@/hooks/useTaskPolling";
 import { CATEGORY_COLORS, CATEGORY_GROUPS } from "@/config/categories";
+import { toast } from "@/lib/toast";
 
 interface NetworkPanelProps {
   projectId: number;
@@ -49,7 +50,7 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
       setResult(projectId, analyzeCatRef.current, res);
     },
     onError: (e) => {
-      alert(`分析失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`分析失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     },
     intervalMs: 3000,
   });
@@ -691,7 +692,7 @@ function RecommendedPaperCard({
         `网络图谱${paper.source === "backward" ? "后向追溯" : "前向追踪"}推荐`);
       // cartStore 内部已自动重载骨架
     } catch (e) {
-      alert(`加入失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`加入失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setAdding(false);
     }

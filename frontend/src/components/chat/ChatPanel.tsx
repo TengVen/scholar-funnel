@@ -18,6 +18,7 @@ import { DEFAULT_CONFIG, SUGGESTIONS } from "@/config/chat";
 import { STORAGE_KEYS } from "@/config/storage";
 import { useLocalStorageConfig, normalizeChatConfig } from "@/hooks/useLocalStorageConfig";
 import { useTaskPolling } from "@/hooks/useTaskPolling";
+import { toast } from "@/lib/toast";
 
 /** 等待期间的阶段性文案（轮换展示，避免"空白 → 突然跳出一整段"） */
 const EXEC_STAGES = [
@@ -66,9 +67,11 @@ export function ChatPanel({
     return () => clearInterval(timer);
   }, [pendingIdx !== null]);
 
-  // 深度调研轮询防重复处理（历史恢复用）+ 超时保护
+  // 深度调研：历史恢复去重 + 当前是否正在轮询（避免重复提交）
   const drUpgradedRef = useRef<Set<string>>(new Set());
-  const drPollCountRef = useRef(0);
+  const drActiveRef = useRef(false);
+  // 组件挂载标记：切换 tab 卸载后不再 setState，避免 React 警告/内存泄漏
+  const mountedRef = useRef(true);
 
   // 对话配置：localStorage 由 hook 管理（水合后加载，首屏默认值保证 SSR 一致）
   const [config, setConfig] = useLocalStorageConfig<ChatConfig>(
@@ -78,86 +81,119 @@ export function ChatPanel({
   );
 
   // 主 Agent 发起 full_search 后的异步检索轮询（统一走 useTaskPolling）
-  const { running: searching, run: runSearchPoll } = useTaskPolling<SearchSummary>({
-    getStatus: getChatSearchStatus,
-    getResult: finalizeSearchSummary,
-    onResult: (summary) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: summary.summary,
-          project_id: summary.project_id,
-          project_name: summary.project_name,
-        },
-      ]);
-      onProjectCreated(summary.project_id);
-      setStage("greeting");
-      window.dispatchEvent(new CustomEvent("chat:updated")); // 刷新左侧会话列表
-    },
-    onError: (e) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `检索失败：${e instanceof Error ? e.message : String(e)}。你可以修改需求后重试。`,
-        },
-      ]);
-    },
-    intervalMs: 3000,
-  });
+  const { running: searching, run: runSearchPoll, cancel: cancelSearchPoll } =
+    useTaskPolling<SearchSummary>({
+      getStatus: getChatSearchStatus,
+      getResult: finalizeSearchSummary,
+      onResult: (summary) => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: summary.summary,
+            project_id: summary.project_id,
+            project_name: summary.project_name,
+          },
+        ]);
+        onProjectCreated(summary.project_id);
+        setStage("greeting");
+        window.dispatchEvent(new CustomEvent("chat:updated")); // 刷新左侧会话列表
+      },
+      onError: (e) => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `检索失败：${e instanceof Error ? e.message : String(e)}。你可以修改需求后重试。`,
+          },
+        ]);
+      },
+      intervalMs: 3000,
+    });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 主 Agent 发起 deep_research → 轮询 /funnel/state → 完成后生成结果卡
-  const { run: runDeepResearchPoll } = useTaskPolling<{
-    content: string;
-    attachments: DeepResearchAttachments;
-  }>({
-    getStatus: async (threadId) => {
-      drPollCountRef.current += 1;
-      if (drPollCountRef.current > 240) throw new Error("深度调研超时（约 10 分钟），可重新发起");
-      try {
-        const s = await getFunnelState(threadId);
-        if (s.state?.error) return { status: "error", error: s.state.error };
-        if (s.current_stage === "done" && s.state?.stage_status === "done") {
-          return { status: "done" };
+  const { run: runDeepResearchPoll, cancel: cancelDeepResearch } =
+    useTaskPolling<{
+      content: string;
+      attachments: DeepResearchAttachments;
+    }>({
+      getStatus: async (threadId, signal) => {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        try {
+          const s = await getFunnelState(threadId, signal);
+          if (s.state?.error) return { status: "error", error: s.state.error };
+          if (s.current_stage === "done" && s.state?.stage_status === "done") {
+            return { status: "done" };
+          }
+          return { status: "running", detail: s.current_stage };
+        } catch (e) {
+          // 取消/卸载（AbortError）→ 向上抛出，由 run 捕获后静默吞掉（不报错）
+          if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) throw e;
+          // 任务尚未写入 checkpoint（启动瞬间）→ 视为运行中
+          return { status: "running", detail: "intent" };
         }
-        return { status: "running", detail: s.current_stage };
-      } catch {
-        // 任务尚未写入 checkpoint（启动瞬间）→ 视为运行中
-        return { status: "running", detail: "intent" };
-      }
-    },
-    getResult: finalizeDeepResearch,
-    onResult: (res) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: res.content,
-          attachments: res.attachments,
-          project_id: res.attachments.project_id,
-        },
-      ]);
-      onProjectCreated(res.attachments.project_id);
-      window.dispatchEvent(new CustomEvent("chat:updated"));
-    },
-    onError: (e) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `深度调研失败：${e instanceof Error ? e.message : String(e)}。你可以换个说法重新发起。`,
-        },
-      ]);
-    },
-    intervalMs: 2500,
-  });
+      },
+      getResult: finalizeDeepResearch,
+      onResult: (res) => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: res.content,
+            attachments: res.attachments,
+            project_id: res.attachments.project_id,
+          },
+        ]);
+        onProjectCreated(res.attachments.project_id);
+        window.dispatchEvent(new CustomEvent("chat:updated"));
+        drActiveRef.current = false;
+      },
+      onError: (e) => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `深度调研失败：${e instanceof Error ? e.message : String(e)}。你可以换个说法重新发起。`,
+          },
+        ]);
+        drActiveRef.current = false;
+      },
+      // 前端超时：约 10 分钟无响应 → 标记卡片结束 + 提示（与失败区分）
+      timeoutMs: 10 * 60 * 1000,
+      onTimeout: () => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.attachments?.type === "deep_research" && m.attachments.status === "running"
+              ? { ...m, attachments: { ...m.attachments, status: "ended" } }
+              : m,
+          ),
+        );
+        toast("深度调研超时（约 10 分钟），可重新发起一次", "warning");
+        drActiveRef.current = false;
+      },
+      intervalMs: 2500,
+    });
+
+  // 卸载（切换 tab）时取消在途轮询，避免对已卸载组件 setState / 泄漏请求
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelSearchPoll();
+      cancelDeepResearch();
+    };
+  }, [cancelSearchPoll, cancelDeepResearch]);
 
   // ── 历史恢复：把"运行中"的深度调研卡升级为结果卡 / 结束态（幂等） ──
+  // 历史恢复：把"运行中"的深度调研卡升级为结果卡 / 结束态（幂等）
+  const recoveryAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
+    recoveryAbortRef.current?.abort();
+    const ac = new AbortController();
+    recoveryAbortRef.current = ac;
     messages.forEach((msg, i) => {
       const att = msg.attachments;
       if (!att || att.type !== "deep_research" || att.status !== "running") return;
@@ -165,7 +201,8 @@ export function ChatPanel({
       drUpgradedRef.current.add(att.thread_id);
       (async () => {
         try {
-          const s = await getFunnelState(att.thread_id);
+          const s = await getFunnelState(att.thread_id, ac.signal);
+          if (ac.signal.aborted || !mountedRef.current) return;
           if (s.state?.error) {
             setMessages((prev) =>
               prev.map((x, j) => (j === i ? { ...x, content: `深度调研失败：${s.state!.error}` } : x)),
@@ -184,6 +221,7 @@ export function ChatPanel({
             return;
           }
           const res = await finalizeDeepResearch(att.thread_id);
+          if (!mountedRef.current) return;
           setMessages((prev) =>
             prev.map((x, j) =>
               j === i
@@ -192,6 +230,7 @@ export function ChatPanel({
             ),
           );
         } catch {
+          if (ac.signal.aborted || !mountedRef.current) return;
           // funnel 内存态已丢失（服务重启）→ 标记结束，保留已生成内容
           setMessages((prev) =>
             prev.map((x, j) => (j === i ? { ...x, attachments: { ...att, status: "ended" } } : x)),
@@ -199,6 +238,7 @@ export function ChatPanel({
         }
       })();
     });
+    return () => ac.abort();
   }, [messages]);
 
   const hasConversation = messages.some((m) => m.role === "user");
@@ -211,19 +251,25 @@ export function ChatPanel({
   const latestReqRef = useRef<string | null>(null);
 
   // ── 打开历史会话（左侧点击触发，直接加载消息）──
+  const openAbortRef = useRef<AbortController | null>(null);
   const openConversation = async (cid: string) => {
     latestReqRef.current = cid;
+    openAbortRef.current?.abort();
+    const ac = new AbortController();
+    openAbortRef.current = ac;
     try {
-      const h = await getChatHistory(cid);
+      const h = await getChatHistory(cid, ac.signal);
       if (latestReqRef.current !== cid) return;  // 已有更新的会话请求，丢弃过期响应
+      if (ac.signal.aborted || !mountedRef.current) return;  // 已取消/卸载：丢弃
       setConversationId(h.conversation_id);
       setMessages(h.messages || []);
       setStage(h.stage || "greeting");
       setConfirmedParams(h.params || {});
       onConversationChanged?.(h.conversation_id, currentProjectId);
     } catch (e) {
+      if (ac.signal.aborted || !mountedRef.current) return;  // 取消/卸载：静默
       if (latestReqRef.current === cid) {
-        alert(`加载会话失败: ${e instanceof Error ? e.message : String(e)}`);
+        toast(`加载会话失败: ${e instanceof Error ? e.message : String(e)}`, "error");
       }
     } finally {
       // 仅在"本次请求仍是最新"时消费指令：消费后 requestedConversationId 回落
@@ -304,21 +350,25 @@ export function ChatPanel({
       // - deep_research：多智能体调研 → /funnel/state + 结果卡
       if (res.task_id) {
         if (res.task_type === "deep_research") {
-          drPollCountRef.current = 0;
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: "深度调研已启动：意图解析 → 主干检索 → 骨架候选 → 探针推导（预计 2-5 分钟）",
-              attachments: {
-                type: "deep_research",
-                thread_id: res.task_id!,
-                project_id: 0,
-                status: "running",
+          if (drActiveRef.current) {
+            toast("已有深度调研正在进行中…", "info");
+          } else {
+            drActiveRef.current = true;
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: "深度调研已启动：意图解析 → 主干检索 → 骨架候选 → 探针推导（预计 2-5 分钟）",
+                attachments: {
+                  type: "deep_research",
+                  thread_id: res.task_id!,
+                  project_id: 0,
+                  status: "running",
+                },
               },
-            },
-          ]);
-          runDeepResearchPoll(res.task_id);
+            ]);
+            runDeepResearchPoll(res.task_id);
+          }
         } else {
           setMessages((prev) => [
             ...prev,
@@ -337,6 +387,20 @@ export function ChatPanel({
       setSending(false);
       inputRef.current?.focus();
     }
+  };
+
+  // 用户主动取消深度调研：停止轮询 + 标记卡片结束 + 提示（四种状态之一：取消）
+  const handleCancelDeepResearch = () => {
+    cancelDeepResearch();
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.attachments?.type === "deep_research" && m.attachments.status === "running"
+          ? { ...m, attachments: { ...m.attachments, status: "ended" } }
+          : m,
+      ),
+    );
+    toast("已取消深度调研", "info");
+    drActiveRef.current = false;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -443,7 +507,7 @@ export function ChatPanel({
                       onOpenProject={() => msg.attachments?.project_id && onOpenProject(msg.attachments.project_id)}
                     />
                   ) : msg.attachments?.type === "deep_research" ? (
-                    <DeepResearchRunningCard att={msg.attachments} />
+                    <DeepResearchRunningCard att={msg.attachments} onCancel={handleCancelDeepResearch} />
                   ) : (
                     <div
                       className={`max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed ${
@@ -604,9 +668,15 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-// ── 深度调研运行卡（进行中 / 已结束） ──
+// ── 深度调研运行卡（进行中 / 已结束 / 可取消） ──
 
-function DeepResearchRunningCard({ att }: { att: DeepResearchAttachments }) {
+function DeepResearchRunningCard({
+  att,
+  onCancel,
+}: {
+  att: DeepResearchAttachments;
+  onCancel: () => void;
+}) {
   const ended = att.status === "ended";
   return (
     <div className="max-w-[85%] w-[400px] rounded-2xl card px-4 py-3">
@@ -621,9 +691,19 @@ function DeepResearchRunningCard({ att }: { att: DeepResearchAttachments }) {
         </p>
       </div>
       {!ended && (
-        <p className="text-[11px] text-ink-faint mt-1.5 leading-relaxed">
-          意图解析 → 主干检索 → 骨架候选 → 探针推导，完成后在此展示结果
-        </p>
+        <>
+          <p className="text-[11px] text-ink-faint mt-1.5 leading-relaxed">
+            意图解析 → 主干检索 → 骨架候选 → 探针推导，完成后在此展示结果
+          </p>
+          <button
+            onClick={onCancel}
+            className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-muted
+                       hover:text-ink border border-line rounded-md px-2.5 py-1
+                       transition-colors"
+          >
+            取消研究
+          </button>
+        </>
       )}
     </div>
   );

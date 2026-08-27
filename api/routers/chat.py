@@ -78,7 +78,7 @@ def _append_message(session, conv: Conversation, user_id: int, role: str, conten
         attachments=attachments,
     ))
     conv.message_count = (conv.message_count or 0) + 1
-    conv.last_message_at = datetime.utcnow()
+    conv.last_message_at = datetime.now()
     session.commit()
 
 

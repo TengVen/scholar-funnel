@@ -18,6 +18,7 @@ import { CATEGORY_COLORS, CATEGORY_GROUPS } from "@/config/categories";
 import { BRANCH_MODES } from "@/config/branch";
 import { BranchSquareCard } from "./BranchSquareCard";
 import { LandscapeCard } from "./LandscapeCard";
+import { toast } from "@/lib/toast";
 
 interface BranchPanelProps {
   projectId: number;
@@ -107,19 +108,21 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
     if (fetchedRef.current[key]) return;
     fetchedRef.current[key] = true;
 
+    const ac = new AbortController();
     let cancelled = false;
-    getBranchResults(projectId, mode)
+    getBranchResults(projectId, mode, ac.signal)
       .then((res) => {
-        if (!cancelled && res.total > 0) {
+        if (!cancelled && !ac.signal.aborted && res.total > 0) {
           setResult(projectId, mode, res);
         }
       })
       .catch(() => {
-        // 静默失败：没有历史结果是正常情况（还没跑过分析）
+        // 静默失败：没有历史结果是正常情况（还没跑过分析）；取消(abort)也走这里
       });
 
     return () => {
       cancelled = true;
+      ac.abort();
     };
   }, [projectId, mode, result, setResult]);
 
@@ -162,7 +165,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
       }
     },
     onError: (e) => {
-      alert(`分析失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`分析失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     },
     intervalMs: 2000,
   });

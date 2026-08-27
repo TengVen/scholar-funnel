@@ -23,6 +23,7 @@ import type { CartStatus, CartItem, DiagnosisResult, ProjectLimits } from "@/typ
 import { useCartStore } from "@/stores/cartStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { CATEGORIES } from "@/config/categories";
+import { toast } from "@/lib/toast";
 import { KEYWORD_COLORS } from "@/config/keywords";
 import type { Category } from "@/types/domain";
 
@@ -76,11 +77,11 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
     if (!limitDraft) return;
     const vals = Object.values(limitDraft);
     if (vals.some((v) => v < 1 || v > 30)) {
-      alert("每类限额需在 1~30 之间");
+      toast("每类限额需在 1~30 之间", "warning");
       return;
     }
     if (vals.reduce((a, b) => a + b, 0) > 50) {
-      alert("三类总和不能超过 50 篇");
+      toast("三类总和不能超过 50 篇", "warning");
       return;
     }
     setLimitSaving(true);
@@ -88,7 +89,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
       await saveLimits(projectId, limitDraft);
       setLimitOpen(false);
     } catch (e) {
-      alert(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`保存失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setLimitSaving(false);
     }
@@ -100,7 +101,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
       const res = await diagnoseCart(projectId);
       setDiagnosis(res);
     } catch (e) {
-      alert(`诊断失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`诊断失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setDiagnosing(false);
     }
@@ -112,7 +113,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
       const res = await summarizeCart(projectId);
       setSummary(res.summary);
     } catch (e) {
-      alert(`生成摘要失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`生成摘要失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setSummarizing(false);
     }
@@ -130,7 +131,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(`导出失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`导出失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setExporting(false);
     }
@@ -503,7 +504,7 @@ function CartItemRow({
       await removeItem(projectId, item.paper_id);
       onRefresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast(e instanceof Error ? e.message : String(e), "error");
     } finally {
       setRemoving(false);
     }
@@ -516,7 +517,7 @@ function CartItemRow({
       setShowCategoryMenu(false);
       onRefresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast(e instanceof Error ? e.message : String(e), "error");
     } finally {
       setSwitching(false);
     }

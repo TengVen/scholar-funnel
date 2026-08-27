@@ -20,6 +20,8 @@ import { BranchPanel } from "@/components/branch/BranchPanel";
 import { NetworkPanel } from "@/components/network/NetworkPanel";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { CartDetail } from "@/components/cart/CartDetail";
+import { ToastContainer } from "@/components/common/ToastContainer";
+import { toast } from "@/lib/toast";
 
 export default function Home() {
   // ── 路由状态（局部 UI 状态，按 spec 用 useState）──
@@ -147,7 +149,7 @@ export default function Home() {
       await loadPapers(activeProject.id, 0);
       await loadCart(activeProject.id);
     } catch (e: unknown) {
-      alert(`检索失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`检索失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setSearching(false);
     }
@@ -158,7 +160,7 @@ export default function Home() {
     try {
       await createProjectStore(query, techProbe);
     } catch (e: unknown) {
-      alert(`创建项目失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`创建项目失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     }
   };
 
@@ -169,7 +171,7 @@ export default function Home() {
     try {
       await cartAddItem(activeProject.id, paperId, category, notes);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast(e instanceof Error ? e.message : String(e), "error");
     }
   };
 
@@ -178,7 +180,7 @@ export default function Home() {
     try {
       await cartRemoveItem(activeProject.id, paperId);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast(e instanceof Error ? e.message : String(e), "error");
     }
   };
 
@@ -203,7 +205,7 @@ export default function Home() {
       setGapMode(true);
       setActivePage("search");            // 跳到检索页查看重检索结果
     } catch (e: unknown) {
-      alert(`补充检索失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`补充检索失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setGapSearching(false);
     }
@@ -229,7 +231,7 @@ export default function Home() {
       setGapMode(true);
       setActivePage("search");
     } catch (e: unknown) {
-      alert(`标题查找失败: ${e instanceof Error ? e.message : String(e)}`);
+      toast(`标题查找失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setGapSearching(false);
     }
@@ -428,6 +430,8 @@ export default function Home() {
       {activePage === "search" && (
         <CartPanel cart={cart} onRemove={handleRemoveFromCart} />
       )}
+
+      <ToastContainer />
     </div>
   );
 }

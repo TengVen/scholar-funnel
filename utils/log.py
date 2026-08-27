@@ -161,17 +161,13 @@ def setup_logger(name: str = None, level: int = logging.INFO) -> logging.Logger:
         datefmt="%H:%M:%S",
     )
 
-    # stdout handler（Streamlit 终端明确显示）
+    # 单一控制台 handler（stdout）。
+    # 注意：不要同时挂 stdout + stderr 两个 handler，否则同一行会在终端
+    # 打印两次（两个流都回显到控制台），误导排查。
     h1 = logging.StreamHandler(sys.stdout)
     h1.setFormatter(fmt)
     h1.setLevel(level)
     logger.addHandler(h1)
-
-    # stderr handler（备用）
-    h2 = logging.StreamHandler(sys.stderr)
-    h2.setFormatter(fmt)
-    h2.setLevel(level)
-    logger.addHandler(h2)
 
     # 异步落库（默认开启，级别可配；失败不影响主流程）
     try:

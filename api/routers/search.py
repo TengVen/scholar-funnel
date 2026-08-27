@@ -12,6 +12,7 @@ from api.schemas import (
 )
 from storage.models import User
 from utils.auth import get_current_user, get_owned_project
+from utils.task_guard import acquire_or_reuse
 from storage.mysql_db import get_session
 from retrieval.pipeline import TrunkSearchEngine
 
@@ -42,9 +43,23 @@ def _run_trunk_task(task_id: str, params: dict, user_id: int):
         task["error"] = str(e)
 
 
+def _start_trunk(body: SearchRequest, user: User) -> str:
+    """创建 trunk 后台 task 并启动线程，返回 task_id。"""
+    task_id = uuid.uuid4().hex[:12]
+    _trunk_tasks[task_id] = {
+        "status": "running", "result": None, "error": None,
+        "user_id": user.id, "project_id": body.project_id,
+    }
+    threading.Thread(
+        target=_run_trunk_task,
+        args=(task_id, body.model_dump(), user.id),
+        daemon=True,
+    ).start()
+    return task_id
+
+
 @router.post("/trunk")
 def run_trunk_search(body: SearchRequest, user: User = Depends(get_current_user)):
-    _check(body.project_id, user)
     """
     启动主干检索（异步）。
 
@@ -55,17 +70,16 @@ def run_trunk_search(body: SearchRequest, user: User = Depends(get_current_user)
     4. 评分 + 入库
 
     返回 task_id，前端轮询 /trunk/status → /trunk/result。
+    并发守卫：同一 project 已有 running 的 trunk task 时，复用其 task_id，
+    避免快速重复点击起多个 task 同写一 project。
     """
-    task_id = uuid.uuid4().hex[:12]
-    _trunk_tasks[task_id] = {
-        "status": "running", "result": None, "error": None, "user_id": user.id,
-    }
-    threading.Thread(
-        target=_run_trunk_task,
-        args=(task_id, body.model_dump(), user.id),
-        daemon=True,
-    ).start()
-    return {"task_id": task_id, "status": "started"}
+    _check(body.project_id, user)
+    task_id, created = acquire_or_reuse(
+        "trunk", _trunk_tasks,
+        key_match=lambda t: t.get("project_id") == body.project_id,
+        create=lambda: _start_trunk(body, user),
+    )
+    return {"task_id": task_id, "status": "started", "duplicate": not created}
 
 
 @router.get("/trunk/status")
