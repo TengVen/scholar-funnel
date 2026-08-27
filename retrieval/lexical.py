@@ -16,45 +16,48 @@ class LexicalRetriever:
         """
         分层查询策略（替代单一 strict_mode 的强 AND）：
 
-        - 核心路：methodology.core + domain.core，多个核心词 AND、每词"标题或摘要"命中
-          （title.search:A|abstract.search:A,title.search:B|abstract.search:B）
+        - 核心路：methodology.core + domain.core，多个核心词 AND、每词命中标题/摘要/全文
+          （default.search:"A",default.search:"B"，逗号=AND，词可在 title/abstract/fulltext 任一出现）
           保证方向不漂移，但召回偏少。
-        - 同义路：methodology.synonyms + domain.synonyms，组内 OR，扩大覆盖面。
+        - 同义路：methodology.synonyms + domain.synonyms，组内 OR（值内 | 合法），扩大覆盖面。
         - 辅助路：methodology.related + domain.broader，弱约束（任一命中即可），
           兜底召回边缘相关论文，交给语义过滤。
         - 宽松路：combined_queries（LLM 拆解的主查询），不带 filter，保证召回量。
 
         多路分别召回 → 合并去重（recall 内）→ 最终由 Embedding + Reranker 语义过滤。
+
+        filter 语法约束（OpenAlex）：
+          - `,` = AND（同字段重复合法）；`|` 只允许在「单个 filter 值内部」做 OR
+            （如 default.search:"A"|"B"），filter 与 filter 之间不允许 OR（否则 400）。
+          历史 bug（2026-08-26 修复）：原写法 title.search:A|abstract.search:A 是
+          filter 间 OR → OpenAlex 400 Bad Request。
         """
         jobs: List[tuple[str, Optional[str]]] = []
 
-        # 1. 核心概念 AND
+        # 1. 核心概念 AND（多词逗号 AND，每词在 title/abstract/fulltext 任一命中）
         core_kws = list(dict.fromkeys(intent.methodology.core + intent.domain.core))
         core_kws = [kw.strip() for kw in core_kws if kw and len(kw.strip()) > 2][:3]
         if core_kws:
             filter_expr = ",".join(
-                f"title.search:{openalex.filter_term(kw)}|abstract.search:{openalex.filter_term(kw)}"
-                for kw in core_kws
+                f"default.search:{openalex.filter_term(kw)}" for kw in core_kws
             )
             jobs.append((" ".join(core_kws), filter_expr))
 
-        # 2. 同义词 OR
+        # 2. 同义词 OR（值内 |，字段前缀只出现一次）
         syn_kws = list(dict.fromkeys(intent.methodology.synonyms + intent.domain.synonyms))
         syn_kws = [kw.strip() for kw in syn_kws if kw and len(kw.strip()) > 2][:4]
         if syn_kws:
-            filter_expr = "|".join(
-                f"title.search:{openalex.filter_term(kw)}|abstract.search:{openalex.filter_term(kw)}"
-                for kw in syn_kws
+            filter_expr = "default.search:" + "|".join(
+                openalex.filter_term(kw) for kw in syn_kws
             )
             jobs.append((" ".join(syn_kws), filter_expr))
 
-        # 3. 辅助概念弱约束（任一命中即可）
+        # 3. 辅助概念弱约束（任一命中即可，值内 |）
         aux_kws = list(dict.fromkeys(intent.methodology.related + intent.domain.broader))
         aux_kws = [kw.strip() for kw in aux_kws if kw and len(kw.strip()) > 2][:4]
         if aux_kws:
-            filter_expr = "|".join(
-                f"title.search:{openalex.filter_term(kw)}|abstract.search:{openalex.filter_term(kw)}"
-                for kw in aux_kws
+            filter_expr = "default.search:" + "|".join(
+                openalex.filter_term(kw) for kw in aux_kws
             )
             jobs.append((" ".join(aux_kws), filter_expr))
 

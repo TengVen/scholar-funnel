@@ -203,17 +203,34 @@ export function ChatPanel({
 
   const hasConversation = messages.some((m) => m.role === "user");
 
+  // 竞态防护：记录"最后一次发起的会话请求"。
+  // openConversation 是 async，响应到达前用户可能已切换会话——
+  // 过期响应必须丢弃，且 onRequestConsumed 只能在「当前请求仍是最新」时消费，
+  // 否则 chatOpenConvId 被提前清空会回落到 lastConvForProject 旧值 → A↔X 竞态循环
+  // （2026-08-26 修复：切换会话触发 38 次并发 /api/chat/history + 页面高频闪烁）
+  const latestReqRef = useRef<string | null>(null);
+
   // ── 打开历史会话（左侧点击触发，直接加载消息）──
   const openConversation = async (cid: string) => {
+    latestReqRef.current = cid;
     try {
       const h = await getChatHistory(cid);
+      if (latestReqRef.current !== cid) return;  // 已有更新的会话请求，丢弃过期响应
       setConversationId(h.conversation_id);
       setMessages(h.messages || []);
       setStage(h.stage || "greeting");
       setConfirmedParams(h.params || {});
       onConversationChanged?.(h.conversation_id, currentProjectId);
     } catch (e) {
-      alert(`加载会话失败: ${e instanceof Error ? e.message : String(e)}`);
+      if (latestReqRef.current === cid) {
+        alert(`加载会话失败: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } finally {
+      // 仅在"本次请求仍是最新"时消费指令：消费后 requestedConversationId 回落
+      // 到 lastConvForProject（此时已更新为当前会话），值不变 → 不再触发 effect
+      if (latestReqRef.current === cid) {
+        onRequestConsumed?.();
+      }
     }
   };
 
@@ -226,13 +243,15 @@ export function ChatPanel({
     onConversationChanged?.(null, currentProjectId);
   };
 
-  // 外部指令：打开历史会话（消费后清空，避免重复加载）
+  // 外部指令：打开历史会话（完成后再消费，避免竞态循环）
   useEffect(() => {
     if (requestedConversationId) {
       openConversation(requestedConversationId);
-      onRequestConsumed?.();
+      // 注意：不再在此同步 onRequestConsumed——必须等 openConversation 完成
+      //（见 openConversation 的 finally），否则指令被提前清空后
+      // requestedConversationId 回落到 lastConvForProject 旧值会二次触发
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedConversationId]);
 
   // 外部指令：新对话

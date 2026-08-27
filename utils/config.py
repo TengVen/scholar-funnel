@@ -81,6 +81,14 @@ class Settings:
         default_factory=lambda: os.getenv("GITHUB_TOKEN", "")
     )
 
+    # 日志落库（utils/log.py DbLogHandler 异步写 sys_app_logs）
+    log_db_enabled: bool = field(
+        default_factory=lambda: os.getenv("LOG_DB_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+    )
+    log_db_level: str = field(
+        default_factory=lambda: os.getenv("LOG_DB_LEVEL", "INFO").upper().strip()
+    )
+
     # 本地路径
     data_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data")
     pdf_cache_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "pdfs")

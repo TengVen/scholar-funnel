@@ -158,22 +158,51 @@ _MODE_SECTION_KEYWORDS = {
     MODE_PROBE: ["method", "model", "architecture", "approach", "experiment",
                  "evaluation", "result", "study", "framework"],
     MODE_AI_SUGGEST: ["method", "model", "architecture", "conclusion", "discussion"],
-    MODE_LANDSCAPE: None,  # None = 全部章节
+    MODE_LANDSCAPE: None,  # None = 全部章节（但过滤噪声节，见 _NOISE_SECTION_PATTERNS）
 }
+
+# 各分析模式上下文预算（字符）。landscape 需看到 Method/Experiment 等正文节，
+# 8000 只够摘要+引言 → 证据只能来自摘要；提至 24000 覆盖方法/实验/结果节。
+_MODE_BUDGETS = {
+    MODE_LANDSCAPE: 30000,
+    MODE_PROBE: 12000,
+    MODE_AI_SUGGEST: 12000,
+}
+
+# 噪声节过滤（landscape 用全部节时排除）：
+# References/Bibliography/Acknowledgements/Appendix/Supplementary 纯列表或附录
+# 会吃掉预算且不含方法证据；(preamble)/空标题为 PDF 解析的页眉噪声
+_NOISE_SECTION_PATTERNS = (
+    "references", "bibliography", "acknowledg", "appendix",
+    "supplement", "preamble",
+)
+
+
+def _is_noise_section(s: dict) -> bool:
+    """判断某节是否为噪声节（空标题 / References 等列表节）"""
+    title = (s.get("title") or "").strip()
+    if not title:
+        return True
+    low = title.lower()
+    return any(p in low for p in _NOISE_SECTION_PATTERNS)
 
 
 def select_context_for_mode(sft: StructuredFullText, mode: str, paper: dict,
-                            budget: int = 8000) -> str:
+                            budget: int | None = None) -> str:
     """
     按分析模式从结构化全文中选节组装 LLM 上下文。
 
     关键改进（替代原先 full_text[:8000] 硬截断）：
       - 永远先放 title + abstract；
-      - 按模式关键词匹配章节（landscape 用全部章节）；
+      - 按模式关键词匹配章节（landscape 用全部章节，但过滤 References 等噪声节）；
+      - 预算按模式区分（landscape=24000，其余=8000），避免方法/实验节被截断；
       - 预算内按文档序补节；仅在「最后一节」超出预算时才截断该节内部，
         绝不在句中腰斩一节。
     非结构化来源（llm_recall/abstract_only）无 sections，直接截断 flat。
     """
+    if budget is None:
+        budget = _MODE_BUDGETS.get(mode, 12000)
+
     parts: list[str] = []
     if sft.title:
         parts.append(f"Title: {sft.title}")
@@ -191,7 +220,8 @@ def select_context_for_mode(sft: StructuredFullText, mode: str, paper: dict,
 
     kws = _MODE_SECTION_KEYWORDS.get(mode)
     if kws is None:
-        selected = sections
+        # landscape：全部章节但排除噪声节（References/致谢/附录/空标题等）
+        selected = [s for s in sections if not _is_noise_section(s)]
     else:
         selected = [s for s in sections if any(k in s["title"].lower() for k in kws)]
         if not selected:
