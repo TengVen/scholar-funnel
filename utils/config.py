@@ -42,9 +42,7 @@ class Settings:
 
     # 认证
     jwt_secret: str = field(
-        default_factory=lambda: os.getenv(
-            "JWT_SECRET", "scholar-funnel-dev-secret-0123456789abcdef"
-        )
+        default_factory=lambda: os.getenv("JWT_SECRET", "")
     )
 
     # LLM —— 绑定为一组：provider + api_key
@@ -107,6 +105,13 @@ class Settings:
             )
         if not self.llm_api_key:
             raise RuntimeError("未配置 LLM_API_KEY（或兼容的 OPENAI_API_KEY）")
+        if not self.jwt_secret:
+            raise RuntimeError(
+                "未配置 JWT_SECRET：请在 .env 中设置强随机密钥"
+                "（缺失将回退到公开默认值，存在任意账号伪造/提权风险）。\n"
+                "生成方式：python -c \"import secrets; print('JWT_SECRET=' "
+                "+ secrets.token_urlsafe(48))\""
+            )
 
     # ── 绑定属性：直接取对应厂商的地址和模型 ──
     @property

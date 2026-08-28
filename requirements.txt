@@ -3,15 +3,32 @@ sqlalchemy>=2.0
 psycopg[binary]>=3.1
 python-dotenv>=1.0.0
 
+# ── Web 框架 / 服务器 ──
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.7
+
+# ── 认证（JWT + bcrypt 密码哈希）──
+bcrypt>=4.0
+PyJWT>=2.8
+
 # ── LLM ──
 openai>=1.10.0
+
+# ── LangGraph（deep_research 漏斗）──
+langgraph>=1.0
 
 # ── 网络请求 ──
 httpx>=0.25.0
 
-# ── ML（BGE Reranker）──
+# ── ML（BGE Embedding + Reranker）──
 transformers>=4.36.0
 torch>=2.0.0
+sentence-transformers>=2.7
 
-# ── 可选：ONNX 加速 ──
+# ── PDF 结构解析 ──
+pymupdf>=1.24
+
+# ── 可选：ONNX 加速（rerank 无 optimum 时自动回退 pytorch）──
+# optimum>=1.16.0
 # onnxruntime>=1.16.0

@@ -20,10 +20,11 @@ from storage.mysql_db import get_session
 from storage.models import User  # 由 auth models 提供
 
 # ── 常量 ──
-ACCESS_TOKEN_TTL = timedelta(hours=2)          # Access 有效期
+ACCESS_TOKEN_TTL = timedelta(hours=6)          # Access 有效期
 REFRESH_TOKEN_TTL = timedelta(days=7)          # Refresh 有效期
 JWT_ALGORITHM = "HS256"
-JWT_SECRET = getattr(settings, "jwt_secret", None) or "scholar-funnel-dev-secret"
+# 密钥由 config 强制要求（缺失即启动失败），此处直接取用，不再回退默认值
+JWT_SECRET = settings.jwt_secret
 
 _bearer = HTTPBearer(auto_error=False)
 
