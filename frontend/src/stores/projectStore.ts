@@ -88,6 +88,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     set((s) => ({
       chatOpenConvId: null,
       activeConversationId: null,
+      activeProject: null, // 新对话断开项目上下文：右上角徽章 + 左侧高亮同步清除
       chatNewSignal: s.chatNewSignal + 1,
     })),
 

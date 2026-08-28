@@ -123,6 +123,21 @@ export interface TitleLookupRequest {
   target_category: Category;
 }
 
+// ── Local Search（本地库二次检索）──
+
+export interface LocalSearchRequest {
+  project_id: number;
+  query: string;
+  limit?: number;
+}
+
+export interface LocalSearchResponse {
+  papers: Paper[];
+  total: number;
+  query: string;
+  mode: string;
+}
+
 // ── Paper ──
 
 export interface Paper {

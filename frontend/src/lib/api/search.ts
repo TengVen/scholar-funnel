@@ -8,6 +8,8 @@ import type {
   GapSearchRequest,
   GapSearchResult,
   TitleLookupRequest,
+  LocalSearchRequest,
+  LocalSearchResponse,
   PaperListParams,
   PaperListResponse,
 } from "@/types/dto";
@@ -79,4 +81,10 @@ export function listPapers(params: PaperListParams): Promise<PaperListResponse> 
   if (params.page !== undefined) qs.set("page", String(params.page));
   if (params.page_size) qs.set("page_size", String(params.page_size));
   return request(`/api/papers?${qs.toString()}`);
+}
+
+// ── 本地库二次检索（对已入库论文按向量语义召回）──
+
+export function runLocalSearch(body: LocalSearchRequest): Promise<LocalSearchResponse> {
+  return request("/api/search/local", { method: "POST", body: JSON.stringify(body) });
 }

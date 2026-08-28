@@ -9,6 +9,7 @@ from api.schemas import (
     SearchRequest, SearchResponse,
     GapSearchRequest, GapSearchResponse, GapCandidate,
     SemanticGapRequest, TitleLookupRequest,
+    LocalSearchRequest, LocalSearchResponse, PaperOut,
 )
 from storage.models import User
 from utils.auth import get_current_user, get_owned_project
@@ -215,3 +216,54 @@ def run_title_lookup(body: TitleLookupRequest, user: User = Depends(get_current_
         return GapSearchResponse(**result)
     except Exception as e:
         raise HTTPException(500, f"标题查找失败: {str(e)}")
+
+
+@router.post("/local", response_model=LocalSearchResponse)
+def search_local(body: LocalSearchRequest, user: User = Depends(get_current_user)):
+    """
+    本地库二次检索：对已入库论文按向量语义召回领域/技术子集。
+
+    与 /trunk（OpenAlex 广域召回）的区别：
+      - 不调用 OpenAlex，不重新入库；直接在项目内 ai_papers 上做余弦召回
+      - 用于"先广域入库、再按领域聚焦精筛"的两阶段工作流
+      - 返回的论文 id 为整数 DB id，可直接"加入骨架"
+    """
+    _check(body.project_id, user)
+    try:
+        from storage.vector_store import semantic_recall_papers, ensure_project_embeddings
+
+        # 懒向量化兜底：项目内尚无 embedding 的论文先补齐
+        ensure_project_embeddings(body.project_id)
+
+        raw = semantic_recall_papers(
+            project_id=body.project_id,
+            query_text=body.query,
+            limit=body.limit,
+        )
+        papers = [
+            PaperOut(
+                id=p["paper_id"],
+                title=p["title"],
+                authors=p["authors"] or [],
+                year=p["year"],
+                venue=p.get("venue") or "",
+                doi=p.get("doi"),
+                arxiv_id=None,
+                abstract=p.get("abstract") or "",
+                cited_by_count=p.get("cited_by_count") or 0,
+                is_survey=False,
+                trunk_score=p.get("similarity"),
+                keywords=p.get("keywords") or [],
+                github_url=p.get("github_url"),
+                in_cart=False,
+            )
+            for p in raw
+        ]
+        return LocalSearchResponse(
+            papers=papers,
+            total=len(papers),
+            query=body.query,
+            mode="local",
+        )
+    except Exception as e:
+        raise HTTPException(500, f"本地检索失败: {str(e)}")

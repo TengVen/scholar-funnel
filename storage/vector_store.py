@@ -186,7 +186,8 @@ def semantic_recall_papers(
         if similarity < similarity_threshold:
             continue
         papers.append({
-            "id": r["openalex_id"],
+            "paper_id": r["id"],          # 整数 DB id（本地二次检索加入骨架用）
+            "id": r["openalex_id"],       # openalex_id（主干链路去重用，保持不变）
             "title": r["title"] or "",
             "abstract": r["abstract"] or "",
             "authors": r["authors"] or [],

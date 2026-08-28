@@ -6,13 +6,16 @@ import { DEFAULT_SORT } from "@/config/search";
 import type { Page, SortSpec, Category } from "@/types/domain";
 import type { Paper, SearchResult, GapSearchResult } from "@/types/dto";
 import { listPapers } from "@/lib/api/search";
-import { runTrunkSearch, runGapSearch, runGapSemantic, lookupTitleByTitle } from "@/lib/api/search";
+import {
+  runTrunkSearch, runGapSearch, runGapSemantic, lookupTitleByTitle, runLocalSearch,
+} from "@/lib/api/search";
 import { useProjectStore } from "@/stores/projectStore";
 import { useCartStore } from "@/stores/cartStore";
 import { useAuth } from "@/hooks/useAuth";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { PaperList } from "@/components/search/PaperList";
+import { PaperCard } from "@/components/search/PaperCard";
 import { GapPanel } from "@/components/search/GapPanel";
 import { CartPanel } from "@/components/cart/CartPanel";
 import { StatsBar } from "@/components/search/StatsBar";
@@ -21,6 +24,7 @@ import { NetworkPanel } from "@/components/network/NetworkPanel";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { CartDetail } from "@/components/cart/CartDetail";
 import { ToastContainer } from "@/components/common/ToastContainer";
+import { Database } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 export default function Home() {
@@ -68,6 +72,13 @@ export default function Home() {
   const [gapMode, setGapMode] = useState(false);            // 是否显示重检索视图
   const [gapResult, setGapResult] = useState<GapSearchResult | null>(null);
   const [gapSearching, setGapSearching] = useState(false);
+
+  // ── 本地库二次检索（对已入库论文按领域/技术语义召回）──
+  const [scope, setScope] = useState<"openalex" | "local">("openalex");
+  const [localMode, setLocalMode] = useState(false);
+  const [localPapers, setLocalPapers] = useState<Paper[]>([]);
+  const [localQuery, setLocalQuery] = useState("");
+  const [localSearching, setLocalSearching] = useState(false);
 
   // ── 启动：认证初始化（游客兜底 / 恢复会话）──
   useEffect(() => {
@@ -134,9 +145,10 @@ export default function Home() {
     }
   }, [activeProject, loadPapers, loadCart]);
 
-  // ── 执行检索 ──
+  // ── 执行检索（广域 OpenAlex）──
   const handleSearch = async (query: string, techProbe: string) => {
     if (!activeProject) return;
+    setLocalMode(false);
     setSearching(true);
     setSearchResult(null);
     try {
@@ -153,6 +165,29 @@ export default function Home() {
     } finally {
       setSearching(false);
     }
+  };
+
+  // ── 本地库二次检索（对已入库论文按领域/技术语义召回）──
+  const handleLocalSearch = async (query: string) => {
+    if (!activeProject) return;
+    setLocalSearching(true);
+    setLocalMode(true);
+    setActivePage("search");
+    try {
+      const res = await runLocalSearch({ project_id: activeProject.id, query, limit: 30 });
+      setLocalPapers(res.papers);
+      setLocalQuery(res.query);
+    } catch (e: unknown) {
+      toast(`本地检索失败: ${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setLocalSearching(false);
+    }
+  };
+
+  // ── 范围开关：切回广域时退出本地检索视图 ──
+  const handleScopeChange = (s: "openalex" | "local") => {
+    setScope(s);
+    if (s === "openalex") setLocalMode(false);
   };
 
   // ── 创建新项目 ──
@@ -273,13 +308,64 @@ export default function Home() {
             />
           );
         }
+        // 本地库二次检索模式：对已入库论文做领域/技术语义召回
+        if (localMode) {
+          return (
+            <>
+              <SearchPanel
+                activeProject={activeProject}
+                searching={scope === "local" ? localSearching : searching}
+                scope={scope}
+                onScopeChange={handleScopeChange}
+                onSearch={handleSearch}
+                onNewProject={handleNewProject}
+                onLocalSearch={handleLocalSearch}
+              />
+              <div className="flex items-center justify-between px-6 py-2 border-b border-[#4FAF9F]/25 bg-[#4FAF9F]/[0.06] shrink-0">
+                <span className="flex items-center gap-2 text-[12px] text-ink-muted">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#4FAF9F]/15 text-[#6fcebd] border border-[#4FAF9F]/30">
+                    <Database className="w-3 h-3" />
+                    本地库召回
+                  </span>
+                  <span className="text-ink-secondary font-medium">{localQuery}</span>
+                  <span className="ml-1 text-ink-faint">{localPapers.length} 篇</span>
+                </span>
+                <button
+                  onClick={() => setLocalMode(false)}
+                  className="btn-ghost text-[12px]"
+                >
+                  退出本地检索
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2 bg-[#4FAF9F]/[0.02]">
+                {localSearching && localPapers.length === 0 ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="w-5 h-5 border-2 border-line border-t-[#4FAF9F] rounded-full animate-spin" />
+                  </div>
+                ) : localPapers.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-2 text-ink-faint">
+                    <Database className="w-6 h-6 opacity-40" />
+                    <p className="text-[13px]">未找到匹配的已入库论文</p>
+                  </div>
+                ) : (
+                  localPapers.map((p) => (
+                    <PaperCard key={p.id} paper={p} onAddToCart={handleAddToCart} />
+                  ))
+                )}
+              </div>
+            </>
+          );
+        }
         return (
           <>
             <SearchPanel
               activeProject={activeProject}
-              searching={searching}
+              searching={scope === "local" ? localSearching : searching}
+              scope={scope}
+              onScopeChange={handleScopeChange}
               onSearch={handleSearch}
               onNewProject={handleNewProject}
+              onLocalSearch={handleLocalSearch}
             />
             {searchResult && <StatsBar result={searchResult} />}
             <PaperList

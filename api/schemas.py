@@ -110,6 +110,21 @@ class TitleLookupRequest(BaseModel):
     target_category: str               # foundation / mainstream / frontier
 
 
+class LocalSearchRequest(BaseModel):
+    """本地库二次检索请求：对已入库论文按向量语义召回领域/技术子集"""
+    project_id: int
+    query: str                         # 领域或技术探针（语义查询）
+    limit: int = Field(default=30, ge=1, le=100)
+
+
+class LocalSearchResponse(BaseModel):
+    """本地库二次检索响应：返回已入库论文的子集（不重复入库）"""
+    papers: list[PaperOut]
+    total: int
+    query: str
+    mode: str = "local"
+
+
 # ── Paper ──
 
 class PaperOut(BaseModel):
