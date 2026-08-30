@@ -55,7 +55,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
         <div className="flex items-center justify-between px-5 py-4 border-b border-line">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-gold-light" />
-            <span className="font-serif text-[15px] font-semibold text-ink">
+            <span className="font-serif text-lg font-semibold text-ink">
               {isGuest && tab === "register" ? "保存游客数据" : tab === "login" ? "登录" : "注册账号"}
             </span>
           </div>
@@ -66,7 +66,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
 
         {/* Guest upgrade hint */}
         {isGuest && tab === "register" && (
-          <div className="mx-5 mt-3 rounded-lg bg-accent-light/40 border border-gold/20 px-3 py-2 text-[11.5px] text-gold-light">
+          <div className="mx-5 mt-3 rounded-lg bg-accent-light/40 border border-gold/20 px-3 py-2 text-xs text-gold-light">
             当前为游客模式，注册后游客期间创建的项目与骨架将全部归入新账号。
           </div>
         )}
@@ -77,7 +77,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
             <button
               key={t}
               onClick={() => { setTab(t); setError(""); }}
-              className={`flex-1 py-1.5 rounded-md text-[12.5px] font-medium transition-colors ${
+              className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 tab === t ? "bg-paper-white text-accent shadow-sm" : "text-ink-faint hover:text-ink-muted"
               }`}
             >
@@ -93,7 +93,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="用户名"
-            className="input !text-[13px]"
+            className="input !text-base"
             autoFocus
           />
           <input
@@ -102,7 +102,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
             placeholder="密码（至少 6 位）"
-            className="input !text-[13px]"
+            className="input !text-base"
           />
           {tab === "register" && (
             <input
@@ -110,12 +110,12 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="邮箱（可选）"
-              className="input !text-[13px]"
+              className="input !text-base"
             />
           )}
 
           {error && (
-            <p className="text-[12px] text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{error}</p>
+            <p className="text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{error}</p>
           )}
 
           <button

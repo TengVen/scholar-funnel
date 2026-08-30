@@ -65,6 +65,14 @@ const config: Config = {
         "heading": ["1.125rem", { lineHeight: "1.4", fontWeight: "600" }],
         "body": ["0.875rem", { lineHeight: "1.6" }],
         "caption": ["0.75rem", { lineHeight: "1.5" }],
+        // 正文细档（2026-08-30 收敛：原 9 档任意值 text-[Npx] 收敛为此 5 档）
+        // 2xs ← {10, 10.5}px 微标签 · xs ← {11, 11.5}px 徽章/元信息
+        // sm ← {12, 12.5}px 次要正文 · base ← {13, 14}px 主正文 · lg ← {15, 17}px 小节标题
+        "2xs": ["10.5px", { lineHeight: "1.5" }],
+        "xs": ["11.5px", { lineHeight: "1.5" }],
+        "sm": ["12.5px", { lineHeight: "1.55" }],
+        "base": ["13px", { lineHeight: "1.6" }],
+        "lg": ["15px", { lineHeight: "1.45" }],
       },
       spacing: {
         "18": "4.5rem",

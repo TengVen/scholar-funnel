@@ -54,7 +54,7 @@ export function SearchPanel({
                 type="button"
                 onClick={() => onScopeChange("openalex")}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] transition-colors",
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm transition-colors",
                   scope === "openalex"
                     ? "bg-gradient-to-br from-gold-light via-gold to-gold-hover text-[#171614] shadow-sm"
                     : "text-ink-muted hover:text-ink-secondary",
@@ -67,7 +67,7 @@ export function SearchPanel({
                 type="button"
                 onClick={() => onScopeChange("local")}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] transition-colors",
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm transition-colors",
                   scope === "local"
                     ? "bg-[#4FAF9F] text-white shadow-sm"
                     : "text-ink-muted hover:text-ink-secondary",
@@ -131,7 +131,7 @@ export function SearchPanel({
         {/* 广域模式：技术探针输入（LLM 提示） */}
         {showProbe && scope !== "local" && (
           <div className="flex items-center gap-3">
-            <label className="text-[12px] text-ink-muted whitespace-nowrap">
+            <label className="text-sm text-ink-muted whitespace-nowrap">
               技术探针
             </label>
             <input
@@ -145,7 +145,7 @@ export function SearchPanel({
         )}
 
         {activeProject && (
-          <div className="flex items-center gap-4 text-[12px] text-ink-muted">
+          <div className="flex items-center gap-4 text-sm text-ink-muted">
             <span>
               项目{" "}
               <span className="text-ink-secondary font-medium">
@@ -162,7 +162,7 @@ export function SearchPanel({
       </form>
 
       {/* 模式引导：检索页 = 快速模式，对话页 = 精细模式 */}
-      <div className="mt-3 flex items-center gap-2 text-[11px] text-ink-faint">
+      <div className="mt-3 flex items-center gap-2 text-xs text-ink-faint">
         <Sparkles className="w-3 h-3 text-gold-light shrink-0" />
         <span>
           {scope === "local" ? (

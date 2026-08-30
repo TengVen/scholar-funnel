@@ -65,7 +65,7 @@ export function PaperList({
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center space-y-2">
           <Inbox className="w-10 h-10 text-ink-faint mx-auto" />
-          <p className="text-ink-muted text-[13px]">
+          <p className="text-ink-muted text-base">
             输入研究方向，开始检索文献
           </p>
         </div>
@@ -88,7 +88,7 @@ export function PaperList({
                   key={opt.value}
                   onClick={() => handleSortClick(opt.value)}
                   title={`${selected ? "点击切换方向/取消" : "点击加入排序"}`}
-                  className={`flex items-center gap-1 px-2 py-1 rounded text-[12px] transition-colors ${
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-sm transition-colors ${
                     selected
                       ? "bg-accent-light text-gold-light font-medium border border-gold/30"
                       : "text-ink-muted hover:text-ink-secondary border border-transparent"
@@ -96,7 +96,7 @@ export function PaperList({
                 >
                   {opt.label}
                   {selected && (
-                    <span className="text-[11px] text-gold leading-none">
+                    <span className="text-xs text-gold leading-none">
                       {spec.order === "desc" ? "↓" : "↑"}
                     </span>
                   )}
@@ -113,7 +113,7 @@ export function PaperList({
               <button
                 key={opt.value}
                 onClick={() => onFilterChange(opt.value)}
-                className={`px-2 py-1 rounded text-[12px] transition-colors ${
+                className={`px-2 py-1 rounded text-sm transition-colors ${
                   filterSurvey === opt.value
                     ? "bg-accent-light text-accent font-medium"
                     : "text-ink-muted hover:text-ink-secondary"
@@ -128,7 +128,7 @@ export function PaperList({
             {/* 重检索（缺口补充结果）切换 */}
             <button
               onClick={onToggleGap}
-              className={`px-2 py-1 rounded text-[12px] transition-colors ${
+              className={`px-2 py-1 rounded text-sm transition-colors ${
                 gapActive
                   ? "bg-violet-500/15 text-violet-300 font-medium"
                   : "text-ink-muted hover:text-violet-300/70"
@@ -142,7 +142,7 @@ export function PaperList({
 
         {/* Pagination */}
         <div className="flex items-center gap-2">
-          <span className="text-[12px] text-ink-muted">
+          <span className="text-sm text-ink-muted">
             {total} 篇 · {page + 1}/{maxPage + 1}
           </span>
           <button

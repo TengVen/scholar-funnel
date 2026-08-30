@@ -38,10 +38,10 @@ function GroupHeader({
     <div className="mb-2">
       <div className="flex items-center gap-2">
         <span className="w-1.5 h-3.5 rounded-full shrink-0" style={{ background: c.dot }} />
-        <span className="text-[13px] font-medium" style={{ color: c.text }}>
+        <span className="text-base font-medium" style={{ color: c.text }}>
           {label}
         </span>
-        <span className="text-[11px] text-gold-light tabular-nums font-medium">
+        <span className="text-xs text-gold-light tabular-nums font-medium">
           {count} 篇
         </span>
         {/* 单类分析：与标题同风格 + 鎏金边框 360° 环绕（按钮保持原样） */}
@@ -63,7 +63,7 @@ function GroupHeader({
           />
           {/* 内容层（遮住中间，只露边框） */}
           <span
-            className="relative block rounded-[5px] px-2.5 py-1 text-[11px] font-medium"
+            className="relative block rounded-[5px] px-2.5 py-1 text-xs font-medium"
             style={{ color: c.textBright, background: "#1e1b17" }}
           >
             单类分析
@@ -197,10 +197,10 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
       {/* Header */}
       <div className="px-6 py-4 border-b border-line bg-paper-white shrink-0 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-serif text-[15px] font-semibold text-ink">分支深挖</h2>
+          <h2 className="font-serif text-lg font-semibold text-ink">分支深挖</h2>
 
           {/* 分析对象状态条：直接说明"深挖的是骨架" */}
-          <div className="flex items-center gap-2 text-[12px]">
+          <div className="flex items-center gap-2 text-sm">
             <span className="text-ink-muted flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-gold-light" />
               分析对象：核心骨架
@@ -213,7 +213,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
               </span>
             )}
             {!cartEmpty && (
-              <span className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+              <span className="flex items-center gap-1.5 text-xs text-ink-faint">
                 {CATEGORY_GROUPS.map((g, i) => (
                   <span key={g.key}>
                     {i > 0 && "·"}
@@ -229,13 +229,13 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
         {cartEmpty && (
           <div className="flex items-center gap-3 bg-paper-warm rounded-lg px-4 py-3 border border-gold/15">
             <Package className="w-4 h-4 text-ink-faint shrink-0" />
-            <p className="text-[12.5px] text-ink-secondary">
+            <p className="text-sm text-ink-secondary">
               骨架为空，分支深挖会逐篇分析骨架论文。先去添加论文吧。
             </p>
             <a
               href="#cart"
               onClick={() => window.dispatchEvent(new CustomEvent("navigate-to-cart"))}
-              className="btn-secondary text-[12px] ml-auto flex items-center gap-1"
+              className="btn-secondary text-sm ml-auto flex items-center gap-1"
             >
               去骨架页
               <ArrowRight className="w-3 h-3" />
@@ -261,7 +261,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
                     : "bg-paper-warm border-transparent hover:bg-paper-warm/70"
                 }`}
               >
-                <span className={`flex items-center gap-1.5 text-[12.5px] font-medium ${active ? "text-gold-light" : "text-ink"}`}>
+                <span className={`flex items-center gap-1.5 text-sm font-medium ${active ? "text-gold-light" : "text-ink"}`}>
                   <Icon className="w-3.5 h-3.5" />
                   {m.label}
                   {analyzed && (
@@ -270,7 +270,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
                     </span>
                   )}
                 </span>
-                <span className="block text-[11px] text-ink-muted mt-0.5">{m.desc}</span>
+                <span className="block text-xs text-ink-muted mt-0.5">{m.desc}</span>
               </button>
             );
           })}
@@ -292,7 +292,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
         {cartEmpty ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center space-y-2">
-              <p className="text-[13px] text-ink-faint">
+              <p className="text-base text-ink-faint">
                 添加骨架论文后，即可开始分支深挖
               </p>
             </div>
@@ -301,7 +301,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
           <>
             {/* 分析中进度条（叠加在顶部，不黑屏） */}
             {analyzing && (
-              <div className="mb-3 flex items-center gap-2 text-[12px] text-gold-light
+              <div className="mb-3 flex items-center gap-2 text-sm text-gold-light
                               bg-accent-light/40 rounded-lg px-4 py-2.5 border border-gold/25">
                 <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                 <span className="truncate">
@@ -309,7 +309,7 @@ export function BranchPanel({ projectId, cart }: BranchPanelProps) {
                     ? `正在深挖「${CATEGORY_GROUPS.find((g) => g.key === analyzingCat)?.label ?? ""}」：${progress || "准备中..."}`
                     : `正在分析：${progress || "准备中..."}`}
                 </span>
-                <span className="ml-auto text-[11px] text-ink-muted shrink-0">
+                <span className="ml-auto text-xs text-ink-muted shrink-0">
                   完成后将自动更新对应分组
                 </span>
               </div>
@@ -355,7 +355,7 @@ function BranchMixedView({
   return (
     <div className="space-y-5">
       {/* 提示条 */}
-      <div className="flex items-center gap-2 text-[12px] text-ink-muted bg-paper-warm rounded-lg px-4 py-2.5">
+      <div className="flex items-center gap-2 text-sm text-ink-muted bg-paper-warm rounded-lg px-4 py-2.5">
         <Layers className="w-3.5 h-3.5 text-gold-light shrink-0" />
         <span>
           {result && result.results.length > 0
@@ -427,7 +427,7 @@ function SkeletonPreviewCard({ item }: { item: CartItem }) {
                     border border-dashed border-line bg-paper-white/40">
       {/* Title + 待分析徽章 */}
       <div className="flex items-start justify-between gap-2">
-        <h4 className="font-serif text-[13px] font-semibold text-ink leading-snug flex-1 line-clamp-2">
+        <h4 className="font-serif text-base font-semibold text-ink leading-snug flex-1 line-clamp-2">
           {item.title}
         </h4>
         <span className="badge bg-paper-warm text-ink-faint shrink-0 whitespace-nowrap">
@@ -436,7 +436,7 @@ function SkeletonPreviewCard({ item }: { item: CartItem }) {
       </div>
 
       {/* Meta */}
-      <div className="flex items-center gap-2 mt-1 text-[11px] text-ink-faint">
+      <div className="flex items-center gap-2 mt-1 text-xs text-ink-faint">
         {item.year && <span>{item.year}</span>}
         {item.cited_by_count > 0 && (
           <>
@@ -460,7 +460,7 @@ function SkeletonPreviewCard({ item }: { item: CartItem }) {
 
       {/* 分类理由 */}
       {item.notes && (
-        <p className="text-[11px] text-gold-light/70 mt-1.5 flex items-center gap-1">
+        <p className="text-xs text-gold-light/70 mt-1.5 flex items-center gap-1">
           <span className="w-1 h-1 rounded-full bg-gold shrink-0" />
           {item.notes}
         </p>
@@ -472,7 +472,7 @@ function SkeletonPreviewCard({ item }: { item: CartItem }) {
           {item.keywords.slice(0, 4).map((kw, i) => (
             <span
               key={kw}
-              className="px-1.5 py-0.5 rounded-md text-[10px] backdrop-blur-sm"
+              className="px-1.5 py-0.5 rounded-md text-2xs backdrop-blur-sm"
               style={{
                 background: KEYWORD_COLORS[i % KEYWORD_COLORS.length].bg,
                 border: `1px solid ${KEYWORD_COLORS[i % KEYWORD_COLORS.length].border}`,
@@ -489,7 +489,7 @@ function SkeletonPreviewCard({ item }: { item: CartItem }) {
 
       {/* Footer 提示 */}
       <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-line-light">
-        <span className="text-[10.5px] text-ink-faint flex items-center gap-1">
+        <span className="text-2xs text-ink-faint flex items-center gap-1">
           <Crosshair className="w-2.5 h-2.5" />
           分析后将显示 方法/匹配/发现
         </span>

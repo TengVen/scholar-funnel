@@ -29,7 +29,7 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
     <div className="card px-4 py-3.5 flex flex-col min-h-[150px]">
       {/* Top row: title + 全景徽章 */}
       <div className="flex items-start justify-between gap-2">
-        <h4 className="font-serif text-[13px] font-semibold text-ink leading-snug flex-1 line-clamp-2">
+        <h4 className="font-serif text-base font-semibold text-ink leading-snug flex-1 line-clamp-2">
           {paper.title}
         </h4>
         <span
@@ -45,7 +45,7 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
       </div>
 
       {/* Meta */}
-      <div className="flex items-center gap-2 mt-1 text-[11px] text-ink-faint">
+      <div className="flex items-center gap-2 mt-1 text-xs text-ink-faint">
         {paper.year && <span>{paper.year}</span>}
         {paper.cited_by_count > 0 && (
           <>
@@ -63,13 +63,13 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
         <div className="flex gap-2 mt-2 items-start">
           {paper.method_category && (
             <span
-              className="px-1.5 py-0.5 rounded text-[10.5px] whitespace-nowrap shrink-0 mt-0.5"
+              className="px-1.5 py-0.5 rounded text-2xs whitespace-nowrap shrink-0 mt-0.5"
               style={{ background: "rgba(120,170,255,0.14)", color: "#9FC4FF" }}
             >
               {paper.method_category}
             </span>
           )}
-          <p className="text-[12px] text-ink-secondary leading-relaxed line-clamp-3 flex-1">
+          <p className="text-sm text-ink-secondary leading-relaxed line-clamp-3 flex-1">
             {paper.method_summary}
           </p>
         </div>
@@ -81,7 +81,7 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
           className="mt-2 rounded-md px-3 py-2 bg-paper-warm/60"
           style={{ borderLeft: "2px solid rgba(240,206,110,0.45)" }}
         >
-          <p className="font-serif text-[12.5px] text-ink leading-relaxed">
+          <p className="font-serif text-sm text-ink leading-relaxed">
             “{paper.research_question}”
           </p>
         </div>
@@ -92,7 +92,7 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
         <div className="flex flex-wrap gap-1.5 mt-2">
           {paper.methodology_type && (
             <span
-              className="px-1.5 py-0.5 rounded-full text-[11px]"
+              className="px-1.5 py-0.5 rounded-full text-xs"
               style={{
                 background: "rgba(180,160,240,0.14)",
                 border: "1px solid rgba(180,160,240,0.32)",
@@ -104,7 +104,7 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
           )}
           {paper.research_design && (
             <span
-              className="px-1.5 py-0.5 rounded-full text-[11px]"
+              className="px-1.5 py-0.5 rounded-full text-xs"
               style={{
                 background: "rgba(110,200,230,0.14)",
                 border: "1px solid rgba(110,200,230,0.32)",
@@ -120,12 +120,12 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
       {/* 方法组件玻璃徽章组 */}
       {components.length > 0 && (
         <>
-          <p className="text-[11px] text-ink-faint mt-2 mb-1">方法组件</p>
+          <p className="text-xs text-ink-faint mt-2 mb-1">方法组件</p>
           <div className="flex flex-wrap gap-1">
             {components.slice(0, 8).map((c, i) => (
               <span
                 key={c}
-                className="px-1.5 py-0.5 rounded-md text-[10.5px] backdrop-blur-sm"
+                className="px-1.5 py-0.5 rounded-md text-2xs backdrop-blur-sm"
                 style={{
                   background: KEYWORD_COLORS[i % KEYWORD_COLORS.length].bg,
                   border: `1px solid ${KEYWORD_COLORS[i % KEYWORD_COLORS.length].border}`,
@@ -144,16 +144,16 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
         <div className="grid grid-cols-2 gap-2 mt-2">
           {paper.key_innovation && (
             <div className="rounded-md px-2.5 py-1.5 bg-paper-warm/60">
-              <p className="text-[10.5px] text-gold-light font-medium mb-0.5">创新</p>
-              <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-3">
+              <p className="text-2xs text-gold-light font-medium mb-0.5">创新</p>
+              <p className="text-xs text-ink-secondary leading-relaxed line-clamp-3">
                 {paper.key_innovation}
               </p>
             </div>
           )}
           {paper.limitations && (
             <div className="rounded-md px-2.5 py-1.5 bg-paper-warm/60">
-              <p className="text-[10.5px] text-ink-faint font-medium mb-0.5">局限</p>
-              <p className="text-[11.5px] text-ink-secondary leading-relaxed line-clamp-3">
+              <p className="text-2xs text-ink-faint font-medium mb-0.5">局限</p>
+              <p className="text-xs text-ink-secondary leading-relaxed line-clamp-3">
                 {paper.limitations}
               </p>
             </div>
@@ -166,7 +166,7 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
         <div className="mt-2 pt-1.5 border-t border-line-light">
           <button
             onClick={() => setEvidenceOpen(!evidenceOpen)}
-            className="flex items-center gap-1 text-[11px] font-medium transition-colors hover:opacity-80"
+            className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
             style={{ color: "#8FE3DA" }}
           >
             {evidenceOpen ? (
@@ -180,7 +180,7 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
         </div>
       )}
 
-      {paper.error && <p className="mt-2 text-[11px] text-red-400">{paper.error}</p>}
+      {paper.error && <p className="mt-2 text-xs text-red-400">{paper.error}</p>}
 
       {/* Footer */}
       <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-line-light">
@@ -189,7 +189,7 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
             href={`https://doi.org/${paper.doi}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-ghost text-[11px]"
+            className="btn-ghost text-xs"
           >
             <ExternalLink className="w-2.5 h-2.5 inline mr-0.5" />
             DOI
@@ -198,18 +198,18 @@ export function LandscapeCard({ paper }: { paper: BranchPaperResult }) {
         {paper.abstract && (
           <button
             onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-0.5 text-[11px] text-ink-faint hover:text-ink-muted transition-colors"
+            className="flex items-center gap-0.5 text-xs text-ink-faint hover:text-ink-muted transition-colors"
           >
             {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
             {expanded ? "收起" : "摘要"}
           </button>
         )}
         <div className="flex-1" />
-        <span className="text-[10.5px] text-ink-faint">{paper.content_source}</span>
+        <span className="text-2xs text-ink-faint">{paper.content_source}</span>
       </div>
 
       {expanded && paper.abstract && (
-        <p className="mt-2 text-[12px] text-ink-secondary leading-relaxed">{paper.abstract}</p>
+        <p className="mt-2 text-sm text-ink-secondary leading-relaxed">{paper.abstract}</p>
       )}
     </div>
   );

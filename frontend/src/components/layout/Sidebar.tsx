@@ -69,7 +69,7 @@ export function Sidebar({
             <div className="w-5 h-5 rounded bg-gradient-to-br from-gold-light to-gold-hover flex items-center justify-center shrink-0">
               <Search className="w-3 h-3 text-[#171614]" />
             </div>
-            <span className="font-serif text-[13px] font-semibold text-gold-light truncate">
+            <span className="font-serif text-base font-semibold text-gold-light truncate">
               Scholar Funnel
             </span>
           </div>
@@ -91,7 +91,7 @@ export function Sidebar({
         <div className="px-3 pt-3 pb-1 shrink-0">
           <button
             onClick={onNewConversation}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-gold/30 bg-accent-light/20 text-[12.5px] text-gold-light hover:bg-accent-light/40 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-gold/30 bg-accent-light/20 text-sm text-gold-light hover:bg-accent-light/40 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             新对话
@@ -106,7 +106,7 @@ export function Sidebar({
           <div className="mb-1">
             <button
               onClick={() => setConvsOpen(!convsOpen)}
-              className="w-full flex items-center gap-1 px-3 py-1 text-[10px] font-medium text-ink-faint uppercase tracking-widest hover:text-ink-muted"
+              className="w-full flex items-center gap-1 px-3 py-1 text-2xs font-medium text-ink-faint uppercase tracking-widest hover:text-ink-muted"
             >
               {convsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
               对话历史
@@ -114,14 +114,14 @@ export function Sidebar({
             {convsOpen && (
               <div className="space-y-0.5">
                 {conversations.length === 0 ? (
-                  <p className="px-3 py-1.5 text-[11.5px] text-ink-faint">暂无对话</p>
+                  <p className="px-3 py-1.5 text-xs text-ink-faint">暂无对话</p>
                 ) : (
                   conversations.map((c) => (
                     <button
                       key={c.conversation_id}
                       onClick={() => onSelectConversation(c.conversation_id)}
                       className={cn(
-                        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-[13px] transition-colors",
+                        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-base transition-colors",
                         activeConversationId === c.conversation_id
                           ? "bg-accent-light text-accent font-medium"
                           : "text-ink-secondary hover:bg-paper-warm",
@@ -131,7 +131,7 @@ export function Sidebar({
                       <span className="truncate flex-1">
                         {c.title && c.title !== "new" ? c.title : "未命名对话"}
                       </span>
-                      <span className="text-[10px] text-ink-faint shrink-0">
+                      <span className="text-2xs text-ink-faint shrink-0">
                         {fmtTime(c.last_message_at || c.created_at)}
                       </span>
                     </button>
@@ -144,7 +144,7 @@ export function Sidebar({
 
         {/* 项目分组 */}
         {!collapsed && (
-          <p className="px-3 mb-1 mt-2 text-[10px] font-medium text-ink-faint uppercase tracking-widest">
+          <p className="px-3 mb-1 mt-2 text-2xs font-medium text-ink-faint uppercase tracking-widest">
             Projects
           </p>
         )}
@@ -153,7 +153,7 @@ export function Sidebar({
             key={p.id}
             onClick={() => onSelect(p)}
             className={cn(
-              "w-full flex items-center gap-2 px-3 py-1.5 text-left text-[13px] transition-colors",
+              "w-full flex items-center gap-2 px-3 py-1.5 text-left text-base transition-colors",
               activeProject?.id === p.id
                 ? "bg-accent-light text-accent font-medium"
                 : "text-ink-secondary hover:bg-paper-warm",
@@ -165,7 +165,7 @@ export function Sidebar({
         ))}
 
         {projects.length === 0 && !collapsed && (
-          <p className="px-3 py-4 text-[12px] text-ink-faint">
+          <p className="px-3 py-4 text-sm text-ink-faint">
             输入研究方向开始
           </p>
         )}
@@ -187,8 +187,8 @@ export function Sidebar({
               <User className="w-3 h-3 text-accent" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-medium text-ink truncate">{user.username}</p>
-              <p className="text-[10px] text-ink-faint">
+              <p className="text-sm font-medium text-ink truncate">{user.username}</p>
+              <p className="text-2xs text-ink-faint">
                 {user.is_guest ? "游客模式" : user.role === "admin" ? "管理员" : "已登录"}
               </p>
             </div>
@@ -203,7 +203,7 @@ export function Sidebar({
         ) : (
           <button
             onClick={() => setAuthOpen(true)}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-[12px] text-ink-muted hover:text-accent"
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-ink-muted hover:text-accent"
           >
             <LogIn className="w-3.5 h-3.5 shrink-0" />
             登录 / 注册

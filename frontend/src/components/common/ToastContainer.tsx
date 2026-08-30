@@ -26,7 +26,7 @@ export function ToastContainer() {
             className={`pointer-events-auto card flex items-start gap-2.5 px-3.5 py-2.5 border ${ring} shadow-lg shadow-black/30`}
           >
             <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${text}`} />
-            <span className="text-[12.5px] leading-relaxed flex-1 text-ink">{t.text}</span>
+            <span className="text-sm leading-relaxed flex-1 text-ink">{t.text}</span>
             <button
               onClick={() => dismiss(t.id)}
               className="text-ink-faint hover:text-ink transition-colors shrink-0"

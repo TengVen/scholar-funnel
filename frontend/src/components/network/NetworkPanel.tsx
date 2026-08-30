@@ -12,6 +12,7 @@ import { useNetworkStore } from "@/stores/networkStore";
 import { useCartStore } from "@/stores/cartStore";
 import { useTaskPolling } from "@/hooks/useTaskPolling";
 import { CATEGORY_COLORS, CATEGORY_GROUPS } from "@/config/categories";
+import { buildNetworkChartOption, deepSpaceGradient, STAR_FIELD } from "@/lib/chart/networkChart";
 import { toast } from "@/lib/toast";
 
 interface NetworkPanelProps {
@@ -83,9 +84,9 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="px-6 py-4 border-b border-line bg-paper-white shrink-0 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-serif text-[15px] font-semibold text-ink">网络图谱</h2>
+          <h2 className="font-serif text-lg font-semibold text-ink">网络图谱</h2>
           {/* 分析对象状态条 */}
-          <div className="flex items-center gap-2 text-[12px]">
+          <div className="flex items-center gap-2 text-sm">
             <span className="text-ink-muted flex items-center gap-1.5">
               <Share2 className="w-3.5 h-3.5 text-gold-light" />
               分析对象：核心骨架
@@ -98,7 +99,7 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
               </span>
             )}
             {!cartEmpty && (
-              <span className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+              <span className="flex items-center gap-1.5 text-xs text-ink-faint">
                 {CATEGORY_GROUPS.map((g, i) => (
                   <span key={g.key}>
                     {i > 0 && "·"}
@@ -110,19 +111,19 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
           </div>
         </div>
 
-        <p className="text-[12px] text-ink-muted">基于骨架论文的引用关系，发现遗漏的奠基论文和最新前沿</p>
+        <p className="text-sm text-ink-muted">基于骨架论文的引用关系，发现遗漏的奠基论文和最新前沿</p>
 
         {/* 空骨架引导 */}
         {cartEmpty && (
           <div className="flex items-center gap-3 bg-paper-warm rounded-lg px-4 py-3 border border-gold/15">
             <Package className="w-4 h-4 text-ink-faint shrink-0" />
-            <p className="text-[12.5px] text-ink-secondary">
+            <p className="text-sm text-ink-secondary">
               骨架为空，网络分析基于骨架论文的引用关系。先去添加论文吧。
             </p>
             <a
               href="#cart"
               onClick={() => window.dispatchEvent(new CustomEvent("navigate-to-cart"))}
-              className="btn-secondary text-[12px] ml-auto flex items-center gap-1"
+              className="btn-secondary text-sm ml-auto flex items-center gap-1"
             >
               去骨架页
               <ArrowRight className="w-3 h-3" />
@@ -136,7 +137,7 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
             <button
               key={g.key || "all"}
               onClick={() => setViewCat(g.key)}
-              className={`px-2.5 py-1 rounded-md text-[12px] transition-colors ${
+              className={`px-2.5 py-1 rounded-md text-sm transition-colors ${
                 viewCat === g.key
                   ? "bg-accent-light text-accent font-medium"
                   : "text-ink-muted hover:text-ink-secondary bg-paper-warm"
@@ -168,7 +169,7 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
       <div className="flex-1 overflow-y-auto">
         {result ? (
           <div className="space-y-4 px-6 py-4">
-            <div className="flex items-center gap-5 text-[12px] text-ink-muted">
+            <div className="flex items-center gap-5 text-sm text-ink-muted">
               <span>骨架 <span className="text-ink font-medium">{result.stats.skeleton_count ?? 0}</span></span>
               <span>后向推荐 <span className="text-ink font-medium">{result.stats.backward_count ?? 0}</span></span>
               <span>前向推荐 <span className="text-ink font-medium">{result.stats.forward_count ?? 0}</span></span>
@@ -179,11 +180,11 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
 
             <div className="flex gap-1 border-b border-line">
               <button onClick={() => setActiveTab("backward")}
-                className={`px-4 py-2 text-[13px] border-b-2 transition-colors ${activeTab === "backward" ? "border-accent text-accent font-medium" : "border-transparent text-ink-muted hover:text-ink-secondary"}`}>
+                className={`px-4 py-2 text-base border-b-2 transition-colors ${activeTab === "backward" ? "border-accent text-accent font-medium" : "border-transparent text-ink-muted hover:text-ink-secondary"}`}>
                 后向追溯（{result.backward.length} 篇）
               </button>
               <button onClick={() => setActiveTab("forward")}
-                className={`px-4 py-2 text-[13px] border-b-2 transition-colors ${activeTab === "forward" ? "border-accent text-accent font-medium" : "border-transparent text-ink-muted hover:text-ink-secondary"}`}>
+                className={`px-4 py-2 text-base border-b-2 transition-colors ${activeTab === "forward" ? "border-accent text-accent font-medium" : "border-transparent text-ink-muted hover:text-ink-secondary"}`}>
                 前向追踪（{result.forward.length} 篇）
               </button>
             </div>
@@ -198,7 +199,7 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
                 />
               ))}
               {(activeTab === "backward" ? result.backward : result.forward).length === 0 && (
-                <p className="text-[13px] text-ink-faint py-8 text-center">暂无推荐论文</p>
+                <p className="text-base text-ink-faint py-8 text-center">暂无推荐论文</p>
               )}
             </div>
           </div>
@@ -211,7 +212,7 @@ export function NetworkPanel({ projectId, cart }: NetworkPanelProps) {
           />
         ) : cartEmpty ? (
           <div className="flex items-center justify-center h-full px-6 py-4">
-            <p className="text-[13px] text-ink-faint">添加骨架论文后，即可开始网络分析</p>
+            <p className="text-base text-ink-faint">添加骨架论文后，即可开始网络分析</p>
           </div>
         ) : (
           /* 未分析：三区意境视图（三类独立成团，可单独/全量分析） */
@@ -270,7 +271,7 @@ function AnalyzingScene({
       <div
         className="absolute inset-0"
         style={{
-          background: "radial-gradient(ellipse at 50% 46%, #2e2820 0%, #221d16 32%, #171410 60%, #0e0c0a 82%, #0a0908 100%)",
+          background: deepSpaceGradient("46%"),
         }}
       />
       <div
@@ -349,7 +350,7 @@ function SkeletonPreviewWall({
       <div
         className="absolute inset-0"
         style={{
-          background: "radial-gradient(ellipse at 50% 44%, #2e2820 0%, #221d16 32%, #171410 60%, #0e0c0a 82%, #0a0908 100%)",
+          background: deepSpaceGradient("44%"),
         }}
       />
       {/* 金色光晕（铺满背景） */}
@@ -419,16 +420,7 @@ function SkeletonPreviewWall({
   );
 }
 
-// ── 背景星空常量（确定性伪随机，避免每次渲染抖动） ──
-const STAR_FIELD = Array.from({ length: 60 }, (_, i) => {
-  const x = 20 + ((i * 137.3) % 640);
-  const y = 18 + ((i * 89.7) % 440);
-  const r = 0.7 + ((i * 7.1) % 10) / 5;
-  const o = 0.14 + ((i * 13.7) % 20) / 40;
-  const d = ((i * 29.3) % 48) / 10;
-  const c = i % 3 === 0 ? "#e6c879" : i % 3 === 1 ? "#b8b0a4" : "#8fd8ec";
-  return { x, y, r, o, d, c };
-});
+// ── 背景星空 STAR_FIELD / 深空渐变 deepSpaceGradient 已外移 lib/chart/networkChart.ts ──
 
 // ── 单主星群：主星 + 呼吸光环 + 自转装饰 + N 篇环绕星点 ──
 function StarCluster({
@@ -524,98 +516,8 @@ function NetworkChart({ result }: { result: NetworkResultResponse }) {
         instanceRef.current = chart;
         setChartError(false);
 
-      // 星图配色：骨架三分类（与全站分类色一致）+ 推荐两类
-      const categories = [
-        { name: "奠基理论", itemStyle: { color: "#7BA7FF", shadowColor: "rgba(123,167,255,0.8)" } },
-        { name: "主流方法", itemStyle: { color: "#F0CE6E", shadowColor: "rgba(240,206,110,0.8)" } },
-        { name: "最新前沿", itemStyle: { color: "#5FCFBE", shadowColor: "rgba(95,207,190,0.8)" } },
-        { name: "后向推荐", itemStyle: { color: "#d4a54e", shadowColor: "rgba(212,165,78,0.6)" } },
-        { name: "前向推荐", itemStyle: { color: "#6fbfa0", shadowColor: "rgba(111,191,160,0.6)" } },
-      ];
-      const catMap: Record<string, number> = {
-        foundation: 0, mainstream: 1, frontier: 2, skeleton: 0,
-        backward: 3, forward: 4,
-      };
-
-      chart.setOption({
-        backgroundColor: "transparent",
-        tooltip: {
-          backgroundColor: "rgba(23,22,20,0.92)",
-          borderColor: "#3a332a",
-          textStyle: { color: "#f0ece4", fontSize: 12 },
-          formatter: (p: { dataType: string; data?: { name: string; year?: number; cited?: number }; name?: string; value?: number; label?: { name: string } }) => {
-            const d = p.data ?? {} as { name: string; year?: number; cited?: number };
-            const title = (d.name ?? p.label?.name ?? p.name ?? "").slice(0, 60);
-            let html = `<div style="font-weight:500;color:#f0ece4;max-width:260px">${title}</div>`;
-            if (d.year) html += `<div style="color:#8f8a80;font-size:11px;margin-top:2px">${d.year} 年</div>`;
-            if (d.cited) html += `<div style="color:#8f8a80;font-size:11px">被引 ${d.cited}</div>`;
-            if (p.dataType === "edge" && p.value) html += `<div style="color:#8f8a80;font-size:11px">${p.value}</div>`;
-            return html;
-          },
-        },
-        legend: {
-          data: categories.map((c) => c.name),
-          top: 8, left: "center",
-          itemWidth: 10, itemHeight: 10,
-          textStyle: { color: "#8f8a80", fontSize: 11 },
-          icon: "circle",
-        },
-        series: [{
-          type: "graph", layout: "force", roam: true,
-          draggable: true,
-          label: {
-            show: true, fontSize: 10, position: "right",
-            color: "#b8b0a4", formatter: (p: { data?: { name: string } }) => (p.data?.name ?? "").slice(0, 18),
-          },
-          edgeSymbol: ["", "arrow"], edgeSymbolSize: [0, 7],
-          lineStyle: {
-            color: "#4a4238", opacity: 0.55,
-            width: 1, type: "dashed", dashOffset: 4,
-            curveness: 0.15,
-          },
-          force: {
-            repulsion: 260, gravity: 0.08,
-            edgeLength: [60, 170], layoutAnimation: true,
-          },
-          data: result.graph_nodes.map((n) => {
-            const ci = catMap[n.category] ?? 0;
-            const isSkeleton = n.group === "skeleton";
-            const isBackward = n.category === "backward";
-            const isForward = n.category === "forward";
-            return {
-              id: n.id,
-              name: n.label,
-              symbolSize: isSkeleton ? n.size + 6 : n.size + 4,
-              category: ci,
-              value: n.year,
-              itemStyle: {
-                color: categories[ci].itemStyle.color,
-                borderColor: isSkeleton ? "#ffffff55" : "#00000000",
-                borderWidth: isSkeleton ? 2 : 1,
-                shadowBlur: isSkeleton ? 18 : 12,
-                shadowColor: categories[ci].itemStyle.shadowColor,
-                opacity: 1,
-              },
-              // 骨架节点加光环（第二个装饰圆）
-              symbolOffset: [0, 0],
-              emphasis: {
-                itemStyle: {
-                  shadowBlur: 30,
-                  shadowColor: categories[ci].itemStyle.shadowColor,
-                  borderColor: "#ffffff88",
-                  borderWidth: 2,
-                },
-              },
-            };
-          }),
-          links: result.graph_edges.map((e) => ({
-            source: e.source_id, target: e.target_id,
-            value: e.label,
-          })),
-          categories: categories.map((c) => ({ name: c.name })),
-          emphasis: { focus: "adjacency", lineStyle: { width: 3, opacity: 0.9, color: "#e6c879" } },
-        }],
-      });
+      // 星图配色与 option 构建已外移 lib/chart/networkChart.ts（纯函数，组件只消费）
+      chart.setOption(buildNetworkChartOption(result));
       const onResize = () => chart.resize();
       window.addEventListener("resize", onResize);
       } catch (e) {
@@ -636,7 +538,7 @@ function NetworkChart({ result }: { result: NetworkResultResponse }) {
       <div
         className="absolute inset-0"
         style={{
-          background: "radial-gradient(ellipse at 50% 40%, #2e2820 0%, #221d16 32%, #171410 60%, #0e0c0a 82%, #0a0908 100%)",
+          background: deepSpaceGradient("40%"),
         }}
       />
       {/* 背景星点 */}
@@ -655,7 +557,7 @@ function NetworkChart({ result }: { result: NetworkResultResponse }) {
       {/* 图表本体（echarts 加载失败时降级为文本提示，不拖垮面板） */}
       {chartError ? (
         <div className="relative flex items-center justify-center" style={{ height: 420 }}>
-          <p className="text-[12px] text-ink-faint">图谱组件加载失败，下方论文列表仍可正常使用</p>
+          <p className="text-sm text-ink-faint">图谱组件加载失败，下方论文列表仍可正常使用</p>
         </div>
       ) : (
         <div ref={chartRef} className="relative" style={{ height: 420 }} />
@@ -701,10 +603,10 @@ function RecommendedPaperCard({
   return (
     <div className="card px-5 py-4">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="font-serif text-[14px] font-semibold text-ink leading-snug flex-1">{paper.title}</h3>
+        <h3 className="font-serif text-base font-semibold text-ink leading-snug flex-1">{paper.title}</h3>
         {paper.reason && <span className="badge-blue shrink-0">{paper.reason}</span>}
       </div>
-      <div className="flex items-center gap-2 mt-1 text-[12px] text-ink-muted">
+      <div className="flex items-center gap-2 mt-1 text-sm text-ink-muted">
         {paper.year > 0 && <span>{paper.year}</span>}
         {paper.venue && <><span className="text-line">|</span><span>{paper.venue}</span></>}
         {paper.cited_by_count > 0 && <><span className="text-line">|</span><span>被引 {paper.cited_by_count}</span></>}
@@ -714,11 +616,11 @@ function RecommendedPaperCard({
       </div>
       {paper.abstract && (
         <div className="mt-2">
-          <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1 text-[12px] text-ink-faint hover:text-ink-muted transition-colors">
+          <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1 text-sm text-ink-faint hover:text-ink-muted transition-colors">
             {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
             {expanded ? "收起" : "摘要"}
           </button>
-          {expanded && <p className="mt-2 text-[13px] text-ink-secondary leading-relaxed whitespace-pre-wrap">{paper.abstract}</p>}
+          {expanded && <p className="mt-2 text-base text-ink-secondary leading-relaxed whitespace-pre-wrap">{paper.abstract}</p>}
         </div>
       )}
       <div className="flex items-center gap-2 mt-3 pt-3 border-t border-line-light">
@@ -727,8 +629,8 @@ function RecommendedPaperCard({
           onClick={handleAdd}
           disabled={inCart || adding}
           className={inCart
-            ? "btn-ghost text-success text-[12px] cursor-default"
-            : "btn-secondary text-[12px]"}
+            ? "btn-ghost text-success text-sm cursor-default"
+            : "btn-secondary text-sm"}
         >
           {inCart ? (
             <><Check className="w-3 h-3 inline mr-1" />已在骨架</>
@@ -739,14 +641,14 @@ function RecommendedPaperCard({
           )}
         </button>
         {!inCart && (
-          <span className="text-[10.5px] text-ink-faint">
+          <span className="text-2xs text-ink-faint">
             将预选为「{categoryLabel}」
           </span>
         )}
-        {paper.doi && <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noopener noreferrer" className="btn-ghost text-[12px]"><ExternalLink className="w-3 h-3 inline mr-0.5" />DOI</a>}
-        {paper.title && <a href={`https://scholar.google.com/scholar?q=${encodeURIComponent(paper.title.slice(0, 120))}`} target="_blank" rel="noopener noreferrer" className="btn-ghost text-[12px]">Scholar</a>}
+        {paper.doi && <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noopener noreferrer" className="btn-ghost text-sm"><ExternalLink className="w-3 h-3 inline mr-0.5" />DOI</a>}
+        {paper.title && <a href={`https://scholar.google.com/scholar?q=${encodeURIComponent(paper.title.slice(0, 120))}`} target="_blank" rel="noopener noreferrer" className="btn-ghost text-sm">Scholar</a>}
         <div className="flex-1" />
-        <span className="badge bg-paper-warm text-ink-muted text-[11px]">{paper.source === "backward" ? "后向" : "前向"}</span>
+        <span className="badge bg-paper-warm text-ink-muted text-xs">{paper.source === "backward" ? "后向" : "前向"}</span>
       </div>
     </div>
   );

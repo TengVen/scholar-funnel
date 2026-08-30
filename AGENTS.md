@@ -60,6 +60,18 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. 前端改造代码原则（2026-08-30 用户拍板，转型期间强制）
+
+产品转型（四分页 → 对话 + 论文空间，见 `md/产品原则-2026-08-29.md`）期间，所有改造代码必须遵循：
+
+1. **状态与业务逻辑分离**：组件不持有编排状态；状态在 store/hook，业务决策在 lib/ 纯函数或 agent 层
+2. **组件职责单一**：一个文件一个组件；子组件独立成文件，不与页面级编排混居
+3. **UI 负责呈现**：JSX 只做展示与事件绑定；数学计算、echarts option、SVG 坐标等一律外移 lib/ 纯函数
+4. **数据与事件语义明确**：props/事件命名表达业务语义（onPaperAdopt 而非 onClick1）；禁止裸 fetch/localStorage（已有铁律继续有效）
+5. **复杂逻辑抽象复用**：出现第二次的复杂样式/逻辑即抽象（变体函数、纯函数、共享 hook）
+
+配套规范：字号等视觉值必须走 tailwind.config token，禁止新增 `text-[Npx]` 式任意值；改造触达哪个文件，就顺手完成该文件的拆分与外移（规范化搭车）。
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

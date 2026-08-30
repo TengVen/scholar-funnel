@@ -289,7 +289,7 @@ export default function Home() {
     if (needsProject && !activeProject) {
       return (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-[13px] text-ink-faint">选择或创建一个项目开始</p>
+          <p className="text-base text-ink-faint">选择或创建一个项目开始</p>
         </div>
       );
     }
@@ -322,7 +322,7 @@ export default function Home() {
                 onLocalSearch={handleLocalSearch}
               />
               <div className="flex items-center justify-between px-6 py-2 border-b border-[#4FAF9F]/25 bg-[#4FAF9F]/[0.06] shrink-0">
-                <span className="flex items-center gap-2 text-[12px] text-ink-muted">
+                <span className="flex items-center gap-2 text-sm text-ink-muted">
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#4FAF9F]/15 text-[#6fcebd] border border-[#4FAF9F]/30">
                     <Database className="w-3 h-3" />
                     本地库召回
@@ -332,7 +332,7 @@ export default function Home() {
                 </span>
                 <button
                   onClick={() => setLocalMode(false)}
-                  className="btn-ghost text-[12px]"
+                  className="btn-ghost text-sm"
                 >
                   退出本地检索
                 </button>
@@ -345,7 +345,7 @@ export default function Home() {
                 ) : localPapers.length === 0 ? (
                   <div className="flex-1 flex flex-col items-center justify-center gap-2 text-ink-faint">
                     <Database className="w-6 h-6 opacity-40" />
-                    <p className="text-[13px]">未找到匹配的已入库论文</p>
+                    <p className="text-base">未找到匹配的已入库论文</p>
                   </div>
                 ) : (
                   localPapers.map((p) => (
@@ -475,7 +475,7 @@ export default function Home() {
                 <button
                   key={tab.key}
                   onClick={() => setActivePage(tab.key)}
-                  className="nav-tab group flex items-center gap-1.5 px-3.5 py-1.5 text-[12.5px] rounded-lg transition-all duration-150"
+                  className="nav-tab group flex items-center gap-1.5 px-3.5 py-1.5 text-sm rounded-lg transition-all duration-150"
                   style={{
                     ["--tab-color" as string]: tab.color,
                     ["--tab-glow" as string]: tab.glow,
@@ -498,7 +498,7 @@ export default function Home() {
           {/* 右侧占位：项目名徽章 */}
           <div className="flex-1 flex items-center justify-end">
             {activeProject && (
-              <span className="flex items-center gap-1.5 text-[11px] text-ink-muted pl-2 pr-1 truncate max-w-[220px]">
+              <span className="flex items-center gap-1.5 text-xs text-ink-muted pl-2 pr-1 truncate max-w-[220px]">
                 <span className="w-1.5 h-1.5 rounded-full bg-gold shrink-0" />
                 <span className="truncate">{activeProject.name}</span>
               </span>

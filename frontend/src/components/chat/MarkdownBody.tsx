@@ -10,22 +10,22 @@ import type { Components } from "react-markdown";
 
 const MD_COMPONENTS: Components = {
   h1: ({ children }) => (
-    <h1 className="text-[17px] font-medium text-ink mt-4 mb-2 first:mt-0 leading-snug">{children}</h1>
+    <h1 className="text-lg font-medium text-ink mt-4 mb-2 first:mt-0 leading-snug">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-[15px] font-medium text-ink mt-3.5 mb-1.5 first:mt-0 leading-snug">{children}</h2>
+    <h2 className="text-lg font-medium text-ink mt-3.5 mb-1.5 first:mt-0 leading-snug">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-[14px] font-medium text-ink mt-3 mb-1 first:mt-0 leading-snug">{children}</h3>
+    <h3 className="text-base font-medium text-ink mt-3 mb-1 first:mt-0 leading-snug">{children}</h3>
   ),
   p: ({ children }) => (
-    <p className="text-[13px] text-ink-secondary leading-relaxed my-1.5 first:mt-0">{children}</p>
+    <p className="text-base text-ink-secondary leading-relaxed my-1.5 first:mt-0">{children}</p>
   ),
   ul: ({ children }) => (
-    <ul className="text-[13px] text-ink-secondary leading-relaxed my-1.5 pl-4 list-disc space-y-0.5">{children}</ul>
+    <ul className="text-base text-ink-secondary leading-relaxed my-1.5 pl-4 list-disc space-y-0.5">{children}</ul>
   ),
   ol: ({ children }) => (
-    <ol className="text-[13px] text-ink-secondary leading-relaxed my-1.5 pl-4 list-decimal space-y-0.5">{children}</ol>
+    <ol className="text-base text-ink-secondary leading-relaxed my-1.5 pl-4 list-decimal space-y-0.5">{children}</ol>
   ),
   li: ({ children }) => <li className="pl-0.5 marker:text-gold/70">{children}</li>,
   strong: ({ children }) => <strong className="font-medium text-ink">{children}</strong>,
@@ -47,13 +47,13 @@ const MD_COMPONENTS: Components = {
     }
     // 行内代码
     return (
-      <code className="px-1.5 py-0.5 rounded bg-paper-warm border border-line text-[12px] font-mono text-gold-light">
+      <code className="px-1.5 py-0.5 rounded bg-paper-warm border border-line text-sm font-mono text-gold-light">
         {children}
       </code>
     );
   },
   pre: ({ children }) => (
-    <pre className="my-2 p-3 rounded-lg bg-paper-warm border border-line overflow-x-auto text-[12px] font-mono leading-relaxed text-ink-secondary">
+    <pre className="my-2 p-3 rounded-lg bg-paper-warm border border-line overflow-x-auto text-sm font-mono leading-relaxed text-ink-secondary">
       {children}
     </pre>
   ),
@@ -62,7 +62,7 @@ const MD_COMPONENTS: Components = {
   ),
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto">
-      <table className="w-full text-[12px] border-collapse">{children}</table>
+      <table className="w-full text-sm border-collapse">{children}</table>
     </div>
   ),
   th: ({ children }) => (

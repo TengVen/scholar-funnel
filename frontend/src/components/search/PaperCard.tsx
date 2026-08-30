@@ -74,14 +74,14 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
       {/* 头部：左侧（标题+Meta）与右侧指标列独立排版，互不撑高 */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <h3 className="font-serif text-[15px] font-semibold leading-snug
+          <h3 className="font-serif text-lg font-semibold leading-snug
                        bg-gradient-to-br from-gold-bright via-gold-light to-gold
                        bg-clip-text text-transparent">
             {paper.title}
           </h3>
 
           {/* Meta line（含徽章）—— 紧贴标题，不受右侧指标列高度影响 */}
-          <div className="flex items-center gap-2 mt-1 text-[12px] text-ink-muted">
+          <div className="flex items-center gap-2 mt-1 text-sm text-ink-muted">
             {paper.is_survey && <span className="badge-blue">综述</span>}
             {paper.arxiv_id && (
               <span className="badge bg-violet-500/15 text-violet-300">arXiv</span>
@@ -100,7 +100,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
         {/* 核心指标竖排：年份 / 被引 / 相关度（独立列，不影响左侧排版） */}
         <div className="flex flex-col gap-1.5 shrink-0 pl-3 border-l border-line-light">
           {paper.year && (
-            <span className="flex items-center gap-1.5 justify-end text-[12px] text-ink leading-none" title="发布年份">
+            <span className="flex items-center gap-1.5 justify-end text-sm text-ink leading-none" title="发布年份">
               <span className="w-3.5 h-3.5 shrink-0 rounded-[4px] bg-[rgba(91,143,249,0.18)] flex items-center justify-center">
                 <Calendar className="w-2.5 h-2.5 text-[#5B8FF9]" />
               </span>
@@ -108,7 +108,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             </span>
           )}
           {paper.cited_by_count > 0 && (
-            <span className="flex items-center gap-1.5 justify-end text-[12px] text-ink leading-none" title="被引量">
+            <span className="flex items-center gap-1.5 justify-end text-sm text-ink leading-none" title="被引量">
               <span className="w-3.5 h-3.5 shrink-0 rounded-[4px] bg-[rgba(79,175,159,0.18)] flex items-center justify-center">
                 <Quote className="w-2.5 h-2.5 text-[#4FAF9F]" />
               </span>
@@ -116,7 +116,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             </span>
           )}
           {paper.trunk_score !== null && (
-            <span className="flex items-center gap-1.5 justify-end text-[12px] text-ink leading-none" title="相关度">
+            <span className="flex items-center gap-1.5 justify-end text-sm text-ink leading-none" title="相关度">
               <span className="w-3.5 h-3.5 shrink-0 rounded-[4px] bg-[rgba(201,162,75,0.18)] flex items-center justify-center">
                 <Target className="w-2.5 h-2.5 text-gold-light" />
               </span>
@@ -134,7 +134,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             return (
               <span
                 key={kw}
-                className="px-2 py-0.5 rounded-md text-[10.5px] backdrop-blur-sm"
+                className="px-2 py-0.5 rounded-md text-2xs backdrop-blur-sm"
                 style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}
               >
                 {kw}
@@ -150,7 +150,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
           {!expanded && (
             <button
               onClick={() => setExpanded(true)}
-              className="flex items-center gap-1 text-[12px] text-ink-faint hover:text-ink-muted transition-colors"
+              className="flex items-center gap-1 text-sm text-ink-faint hover:text-ink-muted transition-colors"
             >
               <ChevronDown className="w-3 h-3" />
               摘要
@@ -158,12 +158,12 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
           )}
           {expanded && (
             <>
-              <p className="mt-2 text-[13px] text-ink-secondary leading-relaxed">
+              <p className="mt-2 text-base text-ink-secondary leading-relaxed">
                 {paper.abstract}
               </p>
               <button
                 onClick={() => setExpanded(false)}
-                className="flex items-center gap-1 mt-2 text-[12px] text-ink-faint hover:text-ink-muted transition-colors"
+                className="flex items-center gap-1 mt-2 text-sm text-ink-faint hover:text-ink-muted transition-colors"
               >
                 <ChevronUp className="w-3 h-3" />
                 收起
@@ -182,8 +182,8 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             disabled={inCart}
             className={
               inCart
-                ? "btn-ghost text-success text-[12px] cursor-default"
-                : "btn-secondary text-[12px] flex items-center gap-1"
+                ? "btn-ghost text-success text-sm cursor-default"
+                : "btn-secondary text-sm flex items-center gap-1"
             }
           >
             {inCart ? (
@@ -203,7 +203,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
           {/* 分类菜单 */}
           {menuOpen && !inCart && (
             <div className="absolute left-0 top-full mt-1 w-56 bg-paper-white border border-gold/25 rounded-xl shadow-2xl shadow-black/40 py-1.5 z-20">
-              <p className="px-3 pb-1 pt-0.5 text-[10px] text-ink-faint tracking-wide">
+              <p className="px-3 pb-1 pt-0.5 text-2xs text-ink-faint tracking-wide">
                 加入为哪一类？
               </p>
               {CATEGORIES.map((cat) => (
@@ -212,8 +212,8 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
                   onClick={() => handleAdd(cat.key, CATEGORY_NOTES[cat.key])}
                   className="w-full text-left px-3 py-1.5 hover:bg-paper-warm transition-colors"
                 >
-                  <span className="block text-[12.5px] text-ink leading-tight">{cat.label}</span>
-                  <span className="block text-[10.5px] text-ink-muted">{cat.desc}</span>
+                  <span className="block text-sm text-ink leading-tight">{cat.label}</span>
+                  <span className="block text-2xs text-ink-muted">{cat.desc}</span>
                 </button>
               ))}
               <div className="my-1 mx-3 border-t border-line-light" />
@@ -228,10 +228,10 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
                   <Sparkles className="w-3.5 h-3.5 text-gold-light shrink-0" />
                 )}
                 <span>
-                  <span className="block text-[12.5px] text-gold-light leading-tight">
+                  <span className="block text-sm text-gold-light leading-tight">
                     {classifying ? "AI 分析中..." : "智能分类"}
                   </span>
-                  <span className="block text-[10.5px] text-ink-muted">
+                  <span className="block text-2xs text-ink-muted">
                     AI 读摘要推荐分类
                   </span>
                 </span>
@@ -248,7 +248,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             target="_blank"
             rel="noopener noreferrer"
             title="查看 GitHub 代码仓库"
-            className="btn-ghost text-[12px]"
+            className="btn-ghost text-sm"
           >
             <Github className="w-3 h-3 inline mr-0.5" />
             GitHub
@@ -260,7 +260,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             href={`https://doi.org/${paper.doi}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-ghost text-[12px]"
+            className="btn-ghost text-sm"
           >
             <ExternalLink className="w-3 h-3 inline mr-0.5" />
             DOI
@@ -271,7 +271,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             href={`https://arxiv.org/abs/${paper.arxiv_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-ghost text-[12px]"
+            className="btn-ghost text-sm"
           >
             arXiv
           </a>
@@ -281,7 +281,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
             href={`https://scholar.google.com/scholar?q=${encodeURIComponent(paper.title.slice(0, 120))}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-ghost text-[12px]"
+            className="btn-ghost text-sm"
           >
             Scholar
           </a>

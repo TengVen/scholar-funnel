@@ -17,7 +17,7 @@ export function StatsBar({ result }: StatsBarProps) {
   ];
 
   return (
-    <div className="flex items-center gap-5 px-6 py-2 bg-paper-warm border-b border-line text-[12px] shrink-0">
+    <div className="flex items-center gap-5 px-6 py-2 bg-paper-warm border-b border-line text-sm shrink-0">
       {/* Summary */}
       <span className="badge-green">完成</span>
       <span className="text-ink-muted">

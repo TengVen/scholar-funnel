@@ -140,7 +140,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
   if (!cart) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-[13px] text-ink-faint">选择项目后显示骨架</p>
+        <p className="text-base text-ink-faint">选择项目后显示骨架</p>
       </div>
     );
   }
@@ -156,16 +156,16 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
       {/* Header */}
       <div className="px-6 py-4 border-b border-line bg-paper-white shrink-0 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-serif text-[15px] font-semibold text-ink">
+          <h2 className="font-serif text-lg font-semibold text-ink">
             核心骨架
           </h2>
           <div className="flex items-center gap-2.5">
-            <span className="text-[12px] text-ink-muted tabular-nums">
+            <span className="text-sm text-ink-muted tabular-nums">
               {cart.total}/{totalLimit}
             </span>
             <button
               onClick={handleOpenLimitEditor}
-              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-ink-muted hover:text-ink-secondary border border-line hover:border-line-secondary transition-colors"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-ink-muted hover:text-ink-secondary border border-line hover:border-line-secondary transition-colors"
               title="调整每类限额"
             >
               <Settings2 className="w-3 h-3" />
@@ -177,13 +177,13 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
         {/* 配额编辑面板 */}
         {limitOpen && limitDraft && (
           <div className="rounded-lg border border-line bg-paper-warm/60 p-3 space-y-2">
-            <p className="text-[11px] text-ink-muted">每类限额（1-30，总和 ≤ 50）</p>
+            <p className="text-xs text-ink-muted">每类限额（1-30，总和 ≤ 50）</p>
             <div className="grid grid-cols-3 gap-2">
               {CATEGORIES.map((cat) => {
                 const current = cart.items.filter((it) => it.category === cat.key).length;
                 return (
                   <div key={cat.key} className="rounded-md border border-line bg-paper-white px-2.5 py-2">
-                    <p className="text-[11px] text-ink-muted mb-1">{cat.label}</p>
+                    <p className="text-xs text-ink-muted mb-1">{cat.label}</p>
                     <div className="flex items-center gap-1.5">
                       <input
                         type="number"
@@ -193,29 +193,29 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                         onChange={(e) =>
                           setLimitDraft((d) => d && { ...d, [cat.key]: Number(e.target.value) || 1 })
                         }
-                        className="input !py-1 w-14 text-center text-[12px] tabular-nums"
+                        className="input !py-1 w-14 text-center text-sm tabular-nums"
                       />
-                      <span className="text-[10px] text-ink-faint">当前 {current} 篇</span>
+                      <span className="text-2xs text-ink-faint">当前 {current} 篇</span>
                     </div>
                   </div>
                 );
               })}
             </div>
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[11px] text-ink-faint">
+              <span className="text-xs text-ink-faint">
                 总量上限：{Object.values(limitDraft).reduce((a, b) => a + b, 0)} / 50
               </span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setLimitOpen(false)}
-                  className="px-2.5 py-1 rounded-md text-[11.5px] text-ink-muted hover:text-ink border border-line"
+                  className="px-2.5 py-1 rounded-md text-xs text-ink-muted hover:text-ink border border-line"
                 >
                   取消
                 </button>
                 <button
                   onClick={handleSaveLimits}
                   disabled={limitSaving}
-                  className="btn-primary text-[11.5px] flex items-center gap-1"
+                  className="btn-primary text-xs flex items-center gap-1"
                 >
                   {limitSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                   保存配额
@@ -236,7 +236,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
           <button
             onClick={handleDiagnose}
             disabled={diagnosing || cart.total === 0}
-            className="btn-secondary text-[12px]"
+            className="btn-secondary text-sm"
           >
             {diagnosing ? (
               <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
@@ -246,7 +246,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
           <button
             onClick={handleSummarize}
             disabled={summarizing || cart.total === 0}
-            className="btn-secondary text-[12px]"
+            className="btn-secondary text-sm"
           >
             {summarizing ? (
               <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
@@ -256,7 +256,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
           <button
             onClick={handleExport}
             disabled={exporting || cart.total === 0}
-            className="btn-ghost text-[12px]"
+            className="btn-ghost text-sm"
           >
             <Download className="w-3 h-3 inline mr-1" />
             导出 BibTeX
@@ -270,14 +270,14 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
 
         {/* 骨架摘要 */}
         {summary && (
-          <div className="bg-paper-warm rounded-lg p-3 text-[12px] border border-gold/20">
+          <div className="bg-paper-warm rounded-lg p-3 text-sm border border-gold/20">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-medium text-gold-light tracking-wide">
+              <span className="text-xs font-medium text-gold-light tracking-wide">
                 骨架综述开场段
               </span>
               <button
                 onClick={() => navigator.clipboard.writeText(summary)}
-                className="text-[10.5px] text-ink-faint hover:text-gold-light transition-colors"
+                className="text-2xs text-ink-faint hover:text-gold-light transition-colors"
               >
                 复制
               </button>
@@ -293,15 +293,15 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
           <div key={cat.key}>
             <div className="flex items-center justify-between mb-2">
               <div>
-                <span className="text-[13px] font-medium text-ink">
+                <span className="text-base font-medium text-ink">
                   {cat.label}
                 </span>
-                <span className="text-[11px] text-ink-faint ml-2">
+                <span className="text-xs text-ink-faint ml-2">
                   {cat.desc}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-ink-faint tabular-nums">
+                <span className="text-xs text-ink-faint tabular-nums">
                   {cat.items.length}/{cat.limit}
                 </span>
                 {/* 缺口补充检索入口 */}
@@ -311,7 +311,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                     setGapConstraint("");
                   }}
                   disabled={gapSearching}
-                  className="btn-ghost text-[11px] flex items-center gap-1 text-gold-light
+                  className="btn-ghost text-xs flex items-center gap-1 text-gold-light
                              hover:text-gold transition-colors"
                   title={`补充${cat.label}候选论文`}
                 >
@@ -332,7 +332,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                 <div className="flex items-center gap-1 mb-2">
                   <button
                     onClick={() => { setGapMode("search"); setGapConstraint(""); }}
-                    className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                    className={`px-2 py-0.5 rounded text-xs transition-colors ${
                       gapMode === "search"
                         ? "bg-accent-light text-accent font-medium"
                         : "text-ink-faint hover:text-ink-muted"
@@ -342,7 +342,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                   </button>
                   <button
                     onClick={() => { setGapMode("title"); setGapConstraint(""); }}
-                    className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                    className={`px-2 py-0.5 rounded text-xs transition-colors ${
                       gapMode === "title"
                         ? "bg-accent-light text-accent font-medium"
                         : "text-ink-faint hover:text-ink-muted"
@@ -352,7 +352,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                   </button>
                   <button
                     onClick={() => { setGapMode("semantic"); }}
-                    className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                    className={`px-2 py-0.5 rounded text-xs transition-colors ${
                       gapMode === "semantic"
                         ? "bg-accent-light text-accent font-medium"
                         : "text-ink-faint hover:text-ink-muted"
@@ -376,19 +376,19 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                           }
                         }}
                         placeholder={`可选：补充约束，如"重点关注变分方法"`}
-                        className="input flex-1 !py-1.5 !text-[12px]"
+                        className="input flex-1 !py-1.5 !text-sm"
                         autoFocus
                       />
                       <button
                         onClick={() => onGapSearch(cat.key, gapConstraint.trim(), gapThreshold)}
                         disabled={gapSearching}
-                        className="btn-secondary text-[12px] whitespace-nowrap"
+                        className="btn-secondary text-sm whitespace-nowrap"
                       >
                         {gapSearching ? "检索中..." : "开始补充"}
                       </button>
                     </div>
                     {/* 相关度阈值滑块 */}
-                    <div className="flex items-center gap-2 text-[11px] text-ink-muted">
+                    <div className="flex items-center gap-2 text-xs text-ink-muted">
                       <span className="whitespace-nowrap">相关度阈值</span>
                       <input
                         type="range"
@@ -410,13 +410,13 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                 ) : gapMode === "semantic" ? (
                   /* 语义补充：基于骨架质心，一键执行（无需输入） */
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-ink-muted flex-1">
+                    <span className="text-xs text-ink-muted flex-1">
                       基于该类骨架论文的向量质心，从已入库论文中找语义最相近的候选（无 LLM 调用，秒级）
                     </span>
                     <button
                       onClick={() => onGapSearch(cat.key, "", 0.35, "semantic")}
                       disabled={gapSearching}
-                      className="btn-secondary text-[12px] whitespace-nowrap"
+                      className="btn-secondary text-sm whitespace-nowrap"
                     >
                       {gapSearching ? "分析中..." : "语义补充"}
                     </button>
@@ -433,13 +433,13 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
                         }
                       }}
                       placeholder={`输入论文标题，如"Mask-Aware Transformer"`}
-                      className="input flex-1 !py-1.5 !text-[12px]"
+                      className="input flex-1 !py-1.5 !text-sm"
                       autoFocus
                     />
                     <button
                       onClick={() => onTitleLookup(cat.key, gapConstraint.trim())}
                       disabled={gapSearching || !gapConstraint.trim()}
-                      className="btn-secondary text-[12px] whitespace-nowrap"
+                      className="btn-secondary text-sm whitespace-nowrap"
                     >
                       {gapSearching ? "查找中..." : "直达"}
                     </button>
@@ -458,7 +458,7 @@ export function CartDetail({ projectId, cart, onRefresh, onGapSearch, onTitleLoo
             </div>
 
             {cat.items.length === 0 ? (
-              <p className="text-[12px] text-ink-faint py-3 text-center border border-dashed border-line rounded-lg">
+              <p className="text-sm text-ink-faint py-3 text-center border border-dashed border-line rounded-lg">
                 还可添加 {cat.limit} 篇
               </p>
             ) : (
@@ -527,17 +527,17 @@ function CartItemRow({
     <div className="card px-4 py-3 group">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-serif text-ink leading-snug line-clamp-2">
+          <p className="text-base font-serif text-ink leading-snug line-clamp-2">
             {item.title}
           </p>
-          <p className="text-[11px] text-ink-faint mt-0.5">
+          <p className="text-xs text-ink-faint mt-0.5">
             {item.year}
             {item.cited_by_count > 0 && ` · 被引 ${item.cited_by_count}`}
             {item.venue && ` · ${item.venue}`}
           </p>
           {/* 分类理由（notes） */}
           {item.notes && (
-            <p className="text-[11px] text-gold-light/80 mt-0.5 flex items-center gap-1">
+            <p className="text-xs text-gold-light/80 mt-0.5 flex items-center gap-1">
               <span className="w-1 h-1 rounded-full bg-gold shrink-0" />
               {item.notes}
             </p>
@@ -551,7 +551,7 @@ function CartItemRow({
                 return (
                   <span
                     key={kw}
-                    className="px-1.5 py-0.5 rounded-md text-[10px] backdrop-blur-sm"
+                    className="px-1.5 py-0.5 rounded-md text-2xs backdrop-blur-sm"
                     style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}
                   >
                     {kw}
@@ -580,7 +580,7 @@ function CartItemRow({
                     key={cat.key}
                     onClick={() => handleSwitchCategory(cat.key)}
                     disabled={cat.key === item.category}
-                    className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors ${
+                    className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
                       cat.key === item.category
                         ? "text-accent bg-accent-light"
                         : "text-ink-secondary hover:bg-paper-warm"
@@ -610,7 +610,7 @@ function CartItemRow({
           {!expanded && (
             <button
               onClick={() => setExpanded(true)}
-              className="flex items-center gap-1 text-[11px] text-ink-faint hover:text-ink-muted transition-colors"
+              className="flex items-center gap-1 text-xs text-ink-faint hover:text-ink-muted transition-colors"
             >
               <ChevronDown className="w-3 h-3" />
               摘要
@@ -618,12 +618,12 @@ function CartItemRow({
           )}
           {expanded && (
             <>
-              <p className="mt-1 text-[12px] text-ink-secondary leading-relaxed">
+              <p className="mt-1 text-sm text-ink-secondary leading-relaxed">
                 {item.abstract}
               </p>
               <button
                 onClick={() => setExpanded(false)}
-                className="flex items-center gap-1 mt-1.5 text-[11px] text-ink-faint hover:text-ink-muted transition-colors"
+                className="flex items-center gap-1 mt-1.5 text-xs text-ink-faint hover:text-ink-muted transition-colors"
               >
                 <ChevronUp className="w-3 h-3" />
                 收起
@@ -641,7 +641,7 @@ function CartItemRow({
             target="_blank"
             rel="noopener noreferrer"
             title="查看 GitHub 代码仓库"
-            className="text-[11px] text-ink-faint hover:text-accent transition-colors"
+            className="text-xs text-ink-faint hover:text-accent transition-colors"
           >
             <Github className="w-2.5 h-2.5 inline mr-0.5" />
             GitHub
@@ -652,7 +652,7 @@ function CartItemRow({
             href={`https://doi.org/${item.doi}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[11px] text-ink-faint hover:text-accent transition-colors"
+            className="text-xs text-ink-faint hover:text-accent transition-colors"
           >
             <ExternalLink className="w-2.5 h-2.5 inline mr-0.5" />
             DOI
@@ -679,7 +679,7 @@ function DiagnosisCard({
   }[diagnosis.verdict] || { text: diagnosis.verdict, cls: "badge" };
 
   return (
-    <div className="bg-paper-warm rounded-lg p-3 text-[12px] space-y-2">
+    <div className="bg-paper-warm rounded-lg p-3 text-sm space-y-2">
       <div className="flex items-center gap-2">
         <span className={verdictLabel.cls}>{verdictLabel.text}</span>
       </div>

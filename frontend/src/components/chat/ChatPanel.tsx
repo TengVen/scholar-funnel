@@ -433,7 +433,7 @@ export function ChatPanel({
             <h1 className="font-serif text-[26px] font-semibold bg-gradient-to-br from-gold-bright via-gold-light to-gold bg-clip-text text-transparent">
               Scholar Funnel
             </h1>
-            <p className="text-[13px] text-ink-muted mt-2 mb-8 text-center">
+            <p className="text-base text-ink-muted mt-2 mb-8 text-center">
               用对话的方式描述研究方向，自动拆解意图、召回并构建文献骨架
             </p>
 
@@ -448,7 +448,7 @@ export function ChatPanel({
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder={placeholder}
-                    className="flex-1 min-w-0 bg-transparent border-0 outline-none focus:ring-0 focus:ring-transparent h-9 text-[14px] leading-normal text-ink placeholder:text-ink-faint"
+                    className="flex-1 min-w-0 bg-transparent border-0 outline-none focus:ring-0 focus:ring-transparent h-9 text-base leading-normal text-ink placeholder:text-ink-faint"
                     disabled={inputDisabled}
                     autoFocus
                   />
@@ -474,7 +474,7 @@ export function ChatPanel({
 
             {/* 示例问题 */}
             <div className="mt-6 w-full max-w-3xl">
-              <p className="text-[11px] text-ink-faint mb-3 text-center tracking-wide">
+              <p className="text-xs text-ink-faint mb-3 text-center tracking-wide">
                 试试这些研究方向
               </p>
               <div className="flex flex-wrap justify-center gap-2">
@@ -483,7 +483,7 @@ export function ChatPanel({
                     key={s}
                     onClick={() => handleSend(s)}
                     disabled={inputDisabled}
-                    className="px-3 py-1.5 rounded-full border border-line text-[12px] text-ink-secondary
+                    className="px-3 py-1.5 rounded-full border border-line text-sm text-ink-secondary
                                hover:border-gold/50 hover:text-gold-light hover:bg-accent-light/20
                                transition-colors disabled:opacity-40"
                   >
@@ -510,7 +510,7 @@ export function ChatPanel({
                     <DeepResearchRunningCard att={msg.attachments} onCancel={handleCancelDeepResearch} />
                   ) : (
                     <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed ${
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-base leading-relaxed ${
                         msg.role === "user"
                           ? "bg-gradient-to-br from-gold-light to-gold-hover text-[#171614] whitespace-pre-wrap"
                           : "card"
@@ -524,7 +524,7 @@ export function ChatPanel({
                       {msg.project_id && (
                         <button
                           onClick={() => onOpenProject(msg.project_id!)}
-                          className="mt-2.5 flex items-center gap-1.5 btn-secondary text-[12px] !py-1.5"
+                          className="mt-2.5 flex items-center gap-1.5 btn-secondary text-sm !py-1.5"
                         >
                           <ExternalLink className="w-3 h-3" />
                           查看项目「{msg.project_name || `#${msg.project_id}`}」
@@ -537,7 +537,7 @@ export function ChatPanel({
 
               {pendingIdx !== null && (
                 <div className="flex justify-start">
-                  <div className="card px-4 py-3 flex items-center gap-2.5 text-[13px] text-ink-muted">
+                  <div className="card px-4 py-3 flex items-center gap-2.5 text-base text-ink-muted">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-gold-light shrink-0" />
                     <span>{EXEC_STAGES[pendingIdx]}</span>
                   </div>
@@ -546,7 +546,7 @@ export function ChatPanel({
 
               {searching && (
                 <div className="flex justify-start">
-                  <div className="card px-4 py-3 flex items-center gap-2 text-[13px] text-ink-muted">
+                  <div className="card px-4 py-3 flex items-center gap-2 text-base text-ink-muted">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     正在检索文献，请稍候...
                   </div>
@@ -570,7 +570,7 @@ export function ChatPanel({
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
                       placeholder={placeholder}
-                      className="flex-1 min-w-0 bg-transparent border-0 outline-none focus:ring-0 focus:ring-transparent h-9 text-[13px] leading-normal text-ink placeholder:text-ink-faint"
+                      className="flex-1 min-w-0 bg-transparent border-0 outline-none focus:ring-0 focus:ring-transparent h-9 text-base leading-normal text-ink placeholder:text-ink-faint"
                       disabled={inputDisabled}
                     />
                     <button
@@ -594,7 +594,7 @@ export function ChatPanel({
               </div>
 
               {stage === "confirming" && userQuery && (
-                <div className="mt-2 flex items-center gap-3 text-[11px] text-ink-faint">
+                <div className="mt-2 flex items-center gap-3 text-xs text-ink-faint">
                   <span>方向：<span className="text-ink-secondary">{userQuery.slice(0, 40)}</span></span>
                   {yearFrom && <span>年份：{yearFrom}-{yearTo}</span>}
                 </div>
@@ -621,7 +621,7 @@ function DeepResearchResultCard({
     <div className="max-w-[85%] w-[440px] rounded-2xl card overflow-hidden">
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
         <Sparkles className="w-3.5 h-3.5 text-[#C27BA0]" />
-        <p className="text-[13px] font-medium text-ink">深度调研完成</p>
+        <p className="text-base font-medium text-ink">深度调研完成</p>
       </div>
       {stats && (
         <div className="px-4 grid grid-cols-4 gap-2 mb-2">
@@ -636,20 +636,20 @@ function DeepResearchResultCard({
           {att.probes.slice(0, 3).map((p) => (
             <span
               key={p.probe}
-              className="text-[10.5px] px-2 py-0.5 rounded-full border border-[#C27BA0]/30 text-[#C27BA0]"
+              className="text-2xs px-2 py-0.5 rounded-full border border-[#C27BA0]/30 text-[#C27BA0]"
             >
               {p.probe}
             </span>
           ))}
           {att.probes.length > 3 && (
-            <span className="text-[10.5px] text-ink-faint">+{att.probes.length - 3}</span>
+            <span className="text-2xs text-ink-faint">+{att.probes.length - 3}</span>
           )}
         </div>
       )}
       <div className="px-4 pb-3">
         <button
           onClick={onOpenProject}
-          className="flex items-center gap-1.5 btn-secondary text-[12px] !py-1.5"
+          className="flex items-center gap-1.5 btn-secondary text-sm !py-1.5"
         >
           <FolderSearch className="w-3 h-3" />
           查看检索结果
@@ -662,8 +662,8 @@ function DeepResearchResultCard({
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-line bg-paper-warm/50 px-2 py-1.5 text-center">
-      <p className="text-[13px] font-medium text-ink tabular-nums">{value}</p>
-      <p className="text-[10px] text-ink-faint">{label}</p>
+      <p className="text-base font-medium text-ink tabular-nums">{value}</p>
+      <p className="text-2xs text-ink-faint">{label}</p>
     </div>
   );
 }
@@ -686,18 +686,18 @@ function DeepResearchRunningCard({
         ) : (
           <Sparkles className="w-3.5 h-3.5 text-ink-faint" />
         )}
-        <p className="text-[13px] text-ink">
+        <p className="text-base text-ink">
           {ended ? "深度调研已结束（结果见下方卡片，或重新发起）" : "深度调研进行中…"}
         </p>
       </div>
       {!ended && (
         <>
-          <p className="text-[11px] text-ink-faint mt-1.5 leading-relaxed">
+          <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
             意图解析 → 主干检索 → 骨架候选 → 探针推导，完成后在此展示结果
           </p>
           <button
             onClick={onCancel}
-            className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-muted
+            className="mt-2 flex items-center gap-1.5 text-xs text-ink-muted
                        hover:text-ink border border-line rounded-md px-2.5 py-1
                        transition-colors"
           >

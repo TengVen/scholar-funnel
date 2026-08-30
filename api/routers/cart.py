@@ -65,16 +65,18 @@ def add_by_openalex(
 
 
 @router.post("/classify")
-def classify_paper(paper_id: int = Query(...)):
+def classify_paper(paper_id: int = Query(...), user: User = Depends(get_current_user)):
     """AI 判断论文应归入骨架的哪一分类（奠基/主流/前沿）"""
-    # 缓存命中直接返回
-    if paper_id in _classify_cache:
-        return _classify_cache[paper_id]
-
     with get_session() as session:
         paper = session.get(Paper, paper_id)
         if not paper:
             raise HTTPException(404, "论文不存在")
+        # 归属校验：论文挂在项目下，当前用户必须拥有该项目
+        get_owned_project(session, paper.project_id, user)
+
+        # 缓存命中直接返回（在鉴权与归属校验之后，避免跨用户信息泄露）
+        if paper_id in _classify_cache:
+            return _classify_cache[paper_id]
 
         title = paper.title or ""
         abstract = (paper.abstract or "")[:2000]

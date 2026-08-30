@@ -290,60 +290,61 @@ def start_deep_research(conv: Conversation, user: User, params: dict) -> dict:
     """
     启动后台深度调研（复用 agents/funnel 的 LangGraph 工作流，auto 模式）。
 
-    - 创建新项目并关联会话（与 full_search 一致）
-    - 预生成 funnel thread_id，后台线程执行
+    - 同步创建项目并关联会话（拿到 project_id 后生成合规 thread_id，后台只跑漏斗）
     - 写入一条"已启动"消息卡（attachments 持久化 thread_id，切页/多轮后可恢复）
     """
     from agents.funnel.graph import run_funnel
     from storage.models import Message, Project
 
-    thread_id = f"funnel-{uuid.uuid4().hex[:8]}"
     user_query = params.get("user_query", "")
+
+    # 同步建项目 + 写启动卡：必须先拿到 project_id 才能生成合规 thread_id
+    # （格式 funnel-{project_id}-{hex}，/funnel/state 与 finalize 的归属校验依赖内嵌 project_id）
+    with get_session() as session:
+        p = Project(
+            name=user_query[:80],
+            user_query=user_query,
+            tech_probe=params.get("tech_probe", ""),
+            user_id=user.id,
+        )
+        session.add(p)
+        session.flush()
+        project_id = p.id
+        thread_id = f"funnel-{project_id}-{uuid.uuid4().hex[:8]}"
+        # 会话关联 + 写启动卡
+        conv_row = (
+            session.query(Conversation)
+            .filter(Conversation.uuid == conv.uuid, Conversation.user_id == user.id)
+            .first()
+        )
+        if conv_row:
+            ids = list(conv_row.project_ids or [])
+            if project_id not in ids:
+                ids.append(project_id)
+            conv_row.project_ids = ids
+            conv_row.project_id = project_id
+            conv_row.title = user_query[:30]
+        session.add(Message(
+            uuid=uuid.uuid4().hex[:16] + uuid.uuid4().hex[:16],
+            conversation_id=conv_row.id if conv_row else 0,
+            user_id=user.id,
+            role="assistant",
+            content="深度调研已启动：意图解析 → 主干检索 → 骨架候选 → 探针推导（预计 2-5 分钟，完成后在本消息下方展示结果）",
+            project_id=project_id,
+            attachments={
+                "type": "deep_research",
+                "thread_id": thread_id,
+                "project_id": project_id,
+                "status": "running",
+            },
+        ))
+        session.commit()
 
     def bg():
         try:
-            with get_session() as session:
-                p = Project(
-                    name=user_query[:80],
-                    user_query=user_query,
-                    tech_probe=params.get("tech_probe", ""),
-                    user_id=user.id,
-                )
-                session.add(p)
-                session.flush()
-                project_id = p.id
-                # 会话关联 + 写启动卡
-                conv_row = (
-                    session.query(Conversation)
-                    .filter(Conversation.uuid == conv.uuid, Conversation.user_id == user.id)
-                    .first()
-                )
-                if conv_row:
-                    ids = list(conv_row.project_ids or [])
-                    if project_id not in ids:
-                        ids.append(project_id)
-                    conv_row.project_ids = ids
-                    conv_row.project_id = project_id
-                    conv_row.title = user_query[:30]
-                session.add(Message(
-                    uuid=uuid.uuid4().hex[:16] + uuid.uuid4().hex[:16],
-                    conversation_id=conv_row.id if conv_row else 0,
-                    user_id=user.id,
-                    role="assistant",
-                    content="深度调研已启动：意图解析 → 主干检索 → 骨架候选 → 探针推导（预计 2-5 分钟，完成后在本消息下方展示结果）",
-                    project_id=project_id,
-                    attachments={
-                        "type": "deep_research",
-                        "thread_id": thread_id,
-                        "project_id": project_id,
-                        "status": "running",
-                    },
-                ))
-                session.commit()
-                task_project_id = project_id
             # 后台执行漏斗（auto 模式，全自动不中断）
             run_funnel(
-                project_id=task_project_id,
+                project_id=project_id,
                 user_input=user_query,
                 tech_probe=params.get("tech_probe", ""),
                 mode="auto",

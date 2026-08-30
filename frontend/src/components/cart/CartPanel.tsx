@@ -41,7 +41,7 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
           <PanelLeft className="w-4 h-4 text-ink-muted" />
           <span className="text-[9px] text-ink-faint [writing-mode:vertical-rl]">骨架</span>
           {cart && (
-            <span className="w-5 h-5 rounded-full bg-accent-light text-gold-light text-[10px] tabular-nums flex items-center justify-center">
+            <span className="w-5 h-5 rounded-full bg-accent-light text-gold-light text-2xs tabular-nums flex items-center justify-center">
               {cart.total}
             </span>
           )}
@@ -61,7 +61,7 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
           <PanelLeftClose className="w-3.5 h-3.5" />
         </button>
         <Package className="w-6 h-6 text-ink-faint mb-2" />
-        <p className="text-[12px] text-ink-faint">选择项目后显示骨架</p>
+        <p className="text-sm text-ink-faint">选择项目后显示骨架</p>
       </aside>
     );
   }
@@ -86,10 +86,10 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
       {/* Header */}
       <div className="px-4 py-3 pl-8 border-b border-line shrink-0">
         <div className="flex items-center justify-between">
-          <span className="font-serif text-[14px] font-semibold text-ink">
+          <span className="font-serif text-base font-semibold text-ink">
             核心骨架
           </span>
-          <span className="text-[12px] text-ink-muted tabular-nums">
+          <span className="text-sm text-ink-muted tabular-nums">
             {cart.total}/{totalLimit}
           </span>
         </div>
@@ -102,7 +102,7 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
         </div>
 
         {cart.total > 0 && (
-          <button className="btn-secondary w-full mt-2 text-[12px] flex items-center justify-center gap-1.5">
+          <button className="btn-secondary w-full mt-2 text-sm flex items-center justify-center gap-1.5">
             <Download className="w-3 h-3" />
             导出 BibTeX
           </button>
@@ -114,10 +114,10 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
         {grouped.map((cat) => (
           <div key={cat.key} className="border-b border-line-light last:border-0">
             <div className="px-4 pt-3 pb-1 flex items-center justify-between">
-              <span className="text-[12px] font-medium text-ink">
+              <span className="text-sm font-medium text-ink">
                 {cat.label}
               </span>
-              <span className="text-[11px] text-ink-faint tabular-nums">
+              <span className="text-xs text-ink-faint tabular-nums">
                 {cat.items.length}/{cat.limit}
               </span>
             </div>
@@ -140,10 +140,10 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
                   className="group/item flex items-start gap-2 py-1.5 px-2 -mx-2 rounded hover:bg-paper-warm transition-colors"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-[12px] text-ink leading-tight line-clamp-2">
+                    <p className="text-sm text-ink leading-tight line-clamp-2">
                       {item.title}
                     </p>
-                    <p className="text-[11px] text-ink-faint mt-0.5">
+                    <p className="text-xs text-ink-faint mt-0.5">
                       {item.year}
                       {item.cited_by_count > 0 && ` · 被引 ${item.cited_by_count}`}
                     </p>
@@ -160,7 +160,7 @@ export function CartPanel({ cart, onRemove }: CartPanelProps) {
               ))}
 
               {cat.items.length === 0 && (
-                <p className="text-[11px] text-ink-faint py-1">
+                <p className="text-xs text-ink-faint py-1">
                   还可添加 {cat.limit} 篇
                 </p>
               )}

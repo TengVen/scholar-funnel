@@ -18,13 +18,13 @@ export function EvidenceList({ evidence }: { evidence: EvidenceItem[] }) {
         >
           {ev.section ? (
             <span
-              className="px-1.5 py-0.5 rounded text-[10.5px] whitespace-nowrap shrink-0 mt-px"
+              className="px-1.5 py-0.5 rounded text-2xs whitespace-nowrap shrink-0 mt-px"
               style={{ background: "rgba(120,170,255,0.14)", color: "#9FC4FF" }}
             >
               {ev.section}
             </span>
           ) : null}
-          <span className="text-[11.5px] text-ink-secondary leading-relaxed">
+          <span className="text-xs text-ink-secondary leading-relaxed">
             {ev.description}
           </span>
         </div>
