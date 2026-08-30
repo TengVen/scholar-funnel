@@ -37,7 +37,7 @@ REASON_PROMPT = """\
 - 年份：{year}
 - 被引量：{cited_by_count}
 - 推荐分类：{category_label}
-- 摘要（前200字）：{abstract}
+- 摘要：{abstract}
 
 要求：
 - 简洁有力，一句话点出核心价值

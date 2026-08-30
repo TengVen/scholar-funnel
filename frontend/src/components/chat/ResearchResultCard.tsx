@@ -1,26 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, ChevronDown, ChevronUp, PackageSearch } from "lucide-react";
+import { Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import type { DeepResearchAttachments, DeepResearchCandidate } from "@/types/dto";
+import type { Category } from "@/types/domain";
 import { addToCart } from "@/lib/api/cart";
 import { useCartStore } from "@/stores/cartStore";
-import { CATEGORY_META } from "@/config/categories";
+import { CATEGORY_SECTION, CATEGORY_META } from "@/config/categories";
 import { toast } from "@/lib/toast";
+import { PaperActionRow } from "./PaperActionRow";
 
 /**
  * L3 深度调研结果卡（L3Renderer）：论文 = 研究资产。
- * 展示重点 = "研究形成了什么"（研究成果指标），检索过程（主干召回→…→核心候选）
- * 收纳进"查看检索过程"展开；内部模型判断（置信度/分数）不外露，分类以"建议归类"呈现。
+ * 候选按"建议归类"分组展示（与 L2 认知结构一致的区块标题），论文行含 年份/作者/被引；
+ * 展示重点 = "研究形成了什么"（研究成果指标），检索过程收纳进"查看检索过程"展开；
+ * 内部模型判断（置信度/分数）不外露。
  */
 interface ResearchResultCardProps {
   att: DeepResearchAttachments;
   projectId?: number | null;
 }
 
+const GROUP_ORDER: Category[] = ["foundation", "mainstream", "frontier"];
+
 export function ResearchResultCard({ att, projectId }: ResearchResultCardProps) {
   const [showProcess, setShowProcess] = useState(false);
   const metrics = att.metrics;
+
+  const groups = GROUP_ORDER.map((cat) => ({
+    cat,
+    papers: (att.candidates ?? []).filter((c) => c.suggested_category === cat),
+  })).filter((g) => g.papers.length > 0);
 
   return (
     <div className="max-w-[85%] w-full rounded-2xl card overflow-hidden">
@@ -38,14 +48,24 @@ export function ResearchResultCard({ att, projectId }: ResearchResultCardProps) 
         </div>
       )}
 
-      {att.candidates && att.candidates.length > 0 && (
-        <div className="px-4 pb-2">
-          <p className="text-xs text-ink-muted mb-1.5">核心推荐候选（未自动入库）</p>
-          <div className="space-y-1.5">
-            {att.candidates.map((c) => (
-              <CandidateRow key={c.paper_id} candidate={c} projectId={projectId} />
-            ))}
-          </div>
+      {groups.length > 0 && (
+        <div className="px-4 pb-2 space-y-3">
+          {groups.map(({ cat, papers }) => {
+            const meta = CATEGORY_SECTION[cat];
+            return (
+              <div key={cat}>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: meta.dot }} />
+                  <span className={`text-sm ${meta.color}`}>{CATEGORY_META[cat].label} · {papers.length} 篇</span>
+                </div>
+                <div className="space-y-1.5">
+                  {papers.map((c) => (
+                    <CandidateRow key={c.paper_id} candidate={c} projectId={projectId} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -65,7 +85,7 @@ export function ResearchResultCard({ att, projectId }: ResearchResultCardProps) 
         </div>
       )}
 
-      <div className="px-4 pb-3 flex items-center gap-3">
+      <div className="px-4 pb-3">
         <button
           type="button"
           onClick={() => setShowProcess((v) => !v)}
@@ -101,14 +121,13 @@ function CandidateRow({ candidate, projectId }: { candidate: DeepResearchCandida
   const inCart = useCartStore(
     (s) => s.cart?.items.some((it) => it.paper_id === candidate.paper_id) ?? false,
   );
-  const catLabel = CATEGORY_META[candidate.suggested_category]?.label ?? "主流方法";
 
   const handleAdd = async () => {
     if (!projectId) return;
     setAdding(true);
     try {
       await addToCart(projectId, candidate.paper_id, candidate.suggested_category, "深度调研推荐");
-      toast(`已加入骨架（${catLabel}）`, "success");
+      toast(`已加入骨架（${CATEGORY_META[candidate.suggested_category].label}）`, "success");
     } catch (e) {
       toast(`加入骨架失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
@@ -117,23 +136,17 @@ function CandidateRow({ candidate, projectId }: { candidate: DeepResearchCandida
   };
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-accent-light/10 transition-colors">
-      <div className="min-w-0">
-        <p className="text-sm text-ink leading-snug">{candidate.title}</p>
-        <p className="text-xs text-ink-faint mt-0.5">
-          {candidate.year ? `${candidate.year} · ` : ""}建议归类：{catLabel}
-        </p>
-        {candidate.reason && <p className="text-xs text-ink-muted mt-0.5">{candidate.reason}</p>}
-      </div>
-      <button
-        type="button"
-        onClick={handleAdd}
-        disabled={adding || inCart}
-        className="btn-secondary text-xs !py-1.5 shrink-0 disabled:opacity-50"
-      >
-        {inCart ? "已在骨架" : adding ? "加入中…" : "加入骨架"}
-        {!adding && <PackageSearch className="w-3 h-3" />}
-      </button>
-    </div>
+    <PaperActionRow
+      title={candidate.title}
+      meta={[
+        candidate.year ? String(candidate.year) : "",
+        candidate.authors_note ?? "",
+        candidate.cited_by_count ? `被引 ${candidate.cited_by_count}` : "",
+      ]}
+      reason={candidate.reason}
+      inCart={inCart}
+      adding={adding}
+      onAdd={handleAdd}
+    />
   );
 }

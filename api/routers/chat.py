@@ -278,6 +278,20 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
     recs = state.get("skeleton_recommendations") or []
     probes = state.get("derived_probes") or []
 
+    # 候选富化：从 ai_papers 补作者/被引（推荐理由之外的元数据，供三分类分组下的论文行展示）
+    paper_ids = [r.get("paper_id") for r in recs[:12] if r.get("paper_id")]
+    paper_info: dict[int, dict] = {}
+    if paper_ids:
+        from storage.models import Paper as PaperModel
+        with get_session() as session:
+            for row in session.query(PaperModel).filter(PaperModel.id.in_(paper_ids)).all():
+                authors = row.authors if isinstance(row.authors, list) else []
+                paper_info[row.id] = {
+                    "authors": authors[:3],
+                    "authors_note": f"{authors[0]}{' 等' if len(authors) > 1 else ''}" if authors else "",
+                    "cited_by_count": row.cited_by_count or 0,
+                }
+
     # 研究成果指标（面向用户：研究形成了什么，而非系统处理了多少数据）
     # 检索过程（主干召回→初筛→Rerank→核心候选）收纳进 process，前端"查看检索过程"展开
     core_n = len(recs)
@@ -304,6 +318,8 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
                 "year": r.get("year", 0),
                 "suggested_category": r.get("suggested_category", "mainstream"),
                 "reason": r.get("reason", ""),
+                "authors_note": paper_info.get(r.get("paper_id"), {}).get("authors_note", ""),
+                "cited_by_count": paper_info.get(r.get("paper_id"), {}).get("cited_by_count", 0),
             }
             for r in recs[:12]
         ],

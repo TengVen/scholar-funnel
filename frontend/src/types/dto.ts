@@ -353,6 +353,8 @@ export interface DeepResearchCandidate {
   year: number;
   suggested_category: Category;
   reason: string;
+  authors_note?: string;       // 第一作者 等
+  cited_by_count?: number;
 }
 
 export interface DeepResearchProbe {

@@ -14,6 +14,13 @@ export const CATEGORIES: { key: Category; label: string; limit: number; desc: st
   { key: "frontier", label: "最新前沿", limit: 5, desc: "近2年的最新进展" },
 ];
 
+// ── 分类区块视觉（认知结构卡分组标题：圆点 + 文字色）──
+export const CATEGORY_SECTION: Record<Category, { dot: string; color: string }> = {
+  foundation: { dot: "#c9a24b", color: "text-gold-light" },
+  mainstream: { dot: "#7BA7FF", color: "text-[#B5D4F4]" },
+  frontier: { dot: "#5FCFBE", color: "text-[#9FE1CB]" },
+};
+
 /** 分类 → label/desc（GapPanel 等按 key 查） */
 export const CATEGORY_META: Record<Category, { label: string; desc: string }> = {
   foundation: { label: "奠基理论", desc: "定义核心问题的基础工作" },
