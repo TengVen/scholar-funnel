@@ -18,9 +18,12 @@ from llm import client as llm
 from storage.mysql_db import get_session
 from storage.models import Conversation, Message, Project, User
 from utils.auth import get_current_user, get_owned_project
+from utils.log import setup_logger
 from agents import chat_agent
 
 router = APIRouter()
+
+logger = setup_logger("chat")
 
 
 # ── 会话读写（库） ──
@@ -126,7 +129,16 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
     agent_result = chat_agent.run_agent(conv, user, history)
 
     with get_session() as session:
-        _append_message(session, conv, user.id, "assistant", agent_result["reply"])
+        # L1 来源卡：answer_with_sources 的 hits 随回复持久化（前端渲染"来源"列表）
+        l1_sources = agent_result.get("l1_sources")
+        _append_message(
+            session, conv, user.id, "assistant", agent_result["reply"],
+            project_id=conv.project_id,
+            attachments=(
+                {"type": "l1_sources", "level": "L1", "sources": l1_sources}
+                if l1_sources else None
+            ),
+        )
 
     return ChatResponse(
         conversation_id=conv.uuid,
@@ -135,6 +147,7 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
         task_id=agent_result.get("task_id"),
         task_type=agent_result.get("tool_name"),
         params=conv.params or {},
+        l1_sources=agent_result.get("l1_sources"),
     )
 
 
@@ -180,7 +193,19 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
     # LLM 生成文字总结（基于统计，不塞论文列表）
     summary = _generate_summary(search, project_name)
 
-    # 存会话消息（role=assistant，带项目链接信息）——按 user 过滤，防跨用户越权
+    # L2 认知结构（v0 规则三层分组；T10 地图归纳落地后替换为数据驱动版，schema 不变）
+    cognitive = None
+    try:
+        from agents.structure import build_cognitive_structure
+        cognitive = build_cognitive_structure(
+            project_id=project_id,
+            topic=project_name,
+            total_candidates=search.get("total_found") or None,
+        )
+    except Exception as e:
+        logger.warning(f"认知结构构建失败（不影响总结）: {e}")
+
+    # 存会话消息（role=assistant，带 L2 认知结构卡）——按 user 过滤，防跨用户越权
     with get_session() as session:
         conv = (
             session.query(Conversation)
@@ -191,14 +216,21 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
             .first()
         )
         if conv:
-            _append_message(session, conv, user.id, "assistant",
-                            f"【检索完成】{summary}",
-                            project_id=project_id, project_name=project_name)
+            _append_message(
+                session, conv, user.id, "assistant",
+                summary,
+                project_id=project_id, project_name=project_name,
+                attachments=(
+                    {"type": "l2_structure", "level": "L2", "cognitive_structure": cognitive}
+                    if cognitive else None
+                ),
+            )
 
     payload = {
         "summary": summary,
         "project_id": project_id,
         "project_name": project_name,
+        "cognitive_structure": cognitive,
     }
     task["summarized"] = True
     task["summary_payload"] = payload
@@ -246,16 +278,24 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
     recs = state.get("skeleton_recommendations") or []
     probes = state.get("derived_probes") or []
 
+    # 研究成果指标（面向用户：研究形成了什么，而非系统处理了多少数据）
+    # 检索过程（主干召回→初筛→Rerank→核心候选）收纳进 process，前端"查看检索过程"展开
+    core_n = len(recs)
     payload = {
         "type": "deep_research_result",
+        "level": "L3",
         "thread_id": thread_id,
         "project_id": project_id,
-        "stats": {
-            "total_found": trunk.get("total_found", 0),
-            "saved": trunk.get("new_saved", 0),
-            "survey": trunk.get("survey_count", 0),
-            "candidates": len(recs),
-            "probes": len(probes),
+        "metrics": {
+            "core_papers": core_n,          # 核心论文（AI 推荐骨架候选）
+            "new_papers": trunk.get("new_saved", 0),   # 新增文献（主干新入库）
+            "skeleton_candidates": core_n,  # 骨架候选（与核心论文同源，随深研定义演进）
+            "research_probes": len(probes), # 研究探针
+        },
+        "process": {
+            "total_found": trunk.get("total_found", 0),   # 主干召回
+            "new_saved": trunk.get("new_saved", 0),
+            "survey_count": trunk.get("survey_count", 0),  # 综述占比
         },
         "candidates": [
             {
@@ -263,7 +303,6 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
                 "title": r.get("title", ""),
                 "year": r.get("year", 0),
                 "suggested_category": r.get("suggested_category", "mainstream"),
-                "confidence": r.get("confidence", "medium"),
                 "reason": r.get("reason", ""),
             }
             for r in recs[:12]
@@ -278,9 +317,11 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
         ],
     }
     content = (
-        f"深度调研完成：主干召回 {payload['stats']['total_found']} 篇、新入库 {payload['stats']['saved']} 篇；"
-        f"AI 推荐骨架候选 {payload['stats']['candidates']} 篇、推导探针 {payload['stats']['probes']} 个。"
-        "骨架候选未自动入库，可到骨架页按需加入。"
+        f"深度调研完成：核心论文 {payload['metrics']['core_papers']} 篇、"
+        f"新增文献 {payload['metrics']['new_papers']} 篇、"
+        f"骨架候选 {payload['metrics']['skeleton_candidates']} 篇、"
+        f"研究探针 {payload['metrics']['research_probes']} 个。"
+        "骨架候选未自动入库，可在此加入或到研究空间查看。"
     )
 
     with get_session() as session:

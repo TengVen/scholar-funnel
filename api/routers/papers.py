@@ -4,11 +4,31 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from storage.mysql_db import get_session
-from storage.models import Paper, CartItem, User
-from api.schemas import PaperOut, PaperListResponse, PaperWhy
+from storage.models import Paper, CartItem, User, Project
+from api.schemas import PaperOut, PaperListResponse, PaperWhy, JoinProjectRequest
 from utils.auth import get_current_user, get_owned_project
 
 router = APIRouter()
+
+
+@router.post("/join-project")
+def join_project(body: JoinProjectRequest, user: User = Depends(get_current_user)):
+    """L1"加入研究"：把回答来源论文纳入项目候选（stage=candidate，不进骨架）。"""
+    from storage import papers as papers_svc
+    from sources import openalex as oa
+    oa.set_mailto(user.email)
+    with get_session() as session:
+        get_owned_project(session, body.project_id, user)
+    result = papers_svc.save_openalex_paper(body.project_id, body.openalex_id, stage="candidate")
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error", "纳入研究失败"))
+    return {"ok": True, "paper_id": result["paper_id"], "created": result.get("created", False)}
+
+
+def _build_reason(category: str | None, topic: str) -> str:
+    """按类别模板 + 主题注入生成推荐理由（模板集中 prompt/reason.py）"""
+    from prompt.reason import build_reason
+    return build_reason(category, topic)
 
 
 def _why_from_meta(meta) -> PaperWhy | None:
@@ -98,19 +118,32 @@ def list_papers(
         # 分页
         rows = q.offset(page * page_size).limit(page_size).all()
 
-        # 查询哪些论文已在骨架中
+        # 查询哪些论文已在骨架中（含分类，供"为什么推荐"理由模板选择）
         paper_ids = [r.id for r in rows]
-        cart_ids = set()
+        cart_ids: set[int] = set()
+        cart_cats: dict[int, str] = {}
         if paper_ids:
             cart_rows = (
-                session.query(CartItem.paper_id)
+                session.query(CartItem.paper_id, CartItem.category)
                 .filter(CartItem.project_id == project_id, CartItem.paper_id.in_(paper_ids))
                 .all()
             )
             cart_ids = {r[0] for r in cart_rows}
+            cart_cats = {r[0]: r[1] for r in cart_rows}
+
+        # 主题（推荐理由模板注入）：project.user_query 为核心主题
+        topic = ""
+        proj = session.get(Project, project_id)
+        if proj:
+            topic = proj.user_query or ""
 
         papers = []
         for r in rows:
+            why = _why_from_meta(r.recall_meta)
+            if why is not None:
+                # 分类优先取骨架分类，其次 gap 推荐分类；均无则通用模板
+                category = cart_cats.get(r.id) or r.recommended_category
+                why.reason = _build_reason(category, topic)
             papers.append(PaperOut(
                 id=r.id,
                 title=r.title,
@@ -126,7 +159,7 @@ def list_papers(
                 keywords=r.keywords if isinstance(r.keywords, list) else [],
                 github_url=r.github_url,
                 in_cart=r.id in cart_ids,
-                why=_why_from_meta(r.recall_meta),
+                why=why,
             ))
 
     return PaperListResponse(

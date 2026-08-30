@@ -135,6 +135,7 @@ class PaperWhy(BaseModel):
     similarity: float | None = None   # 语义召回相似度（仅 semantic）
     rerank_score: float | None = None
     confidence: str | None = None     # high / medium / low（由 rerank_score 分档）
+    reason: str | None = None         # 自然语言推荐理由（面向用户；分数/匹配/置信度为内部信号不外露）
 
 
 class PaperOut(BaseModel):
@@ -179,6 +180,12 @@ class JudgmentRequest(BaseModel):
     reason: str = ""
     # 仅 adopt 需要：骨架分类（缺省时由服务端按分类规则建议）
     category: str | None = None
+
+
+class JoinProjectRequest(BaseModel):
+    """L1"加入研究"：把回答来源论文纳入项目候选（stage=candidate，不进骨架）"""
+    project_id: int
+    openalex_id: str
 
 
 class CartItemOut(BaseModel):

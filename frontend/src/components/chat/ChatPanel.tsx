@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Sparkles, ArrowUp, ExternalLink, FolderSearch } from "lucide-react";
+import { Send, Loader2, Sparkles, ArrowUp, ExternalLink } from "lucide-react";
 import {
   sendChatMessage,
   getChatSearchStatus,
@@ -13,6 +13,9 @@ import { getFunnelState } from "@/lib/api/funnel";
 import type { ChatMessage, DeepResearchAttachments, SearchSummary } from "@/types/dto";
 import { ChatConfigBar } from "./ChatConfigBar";
 import { MarkdownBody } from "./MarkdownBody";
+import { L1SourcesCard } from "./L1SourcesCard";
+import { L2StructureCard } from "./L2StructureCard";
+import { ResearchResultCard } from "./ResearchResultCard";
 import type { ChatConfig } from "@/types/domain";
 import { DEFAULT_CONFIG, SUGGESTIONS } from "@/config/chat";
 import { STORAGE_KEYS } from "@/config/storage";
@@ -93,6 +96,9 @@ export function ChatPanel({
             content: summary.summary,
             project_id: summary.project_id,
             project_name: summary.project_name,
+            attachments: summary.cognitive_structure
+              ? { type: "l2_structure", level: "L2", cognitive_structure: summary.cognitive_structure }
+              : undefined,
           },
         ]);
         onProjectCreated(summary.project_id);
@@ -339,7 +345,19 @@ export function ChatPanel({
       setPendingIdx(null);   // 收到响应，占位结束
 
       if (res.reply) {
-        setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
+        // L1 来源卡：answer_with_sources 的 hits 随回复渲染（论文 = 回答来源）
+        const l1 = res.l1_sources;
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: res.reply,
+            project_id: currentProjectId ?? undefined,
+            attachments: l1?.length
+              ? { type: "l1_sources", level: "L1", sources: l1 }
+              : undefined,
+          },
+        ]);
         setStage(res.stage);
       }
       onConversationChanged?.(conversationId, currentProjectId);   // 当前会话跟随（切页回来可恢复）
@@ -502,12 +520,17 @@ export function ChatPanel({
               {messages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                   {msg.attachments?.type === "deep_research_result" ? (
-                    <DeepResearchResultCard
-                      att={msg.attachments}
-                      onOpenProject={() => msg.attachments?.project_id && onOpenProject(msg.attachments.project_id)}
-                    />
+                    <ResearchResultCard att={msg.attachments} projectId={msg.project_id ?? null} />
                   ) : msg.attachments?.type === "deep_research" ? (
                     <DeepResearchRunningCard att={msg.attachments} onCancel={handleCancelDeepResearch} />
+                  ) : msg.attachments?.type === "l1_sources" ? (
+                    <L1SourcesCard content={msg.content} sources={msg.attachments.sources} projectId={msg.project_id ?? null} />
+                  ) : msg.attachments?.type === "l2_structure" ? (
+                    <L2StructureCard
+                      content={msg.content}
+                      structure={msg.attachments.cognitive_structure}
+                      projectId={msg.project_id ?? null}
+                    />
                   ) : (
                     <div
                       className={`max-w-[85%] rounded-2xl px-4 py-3 text-base leading-relaxed ${
@@ -603,67 +626,6 @@ export function ChatPanel({
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-// ── 深度调研结果卡（持久化消息卡） ──
-
-function DeepResearchResultCard({
-  att,
-  onOpenProject,
-}: {
-  att: DeepResearchAttachments;
-  onOpenProject: () => void;
-}) {
-  const stats = att.stats;
-  return (
-    <div className="max-w-[85%] w-[440px] rounded-2xl card overflow-hidden">
-      <div className="px-4 pt-3 pb-2 flex items-center gap-2">
-        <Sparkles className="w-3.5 h-3.5 text-[#C27BA0]" />
-        <p className="text-base font-medium text-ink">深度调研完成</p>
-      </div>
-      {stats && (
-        <div className="px-4 grid grid-cols-4 gap-2 mb-2">
-          <Stat label="召回" value={stats.total_found} />
-          <Stat label="入库" value={stats.saved} />
-          <Stat label="骨架候选" value={stats.candidates} />
-          <Stat label="探针" value={stats.probes} />
-        </div>
-      )}
-      {att.probes && att.probes.length > 0 && (
-        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-          {att.probes.slice(0, 3).map((p) => (
-            <span
-              key={p.probe}
-              className="text-2xs px-2 py-0.5 rounded-full border border-[#C27BA0]/30 text-[#C27BA0]"
-            >
-              {p.probe}
-            </span>
-          ))}
-          {att.probes.length > 3 && (
-            <span className="text-2xs text-ink-faint">+{att.probes.length - 3}</span>
-          )}
-        </div>
-      )}
-      <div className="px-4 pb-3">
-        <button
-          onClick={onOpenProject}
-          className="flex items-center gap-1.5 btn-secondary text-sm !py-1.5"
-        >
-          <FolderSearch className="w-3 h-3" />
-          查看检索结果
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-line bg-paper-warm/50 px-2 py-1.5 text-center">
-      <p className="text-base font-medium text-ink tabular-nums">{value}</p>
-      <p className="text-2xs text-ink-faint">{label}</p>
     </div>
   );
 }

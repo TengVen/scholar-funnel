@@ -140,14 +140,15 @@ export interface LocalSearchResponse {
 
 // ── Paper ──
 
-/** 召回溯源（"为什么是它"）—— E2 级结构化事实，来源 ai_papers.recall_meta */
+/** 召回溯源（"为什么是它"）—— 面向用户只展示 reason；分数/匹配/置信度为内部信号前端不展示 */
 export interface PaperWhy {
-  routes: string[];            // core / synonym / aux / loose / semantic
-  matched_terms: string[];     // 命中的检索词
+  routes: string[];             // core / synonym / aux / loose / semantic（内部）
+  matched_terms: string[];      // 命中的检索词（内部）
   source: "openalex" | "semantic";
-  similarity?: number | null;  // 语义召回相似度（仅 semantic）
-  rerank_score?: number | null;
-  confidence?: "high" | "medium" | "low" | null;
+  similarity?: number | null;   // 语义召回相似度（内部）
+  rerank_score?: number | null; // 内部
+  confidence?: "high" | "medium" | "low" | null; // 内部
+  reason?: string | null;       // 自然语言推荐理由（唯一面向用户的展示字段）
 }
 
 export interface Paper {
@@ -351,7 +352,6 @@ export interface DeepResearchCandidate {
   title: string;
   year: number;
   suggested_category: Category;
-  confidence: string;
   reason: string;
 }
 
@@ -361,29 +361,84 @@ export interface DeepResearchProbe {
   coverage_ratio: number;
 }
 
-/** 深度调研消息卡附件（持久化在 ai_messages.attachments） */
+/** L3 深度调研结果卡附件（研究成果指标；检索过程收纳在 process，"查看检索过程"展开） */
 export interface DeepResearchAttachments {
   type: "deep_research" | "deep_research_result";
+  level?: "L3";
   thread_id: string;
   project_id: number;
   status?: "running" | "ended";
-  stats?: {
-    total_found: number;
-    saved: number;
-    survey: number;
-    candidates: number;
-    probes: number;
+  metrics?: {
+    core_papers: number;         // 核心论文
+    new_papers: number;          // 新增文献（主干新入库）
+    skeleton_candidates: number; // 骨架候选
+    research_probes: number;     // 研究探针
+  };
+  process?: {
+    total_found: number;         // 主干召回
+    new_saved: number;
+    survey_count: number;
   };
   candidates?: DeepResearchCandidate[];
   probes?: DeepResearchProbe[];
 }
+
+/** L1 来源条目（answer_with_sources hits；openalex_id 供"加入研究"） */
+export interface L1Source {
+  openalex_id?: string | null;
+  title: string;
+  year?: number | null;
+  venue?: string;
+  doi?: string | null;
+  reason?: string;
+  source?: "project" | "openalex";
+}
+
+/** L1 来源卡附件：论文 = 当前回答的外部来源 */
+export interface L1SourcesAttachment {
+  type: "l1_sources";
+  level: "L1";
+  sources: L1Source[];
+}
+
+/** L2 认知结构论文条目 */
+export interface StructurePaper {
+  paper_id: number;
+  title: string;
+  year?: number | null;
+  cited_by_count: number;
+  suggested_category: Category;
+  reason: string;
+}
+
+/** L2 认知结构（核心推荐 vs 全部候选计数分离） */
+export interface CognitiveStructure {
+  topic: string;
+  total_candidates: number;   // 共发现（候选结果池）
+  selected_count: number;     // 核心推荐
+  foundation: StructurePaper[];
+  mainstream: StructurePaper[];
+  frontier: StructurePaper[];
+}
+
+/** L2 认知结构卡附件：论文 = 认知结构节点 */
+export interface L2StructureAttachment {
+  type: "l2_structure";
+  level: "L2";
+  cognitive_structure: CognitiveStructure;
+}
+
+export type MessageAttachments =
+  | DeepResearchAttachments
+  | L1SourcesAttachment
+  | L2StructureAttachment;
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   project_id?: number;
   project_name?: string;
-  attachments?: DeepResearchAttachments | null;
+  attachments?: MessageAttachments | null;
 }
 
 export interface ChatResponse {
@@ -394,12 +449,14 @@ export interface ChatResponse {
   search_result?: Record<string, unknown> | null;
   task_id?: string | null;
   task_type?: "full_search" | "deep_research" | null;
+  l1_sources?: L1Source[] | null;
 }
 
 export interface SearchSummary {
   summary: string;
   project_id: number;
   project_name: string;
+  cognitive_structure?: CognitiveStructure | null;
 }
 
 export interface ConversationSummary {

@@ -23,18 +23,3 @@ export const FILTER_OPTIONS: { value: string; label: string }[] = [
 /** 默认排序（相关度降序） */
 export const DEFAULT_SORT: SortSpec[] = [{ field: "trunk_score", order: "desc" }];
 
-/** 召回路径（route）显示名 —— "为什么是它" 的溯源标签 */
-export const ROUTE_LABELS: Record<string, string> = {
-  core: "核心词",
-  synonym: "同义词",
-  aux: "辅助约束",
-  loose: "宽松匹配",
-  semantic: "语义相邻",
-};
-
-/** 置信度显示名 */
-export const CONFIDENCE_LABELS: Record<string, string> = {
-  high: "置信度高",
-  medium: "置信度中",
-  low: "置信度低",
-};

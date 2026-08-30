@@ -246,8 +246,13 @@ def search_local(body: LocalSearchRequest, user: User = Depends(get_current_user
         raw, _ = filter_excluded(body.project_id, raw)
 
         # 召回溯源（"为什么是它"）：读 DB 中已持久化的 recall_meta
-        from api.routers.papers import _why_from_meta
-        from storage.models import Paper as PaperModel
+        from api.routers.papers import _why_from_meta, _build_reason
+        from storage.models import Paper as PaperModel, Project as ProjectModel
+        topic = ""
+        with get_session() as session:
+            proj = session.get(ProjectModel, body.project_id)
+            if proj:
+                topic = proj.user_query or ""
         why_map = {}
         pids = [p.get("paper_id") for p in raw if p.get("paper_id")]
         if pids:
@@ -255,7 +260,10 @@ def search_local(body: LocalSearchRequest, user: User = Depends(get_current_user
                 for row in session.query(PaperModel.recall_meta, PaperModel.id).filter(
                     PaperModel.id.in_(pids)
                 ).all():
-                    why_map[row.id] = _why_from_meta(row.recall_meta)
+                    why = _why_from_meta(row.recall_meta)
+                    if why is not None:
+                        why.reason = _build_reason(None, topic)
+                        why_map[row.id] = why
 
         papers = [
             PaperOut(

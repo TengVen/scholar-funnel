@@ -60,7 +60,7 @@ class Paper(Base):
     cited_by_count: Mapped[int] = mapped_column(Integer, default=0)
     is_survey: Mapped[bool] = mapped_column(Boolean, default=False)
     stage: Mapped[str] = mapped_column(
-        Enum("trunk", "branch", "network", "gap", name="ai_paper_stage"), default="trunk"
+        Enum("trunk", "branch", "network", "gap", "candidate", name="ai_paper_stage"), default="trunk"
     )
     trunk_score: Mapped[float | None] = mapped_column(
         default=None, doc="主干检索最终评分（用于排序）"

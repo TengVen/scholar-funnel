@@ -13,12 +13,18 @@
 """
 import json
 import threading
+import time
 import uuid
 from datetime import datetime
 
 from storage.mysql_db import get_session
 from storage.models import Conversation, User
 from prompt.chat_agent import SYSTEM_PROMPT
+from utils.log import setup_logger
+
+logger = setup_logger("chat_agent")
+# 回答分层路由日志（L0/L1/L2 推断，供误升监控抽检；复用 DbLogHandler 落 sys_app_logs）
+_routing_logger = setup_logger("chat.routing")
 
 # ── 工具注册表（OpenAI function calling schema）──
 
@@ -130,9 +136,29 @@ TOOL_JUDGMENT = {
     },
 }
 
+TOOL_ANSWER_WITH_SOURCES = {
+    "type": "function",
+    "function": {
+        "name": "answer_with_sources",
+        "description": (
+            "轻量带证据回答：检索 3-8 条与问题相关的文献来源（优先当前项目库内，其次 OpenAlex），"
+            "不建研究空间、不入库。当问题需要具体文献支撑（谁提出的/最早出处/方法归属/事实来源）"
+            "且用户未要求系统性检索时调用。拿到来源后，在下一条回复中组织答案并逐条编号引用，"
+            "来源给不到的细节不要编造。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "需要文献支撑的问题或检索词（必填）"},
+            },
+            "required": ["query"],
+        },
+    },
+}
+
 TOOLS = [
     TOOL_FULL_SEARCH, TOOL_LOCAL_SEARCH, TOOL_GAP_SEARCH, TOOL_SKELETON_STATUS,
-    TOOL_DEEP_RESEARCH, TOOL_JUDGMENT,
+    TOOL_DEEP_RESEARCH, TOOL_JUDGMENT, TOOL_ANSWER_WITH_SOURCES,
 ]
 
 # Agent 循环最大轮数（防死循环）
@@ -253,6 +279,9 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
                 "message": f"本地语义检索到 {len(papers)} 篇相关论文",
             }
 
+        if name == "answer_with_sources":
+            return _answer_with_sources(user, conv, args)
+
         if name == "gap_search":
             from retrieval.pipeline import TrunkSearchEngine
             category = args.get("target_category", "")
@@ -349,6 +378,83 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
         return {"status": "error", "message": f"工具执行失败: {str(e)}"}
 
 
+# ── L1 轻量带证据回答（answer_with_sources） ──
+
+def _answer_with_sources(user: User, conv: Conversation, args: dict) -> dict:
+    """
+    轻量带证据回答（L1 层）：检索 3-8 条来源，不建研究空间、不入库。
+
+    来源优先级：当前项目库内语义召回 → 不足或没有项目时 OpenAlex 轻量单查。
+    返回 hits 供主循环第二轮组织答案并编号引用；来源给不到的细节不编造。
+    """
+    query = (args.get("query") or "").strip()
+    if not query:
+        return {"status": "error", "message": "检索词为空"}
+
+    hits: list[dict] = []
+    seen_doi: set[str] = set()
+    # 自然语言推荐理由（内部分数/匹配类型不外露；模板+主题注入）
+    l1_reason = f"与你问的「{query[:20]}」相关，可作为该问题的文献支撑。"
+
+    def _push(h: dict):
+        key = (h.get("doi") or h.get("title") or "").lower()
+        if key and key not in seen_doi:
+            seen_doi.add(key)
+            hits.append(h)
+
+    # 1) 项目库内语义召回（秒级；embedding 缺失时惰性补齐，失败则静默跳过）
+    project_id = conv.project_id
+    if project_id:
+        try:
+            from storage.vector_store import semantic_recall_papers, ensure_project_embeddings
+            ensure_project_embeddings(project_id, max_embed=200)
+            for p in semantic_recall_papers(
+                project_id=project_id, query_text=query,
+                limit=8, similarity_threshold=0.5,
+            ):
+                _push({
+                    "openalex_id": p.get("id"),
+                    "title": p["title"],
+                    "year": p.get("year"),
+                    "venue": p.get("venue") or "",
+                    "doi": p.get("doi"),
+                    "abstract": (p.get("abstract") or "")[:600],
+                    "reason": l1_reason,
+                    "source": "project",
+                })
+        except Exception as e:
+            logger.warning(f"L1 库内语义召回失败，改走 OpenAlex: {e}")
+
+    # 2) 库内不足 3 条（或无项目）→ OpenAlex 轻量单查（秒级，不入库、不形成项目资产）
+    if len(hits) < 3:
+        try:
+            from sources import openalex as oa
+            oa.set_mailto(user.email)
+            works = oa.search_works(query, per_page=8)
+            for w in works:
+                _push({
+                    "openalex_id": getattr(w, "openalex_id", None),
+                    "title": w.title,
+                    "year": w.year,
+                    "venue": w.venue or "",
+                    "doi": w.doi,
+                    "abstract": (w.abstract or "")[:600],
+                    "reason": l1_reason,
+                    "source": "openalex",
+                })
+        except Exception as e:
+            logger.warning(f"L1 OpenAlex 轻量单查失败: {e}")
+
+    if not hits:
+        return {"status": "error", "message": "没有找到与问题相关的文献，请尝试换一种问法或改用系统性检索"}
+
+    return {
+        "status": "ok",
+        "hits": hits[:8],
+        "message": f"找到 {len(hits)} 条相关文献，请基于这些来源组织回答并编号引用；来源给不到的细节不要编造。",
+    }
+
+
 # ── 深度调研（deep_research 异步） ──
 
 def start_deep_research(conv: Conversation, user: User, params: dict) -> dict:
@@ -436,6 +542,23 @@ def start_deep_research(conv: Conversation, user: User, params: dict) -> dict:
 
 # ── Agent 主循环 ──
 
+# 层级映射（L0-L3，2026-08-30 对齐《产品原则》§九）：
+# 辅助工具（judgment/local_semantic_search/get_skeleton_status）不改变层级。
+# full_search → L2 结构化认知；deep_research/gap_search → L3 深度科研（骨架/深研属项目资产操作）。
+_L2_TOOLS = ("full_search",)
+_L3_TOOLS = ("deep_research", "gap_search")
+
+
+def _infer_level(first_round_tools: list[str]) -> str:
+    """回答分层推断（L0-L3）：层级 = 首轮工具选择（处理深度，不等同于论文详情页访问权限）。"""
+    if any(t in _L3_TOOLS for t in first_round_tools):
+        return "L3"
+    if any(t in _L2_TOOLS for t in first_round_tools):
+        return "L2"
+    if "answer_with_sources" in first_round_tools:
+        return "L1"
+    return "L0"
+
 
 
 def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
@@ -456,17 +579,38 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
     task_id = None
     tool_name = None
     tool_summary = None
+    l1_sources: list[dict] | None = None  # L1 来源卡（answer_with_sources hits，随回复落卡）
+    # 回答分层路由（L0/L1/L2）：层级 = 首轮工具选择；辅助工具不改变层级
+    t0 = time.time()
+    first_round_tools: list[str] = []
+
+    def _emit_routing(level: str, reply: str) -> None:
+        """routing 日志：消息级一条，供误升监控抽检（DbLogHandler 落 sys_app_logs）"""
+        _routing_logger.info(
+            "routing level=%s first_tools=%s conv=%s project=%s reply_len=%s latency=%.1fs",
+            level,
+            first_round_tools,
+            getattr(conv, "uuid", ""),
+            getattr(conv, "project_id", None),
+            len(reply),
+            time.time() - t0,
+        )
 
     for _ in range(MAX_AGENT_ROUNDS):
         content, tool_calls = llm.chat_with_tools(
             loop_messages, tools=TOOLS, system=SYSTEM_PROMPT, temperature=0.3)
         if not tool_calls:
+            reply = (content or "").strip()
+            _emit_routing(_infer_level(first_round_tools), reply)
             return {
-                "reply": (content or "").strip(),
+                "reply": reply,
                 "task_id": task_id,
                 "tool_name": tool_name,
                 "tool_summary": tool_summary,
+                "l1_sources": l1_sources,
             }
+        if not first_round_tools:
+            first_round_tools = [tc.get("name", "") for tc in tool_calls]
         # 1) 追加 assistant 消息（含 tool_calls 结构，tool 消息必须跟在其后）
         loop_messages.append({
             "role": "assistant",
@@ -494,6 +638,9 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
                     tool_name = tc["name"]
             if tc["name"] != "full_search":
                 tool_summary = result.get("message", "")
+            # L1 来源卡：answer_with_sources 的 hits 随回复持久化（前端渲染来源列表）
+            if tc["name"] == "answer_with_sources" and result.get("hits"):
+                l1_sources = result["hits"]
             loop_messages.append({
                 "role": "tool",
                 "tool_call_id": tc.get("id") or "",
@@ -501,7 +648,10 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
             })
 
     # 超出轮数兜底
+    reply = "好的，已处理。有什么想继续深入的吗？"
+    _emit_routing(_infer_level(first_round_tools), reply)
     return {
-        "reply": "好的，已处理。有什么想继续深入的吗？",
+        "reply": reply,
         "task_id": task_id, "tool_name": tool_name, "tool_summary": tool_summary,
+        "l1_sources": l1_sources,
     }
