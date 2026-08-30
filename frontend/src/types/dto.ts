@@ -140,6 +140,16 @@ export interface LocalSearchResponse {
 
 // ── Paper ──
 
+/** 召回溯源（"为什么是它"）—— E2 级结构化事实，来源 ai_papers.recall_meta */
+export interface PaperWhy {
+  routes: string[];            // core / synonym / aux / loose / semantic
+  matched_terms: string[];     // 命中的检索词
+  source: "openalex" | "semantic";
+  similarity?: number | null;  // 语义召回相似度（仅 semantic）
+  rerank_score?: number | null;
+  confidence?: "high" | "medium" | "low" | null;
+}
+
 export interface Paper {
   id: number;
   title: string;
@@ -155,6 +165,7 @@ export interface Paper {
   keywords: string[];
   github_url: string | null;
   in_cart: boolean;
+  why?: PaperWhy | null;
 }
 
 export interface PaperListResponse {

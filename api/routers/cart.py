@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from storage import cart as cart_svc
-from api.schemas import CartAddRequest, CartItemOut, CartStatusResponse
+from storage import judgments
+from api.schemas import CartAddRequest, CartItemOut, CartStatusResponse, JudgmentRequest
 from llm import client as llm
 from storage.mysql_db import get_session
 from storage.models import Paper, User
@@ -62,6 +63,44 @@ def add_by_openalex(
     if not result.get("ok"):
         raise HTTPException(400, result.get("error", "加入失败"))
     return result
+
+
+@router.post("/judgment")
+def record_judgment(body: JudgmentRequest, user: User = Depends(get_current_user)):
+    """
+    论文研究判断（对话式修正 / UI 共用）：adopt / exclude / uncertain / none(撤销)。
+
+    - adopt：写骨架（用户指令即把关）；未指定分类时按规则/AI 建议
+    - exclude / uncertain：仅记判断，不进骨架、不占限额；exclude 回流过滤后续检索
+    - none：撤销既有判断（可逆）
+    """
+    with get_session() as session:
+        get_owned_project(session, body.project_id, user)
+
+    cart_result = None
+    if body.action == "adopt":
+        with get_session() as session:
+            paper = session.get(Paper, body.paper_id)
+            if not paper or paper.project_id != body.project_id:
+                raise HTTPException(404, "论文不存在")
+            category = body.category
+            if not category:
+                suggestion = cart_svc.suggest_category(paper)
+                category = (suggestion or {}).get("category", "mainstream")
+        cart_result = cart_svc.add(body.project_id, body.paper_id, category, body.reason)
+        if not cart_result.get("ok"):
+            raise HTTPException(400, cart_result.get("error", "加入骨架失败"))
+
+    result = judgments.set_judgment(
+        body.project_id,
+        body.paper_id,
+        body.action,
+        reason=body.reason or None,
+        source="ui",
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error", "记录判断失败"))
+    return {"ok": True, "action": body.action, "cart": cart_result}
 
 
 @router.post("/classify")

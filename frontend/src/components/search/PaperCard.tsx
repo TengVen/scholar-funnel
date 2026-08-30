@@ -11,6 +11,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { KEYWORD_COLORS } from "@/config/keywords";
 import { toast } from "@/lib/toast";
 import { CATEGORIES, CATEGORY_NOTES } from "@/config/categories";
+import { WhyLine } from "./WhyLine";
 
 interface PaperCardProps {
   paper: Paper;
@@ -143,6 +144,9 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
           })}
         </div>
       )}
+
+      {/* "为什么是它" —— 召回溯源一行（P0-A：默认可见，点击展开） */}
+      {paper.why && <WhyLine why={paper.why} />}
 
       {/* Abstract toggle：展开后"收起"按钮跟随在摘要末尾 */}
       {paper.abstract && (

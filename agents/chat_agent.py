@@ -107,9 +107,32 @@ TOOL_DEEP_RESEARCH = {
     },
 }
 
+TOOL_JUDGMENT = {
+    "type": "function",
+    "function": {
+        "name": "record_paper_judgment",
+        "description": (
+            "记录用户对某篇论文的研究判断（对话式修正，判断会沉淀并在后续检索生效）："
+            "exclude=这篇不对/不相关（后续检索不再返回，可逆）；uncertain=先存疑；"
+            "adopt=采纳并加入骨架（用户指定分类或用系统建议分类）；none=撤销之前的判断（恢复）。"
+            "当用户在对话中对具体论文给出评价、修正、排除、说'这篇不对/不相关/先存疑/加入骨架'等指令时调用。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["adopt", "exclude", "uncertain", "none"], "description": "判断动作"},
+                "paper_ref": {"type": "string", "description": "论文标识：标题片段或数字 ID（来自检索结果/对话上下文）"},
+                "reason": {"type": "string", "description": "用户给出的理由（可空）"},
+                "category": {"type": "string", "enum": ["foundation", "mainstream", "frontier"], "description": "仅 adopt 需要：骨架分类，缺省由系统按规则/AI 建议"},
+            },
+            "required": ["action", "paper_ref"],
+        },
+    },
+}
+
 TOOLS = [
     TOOL_FULL_SEARCH, TOOL_LOCAL_SEARCH, TOOL_GAP_SEARCH, TOOL_SKELETON_STATUS,
-    TOOL_DEEP_RESEARCH,
+    TOOL_DEEP_RESEARCH, TOOL_JUDGMENT,
 ]
 
 # Agent 循环最大轮数（防死循环）
@@ -268,6 +291,48 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
                 "status": "ok",
                 "counts": summary,
                 "message": f"当前骨架：{json.dumps(summary, ensure_ascii=False)}",
+            }
+
+        if name == "record_paper_judgment":
+            from storage import judgments
+            from storage import cart as cart_svc
+
+            action = args.get("action", "")
+            paper_ref = args.get("paper_ref", "")
+            reason = args.get("reason", "")
+            category = args.get("category")
+            project_id = conv.project_id
+            if not project_id:
+                return {"status": "error", "message": "当前会话还没有项目，先发起检索再对论文做判断"}
+
+            paper = judgments.resolve_paper_by_ref(project_id, paper_ref)
+            if not paper:
+                return {
+                    "status": "error",
+                    "message": f"没有在当前项目的论文中找到「{paper_ref}」，请让用户提供更精确的标题或论文编号",
+                }
+
+            if action == "adopt":
+                if not category:
+                    suggestion = cart_svc.suggest_category(paper)
+                    category = (suggestion or {}).get("category", "mainstream")
+                result = cart_svc.add(project_id, paper.id, category, reason)
+                if not result.get("ok"):
+                    return {"status": "error", "message": f"加入骨架失败：{result.get('error')}"}
+
+            j = judgments.set_judgment(
+                project_id, paper.id, action, reason=reason or None, source="chat"
+            )
+            if not j.get("ok"):
+                return {"status": "error", "message": j.get("error")}
+
+            label = {
+                "adopt": "已加入骨架", "exclude": "已排除", "uncertain": "已标记存疑", "none": "已撤销判断",
+            }.get(action, action)
+            extra = f"（分类：{category}）" if action == "adopt" and category else ""
+            return {
+                "status": "ok",
+                "message": f"《{paper.title[:60]}》{label}{extra}。排除的论文后续检索将不再出现，随时可说'恢复'撤销。",
             }
 
         if name == "deep_research":

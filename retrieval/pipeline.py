@@ -99,6 +99,15 @@ class TrunkSearchEngine:
             "label": "本地语义召回（已入库论文向量匹配）",
         }
 
+        # ── 2.6 排除回流：用户已排除的论文不再进入召回池（对话式修正，可逆） ──
+        try:
+            from storage.judgments import filter_excluded
+            candidates, excluded_n = filter_excluded(project_id, candidates)
+            trace["excluded_filtered"] = excluded_n
+        except Exception as e:
+            logger.warning(f"排除过滤失败（忽略，不影响检索）: {e}")
+            trace["excluded_filtered"] = 0
+
         # ── 3. Reranker ──
         reranked = []
         t0 = time.time()
@@ -314,6 +323,7 @@ class TrunkSearchEngine:
                     existing.trunk_score = round(item["final_score"], 2)
                     existing.keywords = p.get("keywords") or None
                     existing.github_url = p.get("github_url") or None
+                    existing.recall_meta = self._build_recall_meta(p, item)
                     count += 1
                     continue
 
@@ -332,10 +342,22 @@ class TrunkSearchEngine:
                     trunk_score=round(item["final_score"], 2),
                     keywords=p.get("keywords") or None,
                     github_url=p.get("github_url") or None,
+                    recall_meta=self._build_recall_meta(p, item),
                 )
                 session.add(db_paper)
                 count += 1
         return count
+
+    @staticmethod
+    def _build_recall_meta(p: Dict, item: Dict) -> Dict:
+        """逐论文召回溯源（"为什么是它"）：routes/matched_terms 来自召回打标，穿透 rerank/评分"""
+        return {
+            "routes": p.get("_routes") or [],
+            "matched_terms": p.get("_matched_terms") or [],
+            "source": p.get("source", "openalex"),
+            "similarity": p.get("similarity"),
+            "rerank_score": round(item["rerank_score"], 4),
+        }
 
     # ══════════════════════════════════════════════════════════
     #  缺口补充检索（Gap Search）
@@ -421,6 +443,14 @@ class TrunkSearchEngine:
                 c.pop("_recall_meta", None)
         total_found = len(candidates)
 
+        # ── 2.5 排除回流：用户已排除的论文不进缺口候选（对话式修正，可逆） ──
+        try:
+            from storage.judgments import filter_excluded
+            candidates, excluded_n = filter_excluded(project_id, candidates)
+            trace["excluded_filtered"] = excluded_n
+        except Exception as e:
+            logger.warning(f"缺口排除过滤失败（忽略）: {e}")
+
         # ── 3. Rerank ──
         reranked = []
         if candidates:
@@ -494,6 +524,7 @@ class TrunkSearchEngine:
                     keywords=p.get("keywords") or None,
                     github_url=p.get("github_url") or None,
                     recommended_category=target_category,
+                    recall_meta=self._build_recall_meta(p, item),
                 )
                 session.add(db_paper)
                 count += 1

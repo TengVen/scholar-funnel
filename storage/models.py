@@ -74,6 +74,10 @@ class Paper(Base):
         JSON, default=None,
         doc="论文方法学画像（PaperProfile 缓存：research_domain/subdomain/research_type/methodology_type/research_objects/candidate_method_families）"
     )
+    recall_meta: Mapped[dict | None] = mapped_column(
+        JSON, default=None,
+        doc="召回溯源：{routes:[core/synonym/aux/loose/semantic], matched_terms:[], source, similarity, rerank_score}"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # 关系
@@ -204,6 +208,29 @@ class CartItem(Base):
     # 关系
     project: Mapped["Project"] = relationship(back_populates="cart_items")
     paper: Mapped["Paper"] = relationship(back_populates="cart_entry")
+
+
+class PaperJudgment(Base):
+    """论文研究判断（采纳/排除/存疑）——记忆机制地基，最新判断覆盖旧判断"""
+    __tablename__ = "ai_paper_judgments"
+    __table_args__ = (
+        UniqueConstraint("project_id", "paper_id", name="uniq_paper_judgment"),
+        Index("idx_paper_judgment_project", "project_id", "action"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("ai_projects.id"), nullable=False)
+    paper_id: Mapped[int] = mapped_column(ForeignKey("ai_papers.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(20), nullable=False)  # adopt/exclude/uncertain/none
+    reason: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(10), default="chat")  # chat/ui
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # 关系
+    paper: Mapped["Paper"] = relationship()
 
 
 # ══════════════════════════════════════════════════════════

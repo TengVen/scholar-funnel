@@ -5,10 +5,29 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from storage.mysql_db import get_session
 from storage.models import Paper, CartItem, User
-from api.schemas import PaperOut, PaperListResponse
+from api.schemas import PaperOut, PaperListResponse, PaperWhy
 from utils.auth import get_current_user, get_owned_project
 
 router = APIRouter()
+
+
+def _why_from_meta(meta) -> PaperWhy | None:
+    """recall_meta → PaperWhy（含置信度分档）；无溯源数据的旧论文返回 None"""
+    if not isinstance(meta, dict) or not meta:
+        return None
+    rerank = meta.get("rerank_score")
+    confidence = None
+    if isinstance(rerank, (int, float)):
+        # BGE 相关度分档（与检索阈值体系一致：>0.6 高、>0.4 中、其余低）
+        confidence = "high" if rerank > 0.6 else ("medium" if rerank > 0.4 else "low")
+    return PaperWhy(
+        routes=meta.get("routes") or [],
+        matched_terms=meta.get("matched_terms") or [],
+        source=meta.get("source", "openalex"),
+        similarity=meta.get("similarity"),
+        rerank_score=rerank,
+        confidence=confidence,
+    )
 
 
 @router.get("", response_model=PaperListResponse)
@@ -107,6 +126,7 @@ def list_papers(
                 keywords=r.keywords if isinstance(r.keywords, list) else [],
                 github_url=r.github_url,
                 in_cart=r.id in cart_ids,
+                why=_why_from_meta(r.recall_meta),
             ))
 
     return PaperListResponse(

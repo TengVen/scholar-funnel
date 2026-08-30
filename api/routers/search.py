@@ -240,6 +240,23 @@ def search_local(body: LocalSearchRequest, user: User = Depends(get_current_user
             query_text=body.query,
             limit=body.limit,
         )
+
+        # 排除回流：用户已排除的论文不进入本地检索结果（对话式修正，可逆）
+        from storage.judgments import filter_excluded
+        raw, _ = filter_excluded(body.project_id, raw)
+
+        # 召回溯源（"为什么是它"）：读 DB 中已持久化的 recall_meta
+        from api.routers.papers import _why_from_meta
+        from storage.models import Paper as PaperModel
+        why_map = {}
+        pids = [p.get("paper_id") for p in raw if p.get("paper_id")]
+        if pids:
+            with get_session() as session:
+                for row in session.query(PaperModel.recall_meta, PaperModel.id).filter(
+                    PaperModel.id.in_(pids)
+                ).all():
+                    why_map[row.id] = _why_from_meta(row.recall_meta)
+
         papers = [
             PaperOut(
                 id=p["paper_id"],
@@ -256,6 +273,7 @@ def search_local(body: LocalSearchRequest, user: User = Depends(get_current_user
                 keywords=p.get("keywords") or [],
                 github_url=p.get("github_url"),
                 in_cart=False,
+                why=why_map.get(p.get("paper_id")),
             )
             for p in raw
         ]

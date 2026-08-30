@@ -127,6 +127,16 @@ class LocalSearchResponse(BaseModel):
 
 # ── Paper ──
 
+class PaperWhy(BaseModel):
+    """召回溯源（"为什么是它"）：来源 ai_papers.recall_meta，纯 E2 级结构化事实"""
+    routes: list[str] = []            # core / synonym / aux / loose / semantic
+    matched_terms: list[str] = []     # 命中的检索词（title/abstract 朴素匹配）
+    source: str = "openalex"          # openalex / semantic
+    similarity: float | None = None   # 语义召回相似度（仅 semantic）
+    rerank_score: float | None = None
+    confidence: str | None = None     # high / medium / low（由 rerank_score 分档）
+
+
 class PaperOut(BaseModel):
     id: int
     title: str
@@ -142,6 +152,7 @@ class PaperOut(BaseModel):
     keywords: list[str] = []
     github_url: str | None = None
     in_cart: bool = False
+    why: PaperWhy | None = None
 
 
 class PaperListResponse(BaseModel):
@@ -158,6 +169,16 @@ class CartAddRequest(BaseModel):
     paper_id: int
     category: str = "mainstream"
     notes: str = ""
+
+
+class JudgmentRequest(BaseModel):
+    """论文研究判断（对话式修正 / UI 共用）：adopt / exclude / uncertain / none"""
+    project_id: int
+    paper_id: int
+    action: str
+    reason: str = ""
+    # 仅 adopt 需要：骨架分类（缺省时由服务端按分类规则建议）
+    category: str | None = None
 
 
 class CartItemOut(BaseModel):
