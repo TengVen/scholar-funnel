@@ -44,13 +44,17 @@ ANALYSIS_PROMPT = """\
     "topic": "当前研究课题",
     "related_directions": ["关联方向1（如 记忆系统进化）", "关联方向2"],
     "potential_contribution": "这篇论文可作为哪个方向的代表性工作/可借鉴点（一句话）"
-  }}
+  }},
+  "evidence": [
+    {{"section": "论文章节名称（如 3 Method；无章节则空字符串）", "description": "支撑上述结论的关键原文证据，100字以内"}}
+  ]
 }}
 
 要求：
 - 只依据给定材料，材料中没有的信息标注"未见"或留空，绝不编造；
 - 核心贡献用"①…②…③…"列表，最多 4 条；
 - experiments 若无实验数据，datasets/baseline/ours/gains 填"未见实验数据"；
+- evidence 必须来自材料中真实存在的章节（全文分节时给 2-4 条关键锚点）；仅摘要材料时 evidence 填空数组；
 - 中文输出。
 """
 

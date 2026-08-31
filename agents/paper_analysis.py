@@ -14,6 +14,7 @@ from datetime import datetime
 
 from utils.log import setup_logger
 from prompt.paper_analysis import build_analysis_prompt
+from sources.openalex import _clean_latex
 
 logger = setup_logger("paper_analysis")
 
@@ -94,36 +95,81 @@ def _run(k: str, project_id: int, openalex_id: str, info: dict) -> None:
         with _lock:
             _cache[k] = {"status": "done", "result": result, "ts": time.time()}
         if info.get("persist") and info.get("paper_id"):
-            _persist_result(info["paper_id"], sections, analysis)
+            _persist_result(info["paper_id"], sections, analysis, result["material_type"])
         logger.info(f"论文分析完成: {openalex_id} (material={material_type})")
     except Exception as e:
         logger.error(f"论文分析失败 {openalex_id}: {e}")
         task.update({"status": "error", "error": str(e)})
 
 
-def _persist_result(paper_id: int, sections, analysis) -> None:
-    """L3 直接落库：分析完成即写 ai_papers.paper_analysis + sections（仅当为 None，不覆盖已有）"""
+def _persist_result(paper_id: int, sections, analysis, material_type: str = "摘要") -> None:
+    """L3 直接落库：ai_papers.paper_analysis + sections。
+
+    升级覆盖语义（2026-08-31）：全文级分析（material_type=全文分节）直接替换
+    既有的摘要级结果（摘要→全文升级，如预热后获取完整 PDF 重算）；摘要级结果
+    仅在无既有分析时写入，绝不降级覆盖已有内容。
+    """
     from storage.models import Paper
     from storage.mysql_db import get_session
+    if not analysis:
+        return
+    full_text = material_type == "全文分节" and bool(sections)
     try:
         with get_session() as session:
             p = session.get(Paper, paper_id)
-            if p and p.paper_analysis is None and analysis:
+            if not p:
+                return
+            if full_text:
                 p.paper_analysis = analysis
-            if p and p.sections is None and sections:
                 p.sections = sections
+            else:
+                if p.paper_analysis is None:
+                    p.paper_analysis = analysis
+                if p.sections is None:
+                    p.sections = sections
     except Exception as e:
         logger.warning(f"分析结果落库失败 paper={paper_id}: {e}")
 
 
 # ── 1. 全文获取 + 分节 ──
 
+def normalize_sections(raw) -> list | None:
+    """
+    分节统一结构：{heading, content, page_start}。
+    - 兼容两种来源形态：extract_pdf_sections 的 dict（{sections:[...]}）与已展开的 list
+    - 兼容旧字段名：title/text（解析层）→ heading/content（业务层）
+    - 保留 page_start（PDF 视图页级跳转的锚点）；正文经 _clean_latex 清洗
+    无有效分节返回 None（调用方走摘要降级）。
+    """
+    if isinstance(raw, dict):
+        raw = raw.get("sections") or []
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for s in raw:
+        if not isinstance(s, dict):
+            continue
+        heading = (s.get("heading") or s.get("title") or "").strip()
+        content = s.get("content")
+        if content is None:
+            content = s.get("text") or ""
+        content = _clean_latex(str(content)).strip()
+        if not heading and not content:
+            continue
+        out.append({
+            "heading": heading,
+            "content": content,
+            "page_start": s.get("page_start", 0),
+        })
+    return out or None
+
+
 def _load_material(info: dict, openalex_id: str) -> tuple[list | None, str, str]:
     """返回 (sections, material_text, material_type)；全文拿不到降级摘要"""
     pdf_url = info.get("oa_pdf_url")
     if pdf_url:
         try:
-            sections = _fetch_and_parse_pdf(openalex_id, pdf_url)
+            sections = normalize_sections(_fetch_and_parse_pdf(openalex_id, pdf_url))
             if sections:
                 text = "\n\n".join(f"{s['heading']}\n{s['content']}" for s in sections)
                 return sections, text, "全文分节"
@@ -136,17 +182,16 @@ def _load_material(info: dict, openalex_id: str) -> tuple[list | None, str, str]
 
 
 def _fetch_and_parse_pdf(openalex_id: str, pdf_url: str) -> list:
-    """磁盘缓存优先，缺失则下载落盘（复用 sources/pdf_cache.py，避免与预览重复下载）；再从文件分节解析"""
-    import io
+    """磁盘缓存优先，缺失则下载落盘（复用 sources/pdf_cache.py，避免与预览重复下载）；再从文件分节解析。
+    注意：extract_pdf_sections 内部 pymupdf.open(path) 只接受文件路径，传 BytesIO 会报
+    'bad filename'——必须走磁盘路径（2026-08-31 修复：此前 BytesIO 导致全文解析恒失败降级摘要）。"""
     from sources.pdf_cache import get_pdf_path, download_pdf
     from sources.pdf_structure import extract_pdf_sections
 
     path = get_pdf_path(openalex_id) or download_pdf(openalex_id, pdf_url)
     if not path:
         return []
-    with open(path, "rb") as f:
-        sections = extract_pdf_sections(io.BytesIO(f.read()))
-    return sections
+    return extract_pdf_sections(path)
 
 
 # ── 2. LLM 六区块 ──

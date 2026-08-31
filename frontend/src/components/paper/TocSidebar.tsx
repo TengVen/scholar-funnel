@@ -1,20 +1,27 @@
 "use client";
 
 /**
- * 左栏-上部：论文目录（点击跳到中栏对应章节；只放目录，不放多余内容）
+ * 左栏-上部：论文目录（点击跳到中栏对应章节/PDF 对应页）
  * 外框（宽度/折叠/滚动）由 ResizablePanel 提供，本组件只渲染目录内容。
+ * onJump（可选）：父组件统一裁决跳转目标（PDF 页码优先 / 正文锚点降级）；
+ * 未提供时内部回退到正文分节锚点滚动。
  */
 interface TocSidebarProps {
   hasSections: boolean;
   headings: string[];          // 分节标题（不含 Abstract/References 固定项）
+  onJump?: (label: string) => void;
 }
 
-export function TocSidebar({ hasSections, headings }: TocSidebarProps) {
+export function TocSidebar({ hasSections, headings, onJump }: TocSidebarProps) {
   const items = hasSections
     ? ["Abstract", ...headings, "References"]
     : ["Abstract"];
 
   const jump = (label: string, idx: number) => {
+    if (onJump) {
+      onJump(label);
+      return;
+    }
     const el = document.getElementById(`paper-sec-${label === "Abstract" ? "abstract" : idx}`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   };

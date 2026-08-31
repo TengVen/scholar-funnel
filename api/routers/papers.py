@@ -2,6 +2,7 @@
 论文 API —— 列表 / 详情页（三栏 + 三态） / L1 加入研究
 路由顺序铁律：静态路由（/join-project /transient）在 /{paper_id} 之前
 """
+from agents import paper_analysis as pa
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, PlainTextResponse
 
@@ -188,9 +189,16 @@ def _is_arxiv_pdf(work) -> bool:
 
 
 def _analysis_state(project_id: int, openalex_id: str, paper: Paper | None) -> dict:
-    """分析就绪状态：DB 落库（L3）→ 内存缓存（L2 预热）→ 运行中 → 无"""
+    """分析就绪状态：运行中 → DB 落库（L3）→ 内存缓存（L2 预热）→ 无。
+
+    运行中最优先（2026-08-31 修复）：重算时旧缓存/旧落库仍是 done，若不先判 running，
+    会遮蔽新任务——前端轮询第一次就拿到旧结果提前终止（"重新分析"显示旧摘要结果）。
+    """
     from agents import paper_analysis as pa
 
+    task = pa.get_task(project_id, openalex_id)
+    if task and task["status"] == "running":
+        return {"status": "running"}
     if paper is not None and paper.paper_analysis:
         return {"status": "done", "source": "db", "content": paper.paper_analysis}
     cached = pa.get_cached(project_id, openalex_id)
@@ -202,9 +210,6 @@ def _analysis_state(project_id: int, openalex_id: str, paper: Paper | None) -> d
             "sections": result.get("sections"),
             "material_type": result.get("material_type", "摘要"),
         }
-    task = pa.get_task(project_id, openalex_id)
-    if task and task["status"] == "running":
-        return {"status": "running"}
     return {"status": "none"}
 
 
@@ -217,9 +222,9 @@ def _detail_out(mode: str, work, paper: Paper | None,
     analysis = _analysis_state(project_id, openalex_id, paper) if project_id else {"status": "none"}
     sections = None
     if paper is not None and paper.sections:
-        sections = paper.sections
-    elif analysis.get("sections"):
-        sections = analysis["sections"]
+        sections = pa.normalize_sections(paper.sections)
+    if not sections and analysis.get("sections"):
+        sections = pa.normalize_sections(analysis["sections"])
     has_analysis = analysis.get("status") == "done"
     return PaperDetailOut(
         mode=mode,
@@ -425,15 +430,19 @@ def ask_paper(paper_id: int, body: AskRequest, user: User = Depends(get_current_
         )
         return AskResponse(answer="分析准备中，请稍后再问", citations=[])
 
-    # ── 落库（L2 → L3）：paper_analysis + sections 持久化 ──
+    # ── 落库（L2 → L3）：paper_analysis + sections 持久化（全文级升级覆盖旧摘要级）──
     content = state.get("content")
     cached = pa.get_cached(body.project_id, paper.openalex_id)
     with get_session() as session:
         paper = session.get(Paper, paper_id)
-        if paper and paper.paper_analysis is None and content:
-            paper.paper_analysis = content
-        if paper and paper.sections is None and cached and cached.get("result", {}).get("sections"):
-            paper.sections = cached["result"]["sections"]
+        if paper:
+            cached_result = (cached or {}).get("result") or {}
+            cached_sections = cached_result.get("sections") or []
+            full_text = bool(cached_sections)
+            if full_text or paper.paper_analysis is None:
+                paper.paper_analysis = content
+            if full_text or paper.sections is None:
+                paper.sections = cached_sections or None
 
     answer, citations = _answer_question(paper, body.question, topic)
 
@@ -448,10 +457,11 @@ def ask_paper(paper_id: int, body: AskRequest, user: User = Depends(get_current_
 def _answer_question(paper: Paper, question: str, topic: str = "") -> tuple[str, list]:
     """基于分节（或摘要）回答 + 引用回溯（citations: [{section, snippet}]）"""
     from llm import client as llm
+    from agents import paper_analysis as pa
 
-    sections = paper.sections if isinstance(paper.sections, list) else []
+    sections = pa.normalize_sections(paper.sections)
     if sections:
-        material = "\n\n".join(f"[{s.get('heading', '')}]\n{s.get('content', '')}" for s in sections)
+        material = "\n\n".join(f"[{s['heading']}]\n{s['content']}" for s in sections)
         material_type = "全文分节"
     else:
         material = paper.abstract or ""

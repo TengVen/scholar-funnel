@@ -2,15 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, BookOpen, ExternalLink, FileText, Loader2, Sparkles } from "lucide-react";
-import type { PaperDetail, PaperSection } from "@/types/dto";
+import type { PaperDetail, PaperAskResult, PaperSection } from "@/types/dto";
 import { getPaperDetail, getTransientPaper, explorePaper, exploreOpenalexPaper, getPaperAnalysis, askPaper, fetchPdfBlob } from "@/lib/api/papers";
 import { toast } from "@/lib/toast";
 import { useLocalStorageConfig } from "@/hooks/useLocalStorageConfig";
+import { sectionAnchor, matchSection, type SectionTarget } from "@/lib/paper/sectionLocate";
 import { ResizablePanel } from "./ResizablePanel";
 import { TocSidebar } from "./TocSidebar";
 import { PaperQaBox } from "./PaperQaBox";
 import { PaperContentPanel } from "./PaperContentPanel";
 import { AiResearchPanel } from "./AiResearchPanel";
+import { AnalysisUpgradeBanner } from "./AnalysisUpgradeBanner";
+import { PdfViewer } from "./PdfViewer";
 
 /** 详情页三栏布局偏好（宽度 + 折叠状态，持久化到 localStorage） */
 interface PaperLayout {
@@ -51,10 +54,11 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
   const [detail, setDetail] = useState<PaperDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [exploring, setExploring] = useState(false);
-  const [pdfView, setPdfView] = useState(false); // 中栏：正文分节 ⇄ 原文 PDF
+  const [pdfPage, setPdfPage] = useState(0);     // PDF 定位页码（证据锚点/目录跳转，#page=N）
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false); // 摘要级分析 → 全文级重算中
   const pdfBlobUrlRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 左右栏宽度/折叠偏好（持久化，防 hydration 崩溃：首屏用 fallback）
@@ -88,10 +92,10 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paperId, openalexId, projectId, autoExplore, persistAnalysis]);
 
-  // 论文切换或卸载 → 复位 PDF 视图并释放 blob URL
+  // 论文切换或卸载 → 复位 PDF 页码并释放 blob URL
   useEffect(() => {
     return () => {
-      setPdfView(false);
+      setPdfPage(0);
       if (pdfBlobUrlRef.current) {
         URL.revokeObjectURL(pdfBlobUrlRef.current);
         pdfBlobUrlRef.current = null;
@@ -99,10 +103,10 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
     };
   }, [openalexId]);
 
-  // 进入 PDF 视图 → 带 token 拉取 PDF blob（iframe 无法携带 Authorization header，故 blob 中转）；
-  // 同一论文 blob 缓存复用，切回正文再进入不重新下载
+  // PDF 可用（arXiv）→ 中栏即 PDF：带 token 拉取 blob（iframe 无法携带 Authorization header，故 blob 中转）；
+  // 同一论文 blob 缓存复用，切论文重新拉取
   useEffect(() => {
-    if (!pdfView || !detail?.openalex_id || pdfBlobUrl || pdfLoading) return;
+    if (!detail?.pdf_available || !detail?.openalex_id || pdfBlobUrl || pdfLoading) return;
     let alive = true;
     setPdfLoading(true);
     setPdfError(null);
@@ -121,12 +125,24 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
       });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfView, detail?.openalex_id, pdfBlobUrl]);
+  }, [detail?.pdf_available, detail?.openalex_id, pdfBlobUrl]);
 
   const stopPolling = () => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
+    }
+  };
+
+  /** 静默重新拉取详情（轮询遇失败态时恢复真实状态，不闪 loading） */
+  const reloadDetail = async () => {
+    try {
+      const d = paperId && projectId
+        ? await getPaperDetail(paperId, projectId)
+        : await getTransientPaper(openalexId ?? "", projectId);
+      setDetail(d);
+    } catch {
+      /* 保持现状 */
     }
   };
 
@@ -136,8 +152,13 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
       try {
         const st = await getPaperAnalysis(pid, proj);
         setDetail((prev) => (prev ? { ...prev, analysis: st } : prev));
-        if (st.status === "done" || st.status === "none") {
+        if (st.status === "done") {
           stopPolling();
+        } else if (st.status === "none") {
+          // 分析任务失败（error）→ 保留旧结果并恢复真实状态
+          stopPolling();
+          toast("分析失败，已保留原分析结果", "error");
+          void reloadDetail();
         }
       } catch {
         stopPolling();
@@ -186,7 +207,7 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
     }
   };
 
-  const handleAsk = async (question: string): Promise<string | null> => {
+  const handleAsk = async (question: string): Promise<PaperAskResult | null> => {
     if (!detail?.paper_id || !projectId) return null;
     try {
       const res = await askPaper(detail.paper_id, projectId, question);
@@ -195,10 +216,34 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
         startPolling(detail.paper_id, projectId);
         return null;
       }
-      return res.answer;
+      return res;
     } catch (e) {
       toast(`提问失败: ${e instanceof Error ? e.message : String(e)}`, "error");
       return null;
+    }
+  };
+
+  /** 锚点跳转：PDF 可用 → 定位 PDF 页码（iframe key 变化强制重载，支持连续跳转）；否则正文分节滚动 */
+  const handleLocate = (target: SectionTarget) => {
+    if (detail?.pdf_available && target.page > 0) {
+      setPdfPage(target.page);
+    } else {
+      document.getElementById(sectionAnchor(target.index))?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  /** 摘要级分析 → 全文级重算：复用 explore（done 态再触发即重算，pdf_cache 命中已下载的 PDF） */
+  const handleUpgrade = async () => {
+    if (!detail?.paper_id || !projectId || upgrading) return;
+    setUpgrading(true);
+    try {
+      await explorePaper(detail.paper_id, projectId, persistAnalysis);
+      setDetail((prev) => (prev ? { ...prev, analysis: { ...prev.analysis, status: "running" } } : prev));
+      startPolling(detail.paper_id, projectId);
+    } catch (e) {
+      toast(`重新分析失败: ${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setUpgrading(false);
     }
   };
 
@@ -216,6 +261,20 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
   const sections: PaperSection[] | null =
     detail.sections ?? detail.analysis.sections ?? null;
   const headings = (sections ?? []).map((s) => s.heading);
+  // 中栏模式：PDF 可用（arXiv）直接展示 PDF，正文分节视图仅作无 PDF 时的回退
+  const showPdf = !!detail.pdf_available;
+  // B 方案：摘要级分析 + PDF 已加载成功 → 显示"重新深入分析"提示条
+  const upgradeReady =
+    detail.analysis.status === "done" &&
+    detail.analysis.material_type !== "全文分节" &&
+    showPdf &&
+    !!pdfBlobUrl;
+
+  /** 目录跳转：目录项（Abstract/章节名/References）→ 章节匹配 → PDF 页码或正文锚点 */
+  const handleJump = (label: string) => {
+    const t = matchSection(label, sections ?? []);
+    if (t) handleLocate(t);
+  };
 
   return (
     <div className="flex flex-col h-screen">
@@ -236,21 +295,13 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {detail.pdf_available ? (
-            <>
-              <button type="button" onClick={() => setPdfView((v) => !v)}
-                className="btn-secondary text-sm !py-1.5">
-                {pdfView
-                  ? <><BookOpen className="w-3.5 h-3.5" /> 正文</>
-                  : <><FileText className="w-3.5 h-3.5" /> 原文</>}
-              </button>
-              {detail.oa_landing_url && (
-                <a href={detail.oa_landing_url} target="_blank" rel="noreferrer"
-                  title="在 arXiv 打开"
-                  className="flex items-center gap-1 text-xs text-ink-faint hover:text-ink transition-colors">
-                  arXiv <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-            </>
+            detail.oa_landing_url && (
+              <a href={detail.oa_landing_url} target="_blank" rel="noreferrer"
+                title="在 arXiv 打开"
+                className="flex items-center gap-1 text-xs text-ink-faint hover:text-ink transition-colors">
+                arXiv <ExternalLink className="w-3 h-3" />
+              </a>
+            )
           ) : detail.oa_landing_url ? (
             <a href={detail.oa_landing_url} target="_blank" rel="noreferrer"
               className="btn-secondary text-sm !py-1.5">
@@ -274,18 +325,15 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
         >
           <div className="flex flex-col h-full">
             <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
-              {pdfView && (
-                <p className="text-xs text-ink-faint mb-2">正在查看原文 PDF，目录跳转不可用</p>
-              )}
-              <TocSidebar hasSections={!!sections?.length} headings={headings} />
+              <TocSidebar hasSections={!!sections?.length} headings={headings} onJump={handleJump} />
             </div>
             <div className="shrink-0 border-t border-line px-3 py-3">
-              <PaperQaBox detail={detail} projectId={projectId} onAsk={handleAsk} />
+              <PaperQaBox detail={detail} projectId={projectId} onAsk={handleAsk} onLocate={handleLocate} />
             </div>
           </div>
         </ResizablePanel>
 
-        {pdfView ? (
+        {showPdf ? (
           <main className="flex-1 min-w-0 flex flex-col">
             {pdfError ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-ink-faint px-6">
@@ -299,11 +347,10 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
                 )}
               </div>
             ) : pdfBlobUrl ? (
-              <iframe
-                key={detail.openalex_id}
-                src={pdfBlobUrl}
-                className="flex-1 w-full border-0"
-                title="原文 PDF"
+              <PdfViewer
+                blobUrl={pdfBlobUrl}
+                page={pdfPage > 0 ? pdfPage : undefined}
+                fallbackUrl={detail.oa_landing_url}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center">
@@ -325,7 +372,10 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
           onToggle={() => setLayout({ ...layout, rightCollapsed: !layout.rightCollapsed })}
           header={<><Sparkles className="w-4 h-4 text-accent" /> AI 研究助手</>}
         >
-          <AiResearchPanel detail={detail} projectId={projectId} exploring={exploring} onExplore={handleExplore} />
+          <div className="flex flex-col h-full">
+            {upgradeReady && <AnalysisUpgradeBanner upgrading={upgrading} onUpgrade={handleUpgrade} />}
+            <AiResearchPanel detail={detail} projectId={projectId} exploring={exploring} onExplore={handleExplore} onLocate={handleLocate} />
+          </div>
         </ResizablePanel>
       </div>
     </div>

@@ -2,10 +2,12 @@
 
 import type { L1Source } from "@/types/dto";
 import { PaperNavRow } from "./PaperNavRow";
+import { EvidenceBadge } from "../paper/EvidenceBadge";
 
 /**
  * L1 来源卡（L1Renderer）：论文 = 当前回答的外部来源。
  * 来源可点击进入详情页（transient 模式），"加入研究/深入探究"操作收敛到详情页。
+ * 回答带逐条来源（E2 元数据依据级），来源行可点击进入详情页。
  */
 interface L1SourcesCardProps {
   content: string;               // 答案文字（含编号引用）
@@ -19,7 +21,10 @@ export function L1SourcesCard({ content, sources, projectId }: L1SourcesCardProp
       <div className="text-base leading-relaxed text-ink-secondary whitespace-pre-wrap">{content}</div>
       {sources.length > 0 && (
         <div className="mt-3 border-t border-line pt-3">
-          <p className="text-sm text-ink-muted mb-2">来源 {sources.length} 篇</p>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-sm text-ink-muted">来源 {sources.length} 篇</p>
+            <EvidenceBadge level="E2" label="带来源回答" />
+          </div>
           <div className="space-y-1">
             {sources.map((s, i) => (
               <PaperNavRow

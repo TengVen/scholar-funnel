@@ -262,11 +262,13 @@ export interface PaperAnalysisContent {
     horizontal?: PaperRef[];
     vertical?: PaperRef[];
   };
+  evidence?: EvidenceItem[];           // 原文依据（E1 锚点，LLM 输出，可点击跳转章节/PDF 页）
 }
 
 export interface PaperSection {
   heading: string;
   content: string;
+  page_start?: number;                 // PDF 页码锚点（归一化后透传，正文跳转/PDF 翻页用）
 }
 
 /** 详情页聚合（transient / candidate / research asset 三态统一读取） */
