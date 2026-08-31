@@ -3,7 +3,7 @@
 路由顺序铁律：静态路由（/join-project /transient）在 /{paper_id} 之前
 """
 from agents import paper_analysis as pa
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from storage.mysql_db import get_session
@@ -188,6 +188,12 @@ def _is_arxiv_pdf(work) -> bool:
     return is_arxiv_url(work.oa_pdf_url)
 
 
+def _pdf_file_exists(openalex_id: str) -> bool:
+    """本地已有 PDF 文件（上传补全 / 缓存下载过）即可站内预览——不限于 arXiv"""
+    from sources.pdf_cache import get_pdf_path
+    return get_pdf_path(openalex_id) is not None
+
+
 def _analysis_state(project_id: int, openalex_id: str, paper: Paper | None) -> dict:
     """分析就绪状态：运行中 → DB 落库（L3）→ 内存缓存（L2 预热）→ 无。
 
@@ -243,7 +249,7 @@ def _detail_out(mode: str, work, paper: Paper | None,
         is_oa=(work.is_oa if work else False),
         oa_pdf_url=(work.oa_pdf_url if work else None),
         oa_landing_url=(work.oa_landing_url if work else None),
-        pdf_available=bool(_is_arxiv_pdf(work)),
+        pdf_available=bool(_is_arxiv_pdf(work)) or _pdf_file_exists(openalex_id),
         in_project=paper is not None,
         stage=paper.stage if paper else None,
         in_cart=bool(cart_category),
@@ -290,20 +296,56 @@ def get_transient_paper(openalex_id: str = Query(...),
 
 @router.get("/pdf")
 def get_pdf(openalex_id: str = Query(...), user: User = Depends(get_current_user)):
-    """详情页"原文 PDF"预览（仅 arXiv）：磁盘缓存命中直出，否则下载落盘后返回文件流。
-    同源代理避免 arXiv 外域 iframe 被 X-Frame-Options 拦截；非 arXiv 一律 404。"""
+    """详情页"原文 PDF"预览：本地文件（上传补全/已缓存）直接返回；
+    否则仅 arXiv 域名可下载（同源代理避免 X-Frame-Options 拦截）。"""
     from sources import openalex as oa
-    from sources.pdf_cache import download_pdf
+    from sources.pdf_cache import get_pdf_path, download_pdf
 
     oa.set_mailto(user.email)
+    # 1) 本地文件优先（用户上传的 PDF 不限于 arXiv）
+    local = get_pdf_path(openalex_id)
+    if local:
+        return FileResponse(local, media_type="application/pdf")
+    # 2) 未上传 → 仅 arXiv 走下载缓存
     work = oa.get_work_by_id(openalex_id)
     pdf_url = work.oa_pdf_url if work else None
     if not _is_arxiv_pdf(work):
-        return PlainTextResponse("该论文无 arXiv PDF 预览", status_code=404)
+        return PlainTextResponse("该论文无 PDF（可在详情页上传补全）", status_code=404)
     path = download_pdf(openalex_id, pdf_url)
     if not path:
         return PlainTextResponse("PDF 获取失败，请稍后重试或前往 arXiv", status_code=502)
     return FileResponse(path, media_type="application/pdf")
+
+
+@router.post("/upload")
+async def upload_pdf(paper_id: int = Form(...), project_id: int = Form(...),
+                     file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    """上传 PDF 补全全文（非 arXiv / 无 PDF 论文）：
+    落盘 data/pdfs/{openalex_id}.pdf → 自动触发全文级重算（本地文件优先命中）→ 详情页中栏 PDF 预览可用。
+    上传是显式动作：persist=True 分析完成直接落库（推进 L3 资产）。"""
+    from sources.pdf_cache import save_pdf_bytes
+
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
+        paper = session.get(Paper, paper_id)
+        if not paper or paper.project_id != project_id:
+            raise HTTPException(404, "论文不存在")
+        openalex_id = paper.openalex_id
+        title, abstract = paper.title or "", paper.abstract or ""
+        year, cited = paper.year, paper.cited_by_count or 0
+        proj = session.get(Project, project_id)
+        topic = (proj.user_query if proj else "") or ""
+
+    data = await file.read()
+    path = save_pdf_bytes(openalex_id, data)
+    if not path:
+        raise HTTPException(400, "文件校验失败：仅接受 1KB - 25MB 的 PDF 文件")
+
+    r = pa.start_analysis(
+        project_id, openalex_id, title, abstract, year, cited,
+        user_query=topic, persist=True, paper_id=paper_id,
+    )
+    return {"paper_id": paper_id, "status": r["status"], "task_id": r["task_id"]}
 
 
 @router.post("/explore")

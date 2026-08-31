@@ -41,6 +41,36 @@ def get_pdf_path(openalex_id: str) -> str | None:
     return p if os.path.exists(p) else None
 
 
+def save_pdf_bytes(openalex_id: str, data: bytes) -> str | None:
+    """
+    用户上传 PDF 落盘（复用下载缓存的同一路径 data/pdfs/{openalex_id}.pdf）：
+    %PDF 魔数 + 大小校验，临时文件 + os.replace 原子写入。失败返回 None。
+    落盘后：详情页预览（pdf_available 文件存在即放行）与分析链路（本地优先）自动命中。
+    """
+    if not data:
+        return None
+    if data[:5] != b"%PDF-":
+        logger.warning(f"非 PDF 上传被拒: {openalex_id}")
+        return None
+    if len(data) > _MAX_BYTES:
+        logger.warning(f"上传 PDF 超过大小限制: {openalex_id}")
+        return None
+    try:
+        os.makedirs(_PDF_DIR, exist_ok=True)
+        tmp = _path(openalex_id) + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, _path(openalex_id))
+        if os.path.getsize(_path(openalex_id)) < _MIN_BYTES:
+            os.remove(_path(openalex_id))
+            return None
+        logger.info(f"PDF 上传落盘: {_path(openalex_id)}")
+        return _path(openalex_id)
+    except Exception as e:
+        logger.warning(f"PDF 落盘失败 {openalex_id}: {e}")
+        return None
+
+
 def download_pdf(openalex_id: str, pdf_url: str) -> str | None:
     """
     下载 PDF 落盘缓存（%PDF 魔数校验，临时文件 + os.replace 原子写入）；

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, BookOpen, ExternalLink, FileText, Loader2, Sparkles } from "lucide-react";
 import type { PaperDetail, PaperAskResult, PaperSection } from "@/types/dto";
-import { getPaperDetail, getTransientPaper, explorePaper, exploreOpenalexPaper, getPaperAnalysis, askPaper, fetchPdfBlob } from "@/lib/api/papers";
+import { getPaperDetail, getTransientPaper, explorePaper, exploreOpenalexPaper, getPaperAnalysis, askPaper, fetchPdfBlob, uploadPaperPdf } from "@/lib/api/papers";
 import { toast } from "@/lib/toast";
 import { useLocalStorageConfig } from "@/hooks/useLocalStorageConfig";
 import { sectionAnchor, matchSection, type SectionTarget } from "@/lib/paper/sectionLocate";
@@ -14,6 +14,7 @@ import { PaperContentPanel } from "./PaperContentPanel";
 import { AiResearchPanel } from "./AiResearchPanel";
 import { AnalysisUpgradeBanner } from "./AnalysisUpgradeBanner";
 import { PdfViewer } from "./PdfViewer";
+import { PaperUploadBar } from "./PaperUploadBar";
 
 /** 详情页三栏布局偏好（宽度 + 折叠状态，持久化到 localStorage） */
 interface PaperLayout {
@@ -59,6 +60,7 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false); // 摘要级分析 → 全文级重算中
+  const [uploading, setUploading] = useState(false); // PDF 上传中
   const pdfBlobUrlRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 左右栏宽度/折叠偏好（持久化，防 hydration 崩溃：首屏用 fallback）
@@ -247,6 +249,24 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
     }
   };
 
+  /** 上传 PDF 补全全文：落盘 → 刷新详情（pdf_available 变 true，中栏自动切 PDF）→ 自动触发全文重算 */
+  const handleUpload = async (file: File) => {
+    if (!detail?.paper_id || !projectId || uploading) return;
+    setUploading(true);
+    try {
+      const res = await uploadPaperPdf(detail.paper_id, projectId, file);
+      toast("PDF 已上传，正在基于全文重新分析…", "info");
+      await reloadDetail(); // pdf_available → true → showPdf 自动切换中栏
+      if (res.task_id) {
+        startPolling(detail.paper_id, projectId);
+      }
+    } catch (e) {
+      toast(`上传失败: ${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -359,7 +379,10 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
             )}
           </main>
         ) : (
-          <PaperContentPanel abstract={detail.abstract} sections={sections} materialType={detail.analysis.material_type} />
+          <div className="flex-1 min-w-0 flex flex-col">
+            {detail.paper_id && <PaperUploadBar uploading={uploading} onUpload={handleUpload} />}
+            <PaperContentPanel abstract={detail.abstract} sections={sections} materialType={detail.analysis.material_type} />
+          </div>
         )}
 
         <ResizablePanel

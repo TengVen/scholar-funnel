@@ -107,54 +107,14 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
   const contributions = asList(a.core_contributions);
   const directions = asList(a.relation_to_research?.related_directions);
   const pipeline = asList(a.method_framework?.pipeline);
-  const evidence = asEvidence(a.evidence);
+  // per-block 证据（A 正解）：方法框架 / 实验结论各自内嵌原文锚点
+  const mfEvidence = asEvidence(a.method_framework?.evidence);
+  const expEvidence = asEvidence(a.experiments?.evidence);
   // 归纳徽章文案：全文级 vs 摘要级（摘要未看全文，强度降一档）
   const e3Label = materialType === "全文分节" ? "AI 归纳 · 全文" : "AI 归纳 · 仅摘要";
 
-  const locateEvidence = (ev: EvidenceItem) => {
-    if (!onLocate) return;
-    const t = matchSection(ev.section ?? "", sections);
-    if (t) onLocate(t);
-  };
-
   return (
     <div className="flex flex-col gap-4">
-      {evidence.length > 0 && (
-        <Block title="原文依据" badge={<EvidenceBadge level="E1" label="锚定原文" />}>
-          <p className="text-xs text-ink-faint mb-1.5">支撑本分析的原文片段，点击可定位到原文</p>
-          <div className="flex flex-col gap-1">
-            {evidence.map((ev, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={onLocate ? () => locateEvidence(ev) : undefined}
-                disabled={!onLocate}
-                title={onLocate ? `定位到原文：${ev.section ?? "对应章节"}` : undefined}
-                className={`flex items-start gap-1.5 text-left rounded-md px-2 py-1.5 border border-line bg-paper-warm/40 transition-colors ${
-                  onLocate ? "hover:bg-paper-warm cursor-pointer" : "disabled:cursor-default disabled:opacity-80"
-                }`}
-              >
-                {ev.section ? (
-                  <span
-                    className="text-[11px] px-1.5 py-0.5 rounded-md whitespace-nowrap shrink-0 mt-px"
-                    style={{
-                      background: "rgba(95,207,190,0.16)",
-                      color: "#5DCAA5",
-                      border: "1px solid rgba(212,175,55,0.45)",
-                      boxShadow: "0 0 8px rgba(212,175,55,0.15)",
-                    }}
-                  >
-                    {ev.section}
-                  </span>
-                ) : null}
-                <span className="flex-1 min-w-0 text-xs text-ink-secondary leading-relaxed line-clamp-2">{ev.description}</span>
-                {onLocate && <ExternalLink className="w-3 h-3 shrink-0 text-ink-faint mt-0.5" />}
-              </button>
-            ))}
-          </div>
-        </Block>
-      )}
-
       {a.summary && (
         <Block title="摘要学术化总结" badge={<EvidenceBadge level="E3" label={e3Label} />}>
           <p className="text-sm text-ink-secondary leading-relaxed">{a.summary}</p>
@@ -175,7 +135,8 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
         </Block>
       )}
       {a.method_framework && a.method_framework.text && (
-        <Block title="方法框架" badge={<EvidenceBadge level="E3" label={e3Label} />}>
+        <Block title="方法框架"
+          badge={<EvidenceBadge level={mfEvidence.length > 0 ? "E1" : "E3"} label={mfEvidence.length > 0 ? "锚定原文" : e3Label} />}>
           {pipeline.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap mb-2">
               {pipeline.map((s, i) => (
@@ -187,11 +148,14 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
             </div>
           )}
           <p className="text-sm text-ink-secondary leading-relaxed">{a.method_framework.text}</p>
+          {mfEvidence.length > 0 && (
+            <EvidenceItems evidence={mfEvidence} onLocate={onLocate} sections={sections} />
+          )}
         </Block>
       )}
       {a.experiments && (datasets.length > 0 || a.experiments.ours) && (
         <Block title="实验结论" icon={<FlaskConical className="w-3.5 h-3.5" />}
-          badge={<EvidenceBadge level={evidence.length > 0 ? "E1" : "E3"} label={evidence.length > 0 ? "锚定原文" : e3Label} />}>
+          badge={<EvidenceBadge level={expEvidence.length > 0 ? "E1" : "E3"} label={expEvidence.length > 0 ? "锚定原文" : e3Label} />}>
           <div className="space-y-1.5">
             {datasets.length > 0 && <MetaRow label="数据集" value={datasets.join(" / ")} />}
             {a.experiments.baseline && <MetaRow label="Baseline" value={a.experiments.baseline} />}
@@ -199,6 +163,9 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
             {a.experiments.gains && <MetaRow label="提升" value={a.experiments.gains} highlight />}
             {a.experiments.notes && <p className="text-xs text-ink-faint">{a.experiments.notes}</p>}
           </div>
+          {expEvidence.length > 0 && (
+            <EvidenceItems evidence={expEvidence} onLocate={onLocate} sections={sections} />
+          )}
         </Block>
       )}
       {a.relation_to_research && a.relation_to_research.topic && (
@@ -242,6 +209,52 @@ function MetaRow({ label, value, highlight }: { label: string; value: string; hi
     <div className="flex gap-2 text-sm">
       <span className="w-16 shrink-0 text-ink-faint">{label}</span>
       <span className={highlight ? "text-gold-light" : "text-ink-secondary"}>{value}</span>
+    </div>
+  );
+}
+
+/** 区块证据条目（per-block 锚定原文）：章节 chip（鎏光）+ 一句概括 + 点击跳转 */
+function EvidenceItems({ evidence, onLocate, sections }: {
+  evidence: EvidenceItem[];
+  onLocate?: (t: SectionTarget) => void;
+  sections: PaperSection[];
+}) {
+  if (evidence.length === 0) return null;
+  const go = (ev: EvidenceItem) => {
+    if (!onLocate) return;
+    const t = matchSection(ev.section ?? "", sections);
+    if (t) onLocate(t);
+  };
+  return (
+    <div className="flex flex-col gap-1 mt-2">
+      {evidence.map((ev, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={onLocate ? () => go(ev) : undefined}
+          disabled={!onLocate}
+          title={onLocate ? `定位到原文：${ev.section ?? "对应章节"}` : undefined}
+          className={`flex items-start gap-1.5 text-left rounded-md px-2 py-1.5 border border-line bg-paper-warm/40 transition-colors ${
+            onLocate ? "hover:bg-paper-warm cursor-pointer" : "disabled:cursor-default disabled:opacity-80"
+          }`}
+        >
+          {ev.section ? (
+            <span
+              className="text-[11px] px-1.5 py-0.5 rounded-md whitespace-nowrap shrink-0 mt-px"
+              style={{
+                background: "rgba(95,207,190,0.16)",
+                color: "#5DCAA5",
+                border: "1px solid rgba(212,175,55,0.45)",
+                boxShadow: "0 0 8px rgba(212,175,55,0.15)",
+              }}
+            >
+              {ev.section}
+            </span>
+          ) : null}
+          <span className="flex-1 min-w-0 text-xs text-ink-secondary leading-relaxed line-clamp-2">{ev.description}</span>
+          {onLocate && <ExternalLink className="w-3 h-3 shrink-0 text-ink-faint mt-0.5" />}
+        </button>
+      ))}
     </div>
   );
 }

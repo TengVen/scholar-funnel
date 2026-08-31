@@ -31,30 +31,33 @@ ANALYSIS_PROMPT = """\
   ],
   "method_framework": {{
     "pipeline": ["输入", "模块 A", "模块 B", "输出"],
-    "text": "方法框架文字描述（200字以内，按处理流程叙述）"
+    "text": "方法框架文字描述（200字以内，按处理流程叙述）",
+    "evidence": [
+      {{"section": "支撑方法描述的论文章节名称（如 3 Method；无则空字符串）", "description": "关键原文证据，100字以内"}}
+    ]
   }},
   "experiments": {{
     "datasets": ["数据集1", "数据集2"],
     "baseline": "对比基线（如无明确基线填'未见明确基线'）",
     "ours": "本文方法的表现要点",
     "gains": "相对基线的提升（如无定量数据填'未见定量对比'）",
-    "notes": "实验可信度备注（数据可得性/局限性，如无则空字符串）"
+    "notes": "实验可信度备注（数据可得性/局限性，如无则空字符串）",
+    "evidence": [
+      {{"section": "支撑实验结论的论文章节名称（如 4.1 ALFWorld；无则空字符串）", "description": "关键原文证据，100字以内"}}
+    ]
   }},
   "relation_to_research": {{
     "topic": "当前研究课题",
     "related_directions": ["关联方向1（如 记忆系统进化）", "关联方向2"],
     "potential_contribution": "这篇论文可作为哪个方向的代表性工作/可借鉴点（一句话）"
-  }},
-  "evidence": [
-    {{"section": "论文章节名称（如 3 Method；无章节则空字符串）", "description": "支撑上述结论的关键原文证据，100字以内"}}
-  ]
+  }}
 }}
 
 要求：
 - 只依据给定材料，材料中没有的信息标注"未见"或留空，绝不编造；
 - 核心贡献用"①…②…③…"列表，最多 4 条；
 - experiments 若无实验数据，datasets/baseline/ours/gains 填"未见实验数据"；
-- evidence 必须来自材料中真实存在的章节（全文分节时给 2-4 条关键锚点）；仅摘要材料时 evidence 填空数组；
+- evidence 必须来自材料中真实存在的章节（全文分节时 method_framework/experiments 各给 0-2 条关键锚点）；仅摘要材料时 evidence 填空数组；summary/quick_understand/relation_to_research 不给 evidence；
 - 中文输出。
 """
 

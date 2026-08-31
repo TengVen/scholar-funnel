@@ -244,13 +244,14 @@ export interface PaperAnalysisContent {
   summary?: string;                    // 摘要学术化总结（L1 态右栏内容）
   quick_understand?: string;           // 一句话理解
   core_contributions?: string[];       // 核心贡献 ①…②…③…
-  method_framework?: { pipeline?: string[]; text?: string };  // 方法框架
+  method_framework?: { pipeline?: string[]; text?: string; evidence?: EvidenceItem[] };  // 方法框架（证据=per-block 锚定原文）
   experiments?: {
     datasets?: string[];
     baseline?: string;
     ours?: string;
     gains?: string;
     notes?: string;
+    evidence?: EvidenceItem[];         // 实验结论的证据锚点
   };
   relation_to_research?: {
     topic?: string;

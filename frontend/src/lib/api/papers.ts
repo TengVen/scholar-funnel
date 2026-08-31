@@ -12,6 +12,15 @@ export function joinProject(projectId: number, openalexId: string): Promise<{ ok
   });
 }
 
+/** 上传 PDF 补全全文（非 arXiv 论文）：落盘 + 自动触发全文级重算 */
+export function uploadPaperPdf(paperId: number, projectId: number, file: File): Promise<{ paper_id: number; status: string; task_id?: string }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("paper_id", String(paperId));
+  fd.append("project_id", String(projectId));
+  return request("/api/papers/upload", { method: "POST", body: fd });
+}
+
 /** 项目论文详情聚合（三态读取入口） */
 export function getPaperDetail(paperId: number, projectId: number): Promise<PaperDetail> {
   return request(`/api/papers/${paperId}?project_id=${projectId}`);

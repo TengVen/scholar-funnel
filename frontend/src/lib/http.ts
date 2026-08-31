@@ -39,8 +39,10 @@ function buildUrl(path: string): string {
 
 function buildHeaders(options?: RequestInit): Record<string, string> {
   const token = getAccessToken();
+  // FormData（文件上传）：不能手动设 Content-Type，浏览器会自动带 multipart boundary
+  const isForm = typeof FormData !== "undefined" && options?.body instanceof FormData;
   return {
-    "Content-Type": "application/json",
+    ...(isForm ? {} : { "Content-Type": "application/json" }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options?.headers as Record<string, string> | undefined),
   };
