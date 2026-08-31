@@ -8,7 +8,7 @@ from storage.mysql_db import get_session
 from storage.models import Project, User
 from api.schemas import ProjectCreate, ProjectOut
 from storage import cart as cart_svc
-from utils.auth import get_current_user
+from utils.auth import get_current_user, get_owned_project
 
 router = APIRouter()
 
@@ -27,14 +27,6 @@ def _out(r: Project) -> ProjectOut:
         tech_probe=r.tech_probe,
         created_at=r.created_at.isoformat() if r.created_at else "",
     )
-
-
-def _get_owned_project(session, project_id: int, user: User) -> Project:
-    """取当前用户的项目；不存在或非本人 → 404（不泄露存在性）"""
-    r = session.get(Project, project_id)
-    if not r or r.user_id != user.id:
-        raise HTTPException(404, "项目不存在")
-    return r
 
 
 @router.get("", response_model=list[ProjectOut])
@@ -77,14 +69,14 @@ def create_project(body: ProjectCreate, user: User = Depends(get_current_user)):
 def get_project(project_id: int, user: User = Depends(get_current_user)):
     """获取单个项目详情（仅本人）"""
     with get_session() as session:
-        return _out(_get_owned_project(session, project_id, user))
+        return _out(get_owned_project(session, project_id, user))
 
 
 @router.get("/{project_id}/limits")
 def get_project_limits(project_id: int, user: User = Depends(get_current_user)):
     """获取项目骨架限额（默认 5/10/5，项目可自定义）"""
     with get_session() as session:
-        _get_owned_project(session, project_id, user)
+        get_owned_project(session, project_id, user)
     return {"limits": cart_svc.get_limits(project_id)}
 
 
@@ -94,7 +86,7 @@ def update_project_limits(
 ):
     """保存项目骨架限额（每类 1-30，三类总和 ≤ 50）"""
     with get_session() as session:
-        _get_owned_project(session, project_id, user)
+        get_owned_project(session, project_id, user)
     result = cart_svc.set_limits(project_id, body.model_dump())
     if not result.get("ok"):
         raise HTTPException(400, result.get("error", "保存失败"))

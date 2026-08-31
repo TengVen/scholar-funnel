@@ -120,3 +120,46 @@ export function buildNetworkChartOption(result: NetworkResultResponse): EChartsO
     }],
   } as EChartsOption;
 }
+
+/**
+ * 环绕主星的卫星星点坐标（分析态 StarCluster / 分析中 AnalyzingScene 共用）
+ *
+ * 只算几何与错峰延迟，不掺视觉参数（半径/配色/透明度由各组件自定）。
+ * 每颗星点占 360°/n 均分位置，animationDelay 取负值让首帧即进入旋转而非从 0 起步。
+ */
+export interface OrbitSatellite {
+  key: string;
+  x: number;
+  y: number;
+  /** 旋转中心（SVG 单位），配合 CSS transform-origin 使用 */
+  origin: string;
+  delay: string;
+}
+
+export function orbitSatellites(params: {
+  cx: number;
+  cy: number;
+  orbit: number;
+  count: number;
+  /** 一圈耗时（秒），需与对应 CSS 动画时长一致 */
+  spinSeconds: number;
+  /** 额外延迟偏移（秒），用于多星群之间错峰 */
+  delayOffset?: number;
+  /** 星点数下限（分析态即使 0 篇也画 1 颗，避免空场） */
+  minCount?: number;
+}): OrbitSatellite[] {
+  const { cx, cy, orbit, spinSeconds, delayOffset = 0, minCount = 0 } = params;
+  const total = Math.max(params.count, minCount);
+  if (total <= 0) return [];
+
+  return Array.from({ length: total }, (_, i) => {
+    const angle = (i / total) * 360;
+    return {
+      key: `sat${i}`,
+      x: cx + orbit,
+      y: cy,
+      origin: `${cx}px ${cy}px`,
+      delay: `${(-angle / 360) * spinSeconds + delayOffset}s`,
+    };
+  });
+}

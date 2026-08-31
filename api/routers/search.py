@@ -12,20 +12,13 @@ from api.schemas import (
     LocalSearchRequest, LocalSearchResponse, PaperOut,
 )
 from storage.models import User
-from utils.auth import get_current_user, get_owned_project
+from utils.auth import get_current_user
 from utils.task_guard import acquire_or_reuse
 from storage.mysql_db import get_session
+from api.deps import check_project_access
 from retrieval.pipeline import TrunkSearchEngine
 
 router = APIRouter()
-
-def _check(project_id: int, user: User):
-    """校验项目归属（用户隔离）+ 设置 OpenAlex 礼貌邮箱（用户邮箱优先，否则默认 1257312717@qq.com）"""
-    from sources import openalex as oa
-    oa.set_mailto(user.email)
-    with get_session() as session:
-        get_owned_project(session, project_id, user)
-
 
 # 主干检索异步任务（内存存储；重启丢失，单机可接受）
 _trunk_tasks: dict[str, dict] = {}
@@ -74,7 +67,7 @@ def run_trunk_search(body: SearchRequest, user: User = Depends(get_current_user)
     并发守卫：同一 project 已有 running 的 trunk task 时，复用其 task_id，
     避免快速重复点击起多个 task 同写一 project。
     """
-    _check(body.project_id, user)
+    check_project_access(body.project_id, user)
     task_id, created = acquire_or_reuse(
         "trunk", _trunk_tasks,
         key_match=lambda t: t.get("project_id") == body.project_id,
@@ -111,7 +104,7 @@ def get_trunk_result(task_id: str = Query(...), user: User = Depends(get_current
 
 @router.post("/gap", response_model=GapSearchResponse)
 def run_gap_search(body: GapSearchRequest, user: User = Depends(get_current_user)):
-    _check(body.project_id, user)
+    check_project_access(body.project_id, user)
     """
     缺口补充检索：按目标类别定向检索，返回候选列表（不入库）。
 
@@ -148,7 +141,7 @@ def run_gap_search(body: GapSearchRequest, user: User = Depends(get_current_user
 
 @router.post("/gap-semantic", response_model=GapSearchResponse)
 def run_gap_semantic(body: SemanticGapRequest, user: User = Depends(get_current_user)):
-    _check(body.project_id, user)
+    check_project_access(body.project_id, user)
     """
     语义缺口补充：该类骨架论文的向量质心 → 项目内未入骨架论文按相似度排序。
 
@@ -198,7 +191,7 @@ def run_gap_semantic(body: SemanticGapRequest, user: User = Depends(get_current_
 
 @router.post("/title", response_model=GapSearchResponse)
 def run_title_lookup(body: TitleLookupRequest, user: User = Depends(get_current_user)):
-    _check(body.project_id, user)
+    check_project_access(body.project_id, user)
     """
     按标题直达查找（骨架补充的"标题直达"模式）：
     输入论文标题 → OpenAlex 精确匹配 → 单篇候选（不入库）。
@@ -228,7 +221,7 @@ def search_local(body: LocalSearchRequest, user: User = Depends(get_current_user
       - 用于"先广域入库、再按领域聚焦精筛"的两阶段工作流
       - 返回的论文 id 为整数 DB id，可直接"加入骨架"
     """
-    _check(body.project_id, user)
+    check_project_access(body.project_id, user)
     try:
         from storage.vector_store import semantic_recall_papers, ensure_project_embeddings
 

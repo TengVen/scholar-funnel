@@ -27,7 +27,15 @@
 import threading
 from typing import Callable, Tuple
 
+from fastapi import HTTPException
+
 _locks: dict[str, threading.Lock] = {}
+
+
+def assert_task_owner(task: dict, user) -> None:
+    """校验 task 归属：仅创建者本人可查询/取结果（branch/network/chat 三处合并于此）"""
+    if task.get("user_id") is not None and task["user_id"] != user.id:
+        raise HTTPException(403, "无权访问该任务")
 
 
 def _lock_for(namespace: str) -> threading.Lock:

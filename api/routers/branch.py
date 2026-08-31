@@ -9,20 +9,11 @@ from api.schemas import BranchAnalyzeRequest, BranchAnalyzeResponse, BranchPaper
 from agents import branch as branch_svc
 
 from storage.models import User
-from utils.auth import get_current_user, get_owned_project
-from utils.task_guard import acquire_or_reuse
-from storage.mysql_db import get_session
+from utils.auth import get_current_user
+from utils.task_guard import acquire_or_reuse, assert_task_owner
+from api.deps import check_project_access
 
 router = APIRouter()
-
-def _check(project_id: int, user: User):
-    """校验项目归属（用户隔离）+ 设置 OpenAlex 礼貌邮箱（用户邮箱优先，否则默认）"""
-    from sources import openalex as oa
-    oa.set_mailto(user.email)
-    with get_session() as session:
-        get_owned_project(session, project_id, user)
-
-
 
 _tasks: dict[str, dict] = {}
 
@@ -97,7 +88,7 @@ def _start_branch(body: BranchAnalyzeRequest, user: User) -> str:
 
 @router.post("/analyze")
 def start_branch_analyze(body: BranchAnalyzeRequest, user: User = Depends(get_current_user)):
-    _check(body.project_id, user)
+    check_project_access(body.project_id, user)
     if body.mode == "probe_match" and not body.probe:
         raise HTTPException(400, "probe_match mode requires a probe")
     # 并发守卫：同一 (project, mode, category) 已有 running task 时复用其 task_id，
@@ -112,18 +103,12 @@ def start_branch_analyze(body: BranchAnalyzeRequest, user: User = Depends(get_cu
     return {"task_id": task_id, "status": "started", "duplicate": not created}
 
 
-def _assert_task_owner(task: dict, user: User):
-    """校验 task 归属：仅创建者本人可查询/取结果"""
-    if task.get("user_id") is not None and task["user_id"] != user.id:
-        raise HTTPException(403, "无权访问该任务")
-
-
 @router.get("/status")
 def get_branch_status(task_id: str = Query(...), user: User = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(404, "task not found")
-    _assert_task_owner(task, user)
+    assert_task_owner(task, user)
     return {
         "status": task["status"], "current": task["current"],
         "total": task["total"], "detail": task["detail"],
@@ -136,7 +121,7 @@ def get_branch_result(task_id: str = Query(...), user: User = Depends(get_curren
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(404, "task not found")
-    _assert_task_owner(task, user)
+    assert_task_owner(task, user)
     if task["status"] == "running":
         raise HTTPException(202, "still running")
     if task["status"] == "error":
@@ -150,7 +135,7 @@ def get_branch_results(
     mode: str = Query("", description="按分析模式过滤: probe_match/ai_suggest/landscape，空=全部"),
     user: User = Depends(get_current_user),
 ):
-    _check(project_id, user)
+    check_project_access(project_id, user)
     results = branch_svc.get_stored_results(project_id, mode)
     level_dist: dict[str, int] = {}
     for r in results:

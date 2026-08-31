@@ -24,6 +24,14 @@ export const DEFAULT_CONFIG: ChatConfig = {
   llm: {},
 };
 
+/** 等待回复期间轮换展示的阶段性文案（避免"空白 → 突然跳出一整段"） */
+export const EXEC_STAGES = [
+  "正在理解你的问题…",
+  "正在检索相关文献…",
+  "正在分析论文脉络…",
+  "正在组织回答…",
+];
+
 /** 空态示例研究方向 */
 export const SUGGESTIONS: string[] = [
   "蛋白质-配体结合亲和力的图神经网络预测方法",

@@ -18,6 +18,7 @@ from llm import client as llm
 from storage.mysql_db import get_session
 from storage.models import Conversation, Message, Project, User
 from utils.auth import get_current_user, get_owned_project
+from utils.task_guard import assert_task_owner
 from utils.log import setup_logger
 from agents import chat_agent
 
@@ -153,18 +154,12 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
 
 # ── 异步检索：状态 / 结果 / 总结 ──
 
-def _assert_task_owner(task: dict, user: User):
-    """校验 task 归属：仅创建者本人可查询/取结果"""
-    if task.get("user_id") is not None and task["user_id"] != user.id:
-        raise HTTPException(403, "无权访问该任务")
-
-
 @router.get("/search/status")
 def get_search_status(task_id: str, user: User = Depends(get_current_user)):
     task = chat_agent.get_search_task(task_id)
     if not task:
         raise HTTPException(404, "task not found")
-    _assert_task_owner(task, user)
+    assert_task_owner(task, user)
     return {"status": task["status"], "detail": task["detail"], "error": task["error"]}
 
 
@@ -177,7 +172,7 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
     task = chat_agent.get_search_task(task_id)
     if not task:
         raise HTTPException(404, "task not found")
-    _assert_task_owner(task, user)
+    assert_task_owner(task, user)
     if task["status"] == "running":
         raise HTTPException(202, "still running")
     if task["status"] == "error":

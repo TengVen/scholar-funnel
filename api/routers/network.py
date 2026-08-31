@@ -12,20 +12,11 @@ from api.schemas import (
 from agents import network as network_svc
 
 from storage.models import User
-from utils.auth import get_current_user, get_owned_project
-from utils.task_guard import acquire_or_reuse
-from storage.mysql_db import get_session
+from utils.auth import get_current_user
+from utils.task_guard import acquire_or_reuse, assert_task_owner
+from api.deps import check_project_access
 
 router = APIRouter()
-
-def _check(project_id: int, user: User):
-    """校验项目归属（用户隔离）+ 设置 OpenAlex 礼貌邮箱（用户邮箱优先，否则默认）"""
-    from sources import openalex as oa
-    oa.set_mailto(user.email)
-    with get_session() as session:
-        get_owned_project(session, project_id, user)
-
-
 
 _tasks: dict[str, dict] = {}
 
@@ -91,7 +82,7 @@ def _start_network(body: NetworkAnalyzeRequest, user: User) -> str:
 
 @router.post("/analyze")
 def start_network_analyze(body: NetworkAnalyzeRequest, user: User = Depends(get_current_user)):
-    _check(body.project_id, user)
+    check_project_access(body.project_id, user)
     # 并发守卫：同一 (project, category) 已有 running task 时复用其 task_id，
     # 避免快速重复点击起多个 task 同写一 project。
     task_id, created = acquire_or_reuse(
@@ -103,18 +94,12 @@ def start_network_analyze(body: NetworkAnalyzeRequest, user: User = Depends(get_
     return {"task_id": task_id, "status": "started", "duplicate": not created}
 
 
-def _assert_task_owner(task: dict, user: User):
-    """校验 task 归属：仅创建者本人可查询/取结果"""
-    if task.get("user_id") is not None and task["user_id"] != user.id:
-        raise HTTPException(403, "无权访问该任务")
-
-
 @router.get("/status")
 def get_network_status(task_id: str = Query(...), user: User = Depends(get_current_user)):
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(404, "task not found")
-    _assert_task_owner(task, user)
+    assert_task_owner(task, user)
     return {
         "status": task["status"], "step": task["step"],
         "detail": task["detail"], "error": task["error"],
@@ -126,7 +111,7 @@ def get_network_result(task_id: str = Query(...), user: User = Depends(get_curre
     task = _tasks.get(task_id)
     if not task:
         raise HTTPException(404, "task not found")
-    _assert_task_owner(task, user)
+    assert_task_owner(task, user)
     if task["status"] == "running":
         raise HTTPException(202, "still running")
     if task["status"] == "error":
