@@ -231,6 +231,85 @@ export interface DiagnosisResult {
   suggestions: string[];
 }
 
+// ── 论文详情页（三栏 + 三态）──
+
+export interface PaperRef {
+  openalex_id?: string;
+  title?: string;
+  year?: number | null;
+}
+
+/** AI 研究助手六区块（L2/L3 同一套分析能力） */
+export interface PaperAnalysisContent {
+  summary?: string;                    // 摘要学术化总结（L1 态右栏内容）
+  quick_understand?: string;           // 一句话理解
+  core_contributions?: string[];       // 核心贡献 ①…②…③…
+  method_framework?: { pipeline?: string[]; text?: string };  // 方法框架
+  experiments?: {
+    datasets?: string[];
+    baseline?: string;
+    ours?: string;
+    gains?: string;
+    notes?: string;
+  };
+  relation_to_research?: {
+    topic?: string;
+    related_directions?: string[];
+    potential_contribution?: string;
+  };
+  research_context?: {                 // 研究脉络（三类：基础/横向/纵向）
+    base?: PaperRef[];
+    horizontal?: PaperRef[];
+    vertical?: PaperRef[];
+  };
+}
+
+export interface PaperSection {
+  heading: string;
+  content: string;
+}
+
+/** 详情页聚合（transient / candidate / research asset 三态统一读取） */
+export interface PaperDetail {
+  mode: "project" | "transient";
+  paper_id?: number | null;
+  openalex_id: string;
+  title: string;
+  authors: string[];
+  year?: number | null;
+  venue?: string;
+  doi?: string | null;
+  arxiv_id?: string | null;
+  abstract?: string | null;
+  cited_by_count: number;
+  github_url?: string | null;
+  keywords: string[];
+  is_oa?: boolean;
+  oa_pdf_url?: string | null;
+  oa_landing_url?: string | null;
+  pdf_available?: boolean; // 站内 PDF 预览可用（仅 arXiv）
+  in_project: boolean;
+  stage?: string | null;
+  in_cart: boolean;
+  category?: string | null;
+  why?: PaperWhy | null;
+  judgment?: { action?: string; reason?: string } | null;
+  sections?: PaperSection[] | null;
+  analysis: {
+    status: "none" | "running" | "done";
+    source?: "cache" | "db";
+    content?: PaperAnalysisContent | null;
+    sections?: PaperSection[] | null;
+    material_type?: string;
+  };
+  actions: { can_explore: boolean; can_ask: boolean };
+}
+
+export interface PaperAskResult {
+  answer: string;
+  citations: Array<{ section?: string; snippet?: string }>;
+}
+
 // ── 任务轮询通用 ──
 
 export interface TaskStatus {

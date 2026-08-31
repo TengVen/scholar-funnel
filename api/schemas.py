@@ -163,6 +163,58 @@ class PaperListResponse(BaseModel):
     page_size: int
 
 
+# ── 论文详情页（三栏 + 三态）──
+
+class PaperDetailOut(BaseModel):
+    """详情页聚合：基础元数据 + 三态 + 分析就绪状态 + 可执行动作"""
+    mode: str                        # project / transient
+    paper_id: int | None = None
+    openalex_id: str
+    title: str
+    authors: list[str] = []
+    year: int | None = None
+    venue: str | None = None
+    doi: str | None = None
+    arxiv_id: str | None = None
+    abstract: str | None = None
+    cited_by_count: int = 0
+    github_url: str | None = None
+    keywords: list[str] = []
+    is_oa: bool = False
+    oa_pdf_url: str | None = None
+    oa_landing_url: str | None = None
+    pdf_available: bool = False        # 是否提供站内 PDF 预览（仅 arXiv 论文）
+    in_project: bool = False
+    stage: str | None = None
+    in_cart: bool = False
+    category: str | None = None       # 骨架/认知结构分类
+    why: PaperWhy | None = None
+    judgment: dict | None = None      # {action, reason}
+    sections: list | None = None      # 全文分节（有分析后）
+    analysis: dict = {}               # {status: none/running/done, source?: cache/db, content?, material_type?}
+    actions: dict = {}                # {can_explore, can_ask}
+
+
+class ExploreRequest(BaseModel):
+    """深入探究：transient → candidate（落库 + 触发单篇分析预热）
+    openalex_id：transient 模式（无 paper_id）用 OpenAlex ID 落库；
+    persist：L3 直接落库——分析完成后写 paper_analysis，无需问答。"""
+    project_id: int
+    openalex_id: str | None = None
+    persist: bool = False
+
+
+class AskRequest(BaseModel):
+    """详情页单篇问答：触发分析落库（L2→L3）+ 基于分节/摘要回答"""
+    project_id: int
+    question: str
+
+
+class AskResponse(BaseModel):
+    answer: str
+    citations: list = []              # [{section, snippet}]
+
+
 # ── Cart ──
 
 class CartAddRequest(BaseModel):

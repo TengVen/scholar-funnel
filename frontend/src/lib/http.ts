@@ -49,12 +49,17 @@ function buildHeaders(options?: RequestInit): Record<string, string> {
 async function toApiError(res: Response): Promise<ApiError> {
   let detail: unknown;
   let message = `请求失败 (${res.status})`;
+  const ct = res.headers.get("content-type") ?? "";
   try {
-    const body = (await res.json()) as { detail?: unknown };
-    detail = body.detail;
-    if (typeof body.detail === "string") message = body.detail;
+    if (ct.includes("application/json")) {
+      const body = (await res.json()) as { detail?: unknown };
+      detail = body.detail;
+      if (typeof body.detail === "string") message = body.detail;
+    } else {
+      message = (await res.text()) || message; // 非 JSON（如 PDF 端点的 text/plain 错误页）
+    }
   } catch {
-    /* 非 JSON 响应 */
+    /* 响应体不可读则用默认消息 */
   }
   return new ApiError(message, res.status, detail);
 }
@@ -94,6 +99,21 @@ export async function requestText(path: string, options?: RequestInit, _retry = 
     throw await toApiError(res);
   }
   return res.text();
+}
+
+/** 二进制响应请求（如 PDF blob）——带鉴权、401 刷新重试、错误规范化 */
+export async function requestBlob(path: string, options?: RequestInit, _retry = true): Promise<Blob> {
+  const res = await fetch(buildUrl(path), { ...options, headers: buildHeaders(options) });
+  if (res.status === 401) {
+    if (_retry && (await refreshToken())) {
+      return requestBlob(path, options, false);
+    }
+    await handleUnauthorized();
+  }
+  if (!res.ok) {
+    throw await toApiError(res);
+  }
+  return res.blob();
 }
 
 /** 登出时需要（api/auth 使用） */

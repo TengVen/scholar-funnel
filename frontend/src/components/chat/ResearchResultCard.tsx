@@ -4,17 +4,13 @@ import { useState } from "react";
 import { Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import type { DeepResearchAttachments, DeepResearchCandidate } from "@/types/dto";
 import type { Category } from "@/types/domain";
-import { addToCart } from "@/lib/api/cart";
-import { useCartStore } from "@/stores/cartStore";
 import { CATEGORY_SECTION, CATEGORY_META } from "@/config/categories";
-import { toast } from "@/lib/toast";
-import { PaperActionRow } from "./PaperActionRow";
+import { PaperNavRow } from "./PaperNavRow";
 
 /**
  * L3 深度调研结果卡（L3Renderer）：论文 = 研究资产。
- * 候选按"建议归类"分组展示（与 L2 认知结构一致的区块标题），论文行含 年份/作者/被引；
- * 展示重点 = "研究形成了什么"（研究成果指标），检索过程收纳进"查看检索过程"展开；
- * 内部模型判断（置信度/分数）不外露。
+ * 候选按"建议归类"分组展示；成果指标 + "查看检索过程"折叠；
+ * 操作收敛：论文点击进入详情页（问答/研究脉络在详情页）。
  */
 interface ResearchResultCardProps {
   att: DeepResearchAttachments;
@@ -117,26 +113,8 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 
 function CandidateRow({ candidate, projectId }: { candidate: DeepResearchCandidate; projectId?: number | null }) {
-  const [adding, setAdding] = useState(false);
-  const inCart = useCartStore(
-    (s) => s.cart?.items.some((it) => it.paper_id === candidate.paper_id) ?? false,
-  );
-
-  const handleAdd = async () => {
-    if (!projectId) return;
-    setAdding(true);
-    try {
-      await addToCart(projectId, candidate.paper_id, candidate.suggested_category, "深度调研推荐");
-      toast(`已加入骨架（${CATEGORY_META[candidate.suggested_category].label}）`, "success");
-    } catch (e) {
-      toast(`加入骨架失败: ${e instanceof Error ? e.message : String(e)}`, "error");
-    } finally {
-      setAdding(false);
-    }
-  };
-
   return (
-    <PaperActionRow
+    <PaperNavRow
       title={candidate.title}
       meta={[
         candidate.year ? String(candidate.year) : "",
@@ -144,9 +122,7 @@ function CandidateRow({ candidate, projectId }: { candidate: DeepResearchCandida
         candidate.cited_by_count ? `被引 ${candidate.cited_by_count}` : "",
       ]}
       reason={candidate.reason}
-      inCart={inCart}
-      adding={adding}
-      onAdd={handleAdd}
+      href={`/paper/${candidate.paper_id}${projectId ? `?project_id=${projectId}&auto=1&persist=1` : ""}`}
     />
   );
 }

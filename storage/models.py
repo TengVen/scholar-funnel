@@ -78,6 +78,14 @@ class Paper(Base):
         JSON, default=None,
         doc="召回溯源：{routes:[core/synonym/aux/loose/semantic], matched_terms:[], source, similarity, rerank_score}"
     )
+    sections: Mapped[dict | None] = mapped_column(
+        JSON, default=None,
+        doc="全文分节（[{heading, content}]），详情页中栏正文；无全文时为空"
+    )
+    paper_analysis: Mapped[dict | None] = mapped_column(
+        JSON, default=None,
+        doc="论文深度分析落库（六区块）；存在即 Research Asset（L3）"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # 关系
@@ -230,6 +238,25 @@ class PaperJudgment(Base):
     )
 
     # 关系
+    paper: Mapped["Paper"] = relationship()
+
+
+class PaperQuestion(Base):
+    """详情页单篇问答（四问之四落地详情页；答案带原文引用回溯）"""
+    __tablename__ = "ai_paper_questions"
+    __table_args__ = (
+        UniqueConstraint("paper_id", "question", name="uniq_paper_question"),
+        Index("idx_paper_question_paper", "paper_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("ai_projects.id"), nullable=False)
+    paper_id: Mapped[int] = mapped_column(ForeignKey("ai_papers.id"), nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    citations: Mapped[dict | None] = mapped_column(JSON)  # [{section, snippet}]
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
     paper: Mapped["Paper"] = relationship()
 
 

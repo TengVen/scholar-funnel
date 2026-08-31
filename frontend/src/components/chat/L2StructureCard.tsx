@@ -4,17 +4,13 @@ import { useState } from "react";
 import { Map, ChevronDown, ChevronUp } from "lucide-react";
 import type { CognitiveStructure, StructurePaper } from "@/types/dto";
 import type { Category } from "@/types/domain";
-import { addToCart } from "@/lib/api/cart";
-import { useCartStore } from "@/stores/cartStore";
 import { CATEGORY_SECTION, CATEGORY_META } from "@/config/categories";
-import { toast } from "@/lib/toast";
-import { PaperActionRow } from "./PaperActionRow";
+import { PaperNavRow } from "./PaperNavRow";
 
 /**
  * L2 认知结构卡（L2Renderer）：论文 = 认知结构节点。
- * 明确区分"核心推荐"与"全部候选"：核心推荐 = 认知结构主动装载的论文；
- * 候选结果池（共发现 N 篇）经"查看全部"入口探索，不因只展示部分而丢弃。
- * 分类以"奠基/主流/前沿"区块标题直接呈现（内部模型判断不外露）。
+ * 明确区分"核心推荐"与"全部候选"；分类以"奠基/主流/前沿"区块标题呈现。
+ * 操作收敛：论文点击进入详情页（认知位置/为什么推荐在详情页展示）。
  */
 interface L2StructureCardProps {
   content: string;
@@ -55,9 +51,15 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
                 <span className="w-2 h-2 rounded-full" style={{ background: meta.dot }} />
                 <span className={`text-sm ${meta.color}`}>{CATEGORY_META[key].label} · {papers.length} 篇</span>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {visible.map((p) => (
-                  <PaperRow key={p.paper_id} paper={p} projectId={projectId} />
+                  <PaperNavRow
+                    key={p.paper_id}
+                    title={p.title}
+                    meta={[p.year ? String(p.year) : "", p.cited_by_count ? `被引 ${p.cited_by_count}` : ""]}
+                    reason={p.reason}
+                    href={`/paper/${p.paper_id}${projectId ? `?project_id=${projectId}&auto=1` : ""}`}
+                  />
                 ))}
               </div>
             </div>
@@ -81,37 +83,5 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
         )}
       </div>
     </div>
-  );
-}
-
-function PaperRow({ paper, projectId }: { paper: StructurePaper; projectId?: number | null }) {
-  const [adding, setAdding] = useState(false);
-  const inCart = useCartStore(
-    (s) => s.cart?.items.some((it) => it.paper_id === paper.paper_id) ?? false,
-  );
-  const label = CATEGORY_META[paper.suggested_category].label;
-
-  const handleAdd = async () => {
-    if (!projectId) return;
-    setAdding(true);
-    try {
-      await addToCart(projectId, paper.paper_id, paper.suggested_category, `认知结构推荐（${label}）`);
-      toast(`已加入骨架（${label}）`, "success");
-    } catch (e) {
-      toast(`加入骨架失败: ${e instanceof Error ? e.message : String(e)}`, "error");
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  return (
-    <PaperActionRow
-      title={paper.title}
-      meta={[paper.year ? String(paper.year) : "", paper.cited_by_count ? `被引 ${paper.cited_by_count}` : ""]}
-      reason={paper.reason}
-      inCart={inCart}
-      adding={adding}
-      onAdd={handleAdd}
-    />
   );
 }
