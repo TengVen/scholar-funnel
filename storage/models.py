@@ -3,7 +3,7 @@ MySQL ORM 模型定义 —— 所有表结构集中管理
 """
 from datetime import datetime
 from sqlalchemy import (
-    String, Text, SmallInteger, Integer, Boolean, DateTime, Enum, JSON,
+    String, Text, SmallInteger, Integer, Float, Boolean, DateTime, Enum, JSON,
     ForeignKey, UniqueConstraint, Index,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -85,6 +85,10 @@ class Paper(Base):
     paper_analysis: Mapped[dict | None] = mapped_column(
         JSON, default=None,
         doc="论文深度分析落库（六区块）；存在即 Research Asset（L3）"
+    )
+    explored_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=None,
+        doc="深入探究时间（explore 触发即写：L1→L2 跃迁 / L2 预热 / L3；论文集合'已探究'标记）"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -258,6 +262,36 @@ class PaperQuestion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     paper: Mapped["Paper"] = relationship()
+
+
+class SearchRun(Base):
+    """检索记录（工作台"检索记录"视图 + 认知收敛检测数据源，一表两用）"""
+    __tablename__ = "ai_search_runs"
+    __table_args__ = (
+        Index("idx_search_runs_project", "project_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("ai_projects.id"), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("ai_users.id"))
+    run_type: Mapped[str] = mapped_column(
+        String(20), default="trunk",
+        doc="检索类型: trunk 全量 / gap 缺口补充 / semantic 语义 / local 本地库"
+    )
+    query: Mapped[str | None] = mapped_column(Text, default=None, doc="user_query")
+    tech_probe: Mapped[str | None] = mapped_column(Text, default=None)
+    user_constraint: Mapped[str | None] = mapped_column(Text, default=None, doc="gap 附加约束")
+    target_category: Mapped[str | None] = mapped_column(String(20), default=None, doc="gap 类别")
+    top_k: Mapped[int | None] = mapped_column(Integer, default=None)
+    score_threshold: Mapped[float | None] = mapped_column(Float, default=None)
+    total_found: Mapped[int] = mapped_column(Integer, default=0, doc="召回数")
+    saved_count: Mapped[int] = mapped_column(Integer, default=0, doc="入库/候选数")
+    covered_ratio: Mapped[float | None] = mapped_column(
+        Float, default=None, doc="覆盖率（already_in_db 占比，0-1；收敛检测用）"
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    project: Mapped["Project"] = relationship()
 
 
 # ══════════════════════════════════════════════════════════
