@@ -194,6 +194,19 @@ def _pdf_file_exists(openalex_id: str) -> bool:
     return get_pdf_path(openalex_id) is not None
 
 
+def _mark_explored(paper_id: int, project_id: int) -> None:
+    """深入探究标记：explore 触发即写 explored_at（工作台"论文集合"已探究标注，L1→L2/L2/L3 均算）"""
+    try:
+        from sqlalchemy import func
+        with get_session() as session:
+            session.query(Paper).filter(
+                Paper.id == paper_id, Paper.project_id == project_id
+            ).update({Paper.explored_at: func.now()})
+            session.commit()
+    except Exception:
+        pass  # 标记失败不阻塞探究链路
+
+
 def _analysis_state(project_id: int, openalex_id: str, paper: Paper | None) -> dict:
     """分析就绪状态：运行中 → DB 落库（L3）→ 内存缓存（L2 预热）→ 无。
 
@@ -364,6 +377,7 @@ def explore_openalex(body: ExploreRequest, user: User = Depends(get_current_user
     if not result.get("ok"):
         raise HTTPException(400, result.get("error", "纳入研究候选失败"))
     paper_id = result["paper_id"]
+    _mark_explored(paper_id, body.project_id)
 
     title, abstract, year, cited, topic = "", "", None, 0, ""
     with get_session() as session:
@@ -404,6 +418,8 @@ def explore_paper(paper_id: int, project_id: int = Query(...),
 
     # candidate 落库（幂等，stage 提升防 trunk 重建回收）
     papers_svc.save_openalex_paper(project_id, paper.openalex_id, stage="candidate")
+    # 深入探究标记（explore 触发即算已探究）
+    _mark_explored(paper_id, project_id)
 
     topic = ""
     with get_session() as session:

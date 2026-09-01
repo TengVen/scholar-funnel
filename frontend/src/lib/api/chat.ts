@@ -6,6 +6,7 @@ import type {
   ChatResponse,
   ConversationHistory,
   ConversationSummary,
+  ConversationWorkspace,
   DeepResearchAttachments,
   SearchSummary,
   TaskStatus,
@@ -49,4 +50,9 @@ export function getChatHistory(
     `/api/chat/history?conversation_id=${conversationId}`,
     signal ? { signal } : undefined,
   );
+}
+
+/** 工作台概览：对话 → 子研究（检索记录 / 认知结构 / 论文集合 / 深入研究） */
+export function getWorkspace(conversationId: string): Promise<ConversationWorkspace> {
+  return request(`/api/chat/conversations/${encodeURIComponent(conversationId)}/workspace`);
 }

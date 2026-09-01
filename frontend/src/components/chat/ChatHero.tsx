@@ -1,7 +1,7 @@
 "use client";
 
 import type { KeyboardEvent, RefObject } from "react";
-import { ArrowUp, Loader2, Sparkles } from "lucide-react";
+import { ArrowUp, LayoutGrid, Loader2, Sparkles } from "lucide-react";
 import type { ChatConfig } from "@/types/domain";
 import { SUGGESTIONS } from "@/config/chat";
 import { ChatConfigBar } from "./ChatConfigBar";
@@ -14,7 +14,7 @@ import { ChatConfigBar } from "./ChatConfigBar";
  */
 export function ChatHero({
   input, setInput, onSend, onKeyDown, placeholder, inputDisabled, sending,
-  config, setConfig, inputRef,
+  config, setConfig, inputRef, workspaceOpen, onToggleWorkspace,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -27,6 +27,8 @@ export function ChatHero({
   config: ChatConfig;
   setConfig: (c: ChatConfig) => void;
   inputRef: RefObject<HTMLInputElement>;
+  workspaceOpen?: boolean;
+  onToggleWorkspace?: () => void;
 }) {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -41,6 +43,24 @@ export function ChatHero({
         <p className="text-base text-ink-muted mt-2 mb-8 text-center">
           用对话的方式描述研究方向，自动拆解意图、召回并构建文献骨架
         </p>
+
+        {/* 输入框上方一行：工作台概览入口（对话框附近小图标） */}
+        <div className="w-full max-w-3xl flex items-center justify-end mb-1.5">
+          {onToggleWorkspace && (
+            <button
+              type="button"
+              onClick={onToggleWorkspace}
+              title="工作台概览"
+              className={`p-1.5 rounded-lg border transition-colors ${
+                workspaceOpen
+                  ? "border-gold/40 bg-gold/10 text-gold-light"
+                  : "border-transparent text-ink-faint hover:text-ink hover:bg-paper-warm hover:border-line"
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          )}
+        </div>
 
         {/* 居中输入框（炫彩流光环绕）—— 加宽 */}
         <div className="w-full max-w-3xl glow-shell">

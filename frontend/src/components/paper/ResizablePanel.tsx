@@ -81,16 +81,21 @@ export function ResizablePanel({ side, width, collapsed, minWidth, maxWidth, onR
         </button>
       </div>
 
-      {/* 内容区：滚动与布局由 children 自理 */}
-      <div className="flex-1 min-h-0">{children}</div>
+      {/* 内容区：flex 容器，children 以 flex-1 + overflow 自行管理滚动 */}
+      <div className="flex-1 min-h-0 flex flex-col">{children}</div>
 
-      {/* 拖拽手柄 */}
+      {/* 拖拽手柄：8px 热区 + 常驻细线提示，hover 高亮（无感但有迹可循） */}
       <div
         onMouseDown={startResize}
-        className={`absolute top-0 bottom-0 w-1 cursor-col-resize z-10 hover:bg-accent-light/40 ${
-          side === "left" ? "right-0" : "left-0"
+        title="拖拽调整宽度"
+        className={`group absolute top-0 bottom-0 w-2 cursor-col-resize z-10 flex ${
+          side === "left" ? "right-0 justify-end pr-0.5" : "left-0 justify-start pl-0.5"
         }`}
-      />
+      >
+        <div className={`w-px my-2 transition-colors ${
+          side === "left" ? "border-r border-line/80 group-hover:border-accent/70" : "border-l border-line/80 group-hover:border-accent/70"
+        }`} />
+      </div>
     </aside>
   );
 }

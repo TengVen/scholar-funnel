@@ -12,11 +12,12 @@ import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 
 from api.schemas import ChatRequest, ChatResponse
 from llm import client as llm
 from storage.mysql_db import get_session
-from storage.models import Conversation, Message, Project, User
+from storage.models import Conversation, Message, Project, User, CartItem, Paper, SearchRun
 from utils.auth import get_current_user, get_owned_project
 from utils.task_guard import assert_task_owner
 from utils.log import setup_logger
@@ -49,24 +50,41 @@ def _get_conv(session, conv_id: str, user: User) -> Conversation:
     return conv
 
 
-def _conv_messages(session, conv: Conversation, limit: int = 30) -> list[dict]:
-    """按时间取会话消息（最近 limit 条，供 LLM 上下文）"""
+def _conv_messages(session, conv: Conversation, limit: int = 30, for_llm: bool = False) -> list[dict]:
+    """按时间取会话消息（最近 limit 条）。
+
+    for_llm=True：供 LLM 上下文——把历史工具调用痕迹（attachments.tool_calls）
+    注入为可读摘要行（如 [工具] full_search(...) -> 已启动 task=xxx），
+    让模型感知历史真实工具执行，避免仅凭话术判断。
+    前端历史加载（for_llm=False）不注入，保持纯文本展示。
+    """
     rows = (
         session.query(Message)
         .filter(Message.conversation_id == conv.id)
         .order_by(Message.id.asc())
         .all()
     )
-    return [
-        {
+    out = []
+    for m in rows[-limit:]:
+        d = {
             "role": m.role,
             "content": m.content or "",
             "project_id": m.project_id,   # 检索完成消息关联项目（前端"查看项目"按钮）
             "project_name": m.project_name if hasattr(m, "project_name") else None,
             "attachments": m.attachments,  # 结构化消息卡（深度调研等）
         }
-        for m in rows[-limit:]
-    ]
+        if for_llm and isinstance(m.attachments, dict) and m.attachments.get("tool_calls"):
+            lines = []
+            for t in m.attachments["tool_calls"]:
+                task = f"task_id={t.get('task_id')}" if t.get("task_id") else ""
+                lines.append(
+                    f"[工具] {t.get('name', '')}({t.get('args', '')[:120]})"
+                    f" -> {t.get('result', '')[:100]} {task}".strip()
+                )
+            if lines:
+                d["content"] = f"{d['content']}\n\n{chr(10).join(lines)}".strip()
+        out.append(d)
+    return out
 
 
 def _append_message(session, conv: Conversation, user_id: int, role: str, content: str,
@@ -124,7 +142,7 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
                 session.commit()
 
         _append_message(session, conv, user.id, "user", body.message)
-        history = _conv_messages(session, conv)
+        history = _conv_messages(session, conv, for_llm=True)
 
     # 主 Agent 循环（工具调用 + 自由对话）
     agent_result = chat_agent.run_agent(conv, user, history)
@@ -132,13 +150,18 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
     with get_session() as session:
         # L1 来源卡：answer_with_sources 的 hits 随回复持久化（前端渲染"来源"列表）
         l1_sources = agent_result.get("l1_sources")
+        # C：工具调用痕迹随回复落库（attachments.tool_calls；排查可查 + 历史回传 LLM）
+        tool_logs = agent_result.get("tool_logs") or []
+        att: dict = {}
+        if l1_sources:
+            att.update({"type": "l1_sources", "level": "L1", "sources": l1_sources})
+        if tool_logs:
+            att["tool_calls"] = tool_logs
+            att.setdefault("type", "tool_calls")
         _append_message(
             session, conv, user.id, "assistant", agent_result["reply"],
             project_id=conv.project_id,
-            attachments=(
-                {"type": "l1_sources", "level": "L1", "sources": l1_sources}
-                if l1_sources else None
-            ),
+            attachments=att if att else None,
         )
 
     return ChatResponse(
@@ -440,3 +463,117 @@ def get_history(conversation_id: str, user: User = Depends(get_current_user)):
             "project_ids": conv.project_ids or [],
             "title": conv.title,
         }
+
+
+# ── 工作台概览（2-page IA：对话 → 子研究 → 四区块）──
+
+@router.get("/conversations/{conversation_id}/workspace")
+def get_workspace(conversation_id: str, user: User = Depends(get_current_user)):
+    """工作台概览：对话下的子研究列表，每个子研究含
+    检索记录 / L2 认知结构（骨架摘要，只读）/ 论文集合（已/未探究）/ 深入研究（已探究论文）。"""
+    with get_session() as session:
+        conv = (
+            session.query(Conversation)
+            .filter(Conversation.uuid == conversation_id, Conversation.user_id == user.id)
+            .first()
+        )
+        if conv is None:
+            raise HTTPException(404, "会话不存在")
+        sub_researches = []
+        for pid in (conv.project_ids or []):
+            proj = session.get(Project, pid)
+            if proj:
+                sub_researches.append(_project_workspace(session, proj))
+        return {
+            "conversation_id": conv.uuid,
+            "title": conv.title,
+            "sub_researches": sub_researches,
+        }
+
+
+def _project_workspace(session, p: Project) -> dict:
+    """单个子研究的四区块摘要（同一 session 聚合，避免嵌套连接）"""
+    # 检索记录（时间倒序）
+    runs = (
+        session.query(SearchRun)
+        .filter(SearchRun.project_id == p.id)
+        .order_by(SearchRun.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    # L2 认知结构（骨架摘要：按类别分组计数，只读展示）
+    cart_counts = (
+        session.query(CartItem.category, func.count(CartItem.id))
+        .filter(CartItem.project_id == p.id)
+        .group_by(CartItem.category)
+        .all()
+    )
+    # 论文推荐（深研推荐集）：最近一条 deep_research_result 结果卡的 candidates。
+    # 不用 project 下全量 ai_papers（全量属检索页范畴，工作台只展示"这次研究推荐的论文"）
+    rec_candidates: list[dict] = []
+    for m in (
+        session.query(Message)
+        .filter(Message.project_id == p.id)
+        .order_by(Message.id.desc())
+        .all()
+    ):
+        att = m.attachments
+        if isinstance(att, dict) and att.get("type") == "deep_research_result":
+            rec_candidates = att.get("candidates") or []
+            break
+
+    rec_ids = [c.get("paper_id") for c in rec_candidates if c.get("paper_id")]
+    paper_map: dict[int, Paper] = {}
+    if rec_ids:
+        for row in session.query(Paper).filter(Paper.id.in_(rec_ids)).all():
+            paper_map[row.id] = row
+    papers = [
+        {
+            "paper_id": c.get("paper_id"),
+            "openalex_id": (paper_map.get(c["paper_id"]).openalex_id if c.get("paper_id") in paper_map else ""),
+            "title": c.get("title", ""),
+            "year": c.get("year", 0),
+            "stage": (paper_map.get(c["paper_id"]).stage if c.get("paper_id") in paper_map else ""),
+            "explored": (paper_map.get(c["paper_id"]).explored_at is not None if c.get("paper_id") in paper_map else False),
+            "category": c.get("suggested_category", ""),
+            "reason": c.get("reason", ""),
+        }
+        for c in rec_candidates
+    ]
+    # 深入研究 = 该子研究已探究的历史论文（独立查询：不限推荐集，探究入口可能来自检索页）
+    explored_rows = (
+        session.query(Paper)
+        .filter(Paper.project_id == p.id, Paper.explored_at.isnot(None))
+        .order_by(Paper.explored_at.desc())
+        .limit(50)
+        .all()
+    )
+    explored_papers = [
+        {
+            "paper_id": row.id, "openalex_id": row.openalex_id, "title": row.title,
+            "year": row.year, "stage": row.stage, "explored": True,
+        }
+        for row in explored_rows
+    ]
+    return {
+        "project_id": p.id,
+        "name": p.name,
+        "user_query": p.user_query,
+        "tech_probe": p.tech_probe,
+        "created_at": p.created_at.isoformat() if p.created_at else "",
+        "search_runs": [
+            {
+                "id": r.id, "run_type": r.run_type, "query": r.query,
+                "user_constraint": r.user_constraint, "target_category": r.target_category,
+                "total_found": r.total_found, "saved_count": r.saved_count,
+                "covered_ratio": r.covered_ratio,
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+            }
+            for r in runs
+        ],
+        "cognitive": {
+            "categories": [{"category": c, "count": n} for c, n in cart_counts],
+        },
+        "papers": papers,
+        "explored_papers": explored_papers,
+    }

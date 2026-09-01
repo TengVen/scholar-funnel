@@ -174,6 +174,14 @@ class TrunkSearchEngine:
 
         # ── 5. Storage ──
         t0 = time.time()
+        # 覆盖率：本次召回中已在库（任意 stage）的占比——须在保存前统计（保存后全是"已知"）
+        covered = None
+        if final_papers:
+            try:
+                from storage.search_runs import coverage_ratio
+                covered = coverage_ratio(project_id, [p["paper"]["id"] for p in final_papers])
+            except Exception as e:
+                logger.warning(f"覆盖率统计失败（忽略）: {e}")
         saved = self._save(project_id, final_papers)
         t1 = time.time()
         trace["timing"]["step5_storage"] = round(t1 - t0, 1)
@@ -195,6 +203,17 @@ class TrunkSearchEngine:
                         "step5_storage": "入库",
                     }.get(step, step),
                 })
+
+        # ── 6. 检索记录（工作台"检索记录"视图 + 收敛检测）──
+        try:
+            from storage.search_runs import record_search_run
+            record_search_run(
+                project_id=project_id, run_type="trunk", query=user_query,
+                tech_probe=tech_probe, top_k=top_k, score_threshold=score_threshold,
+                total_found=len(candidates), saved_count=saved, covered_ratio=covered,
+            )
+        except Exception as e:
+            logger.warning(f"检索记录写入失败（忽略）: {e}")
 
         return {
             "expanded_queries": intent.combined_queries,
@@ -473,6 +492,24 @@ class TrunkSearchEngine:
         candidates_out = self._build_gap_candidates(
             project_id, target_category, final_papers
         )
+
+        # ── 5.5 检索记录（gap：覆盖率 = 候选 already_in_db 占比）──
+        covered = None
+        if candidates_out:
+            known = sum(1 for c in candidates_out if c.get("already_in_db"))
+            covered = known / len(candidates_out)
+        try:
+            from storage.search_runs import record_search_run
+            record_search_run(
+                project_id=project_id, run_type="gap", query=gap_query,
+                tech_probe=tech_probe, user_constraint=user_constraint,
+                target_category=target_category, top_k=top_k,
+                score_threshold=score_threshold,
+                total_found=total_found, saved_count=len(candidates_out),
+                covered_ratio=covered,
+            )
+        except Exception as e:
+            logger.warning(f"检索记录写入失败（忽略）: {e}")
 
         # ── 状态判定 ──
         n = len(candidates_out)

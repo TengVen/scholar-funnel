@@ -2,31 +2,27 @@
 
 import { useState } from "react";
 import {
-  Search, FileText, PanelLeftClose, PanelLeft, User, LogOut, LogIn,
+  Search, PanelLeftClose, PanelLeft, User, LogOut, LogIn,
   MessageSquare, Plus, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project, ConversationSummary } from "@/types/dto";
+import type { ConversationSummary } from "@/types/dto";
 import { useAuth } from "@/hooks/useAuth";
 import { AuthModal } from "@/components/common/AuthModal";
 
+/**
+ * 左栏：对话历史（2-page IA，GPT 式；无项目索引——子研究收敛到工作台概览）
+ */
 interface SidebarProps {
-  projects: Project[];
-  activeProject: Project | null;
   conversations: ConversationSummary[];
   activeConversationId: string | null;
-  onSelect: (p: Project) => void;
   onSelectConversation: (cid: string) => void;
   onNewConversation: () => void;
-  onNewProject: (query: string, techProbe: string) => void;
 }
 
 export function Sidebar({
-  projects,
-  activeProject,
   conversations,
   activeConversationId,
-  onSelect,
   onSelectConversation,
   onNewConversation,
 }: SidebarProps) {
@@ -99,9 +95,8 @@ export function Sidebar({
         </div>
       )}
 
-      {/* 主体：会话历史 + 项目 */}
+      {/* 主体：会话历史 */}
       <div className="flex-1 overflow-y-auto py-2">
-        {/* 会话历史分组 */}
         {!collapsed && (
           <div className="mb-1">
             <button
@@ -142,31 +137,9 @@ export function Sidebar({
           </div>
         )}
 
-        {/* 项目分组 */}
-        {!collapsed && (
-          <p className="px-3 mb-1 mt-2 text-2xs font-medium text-ink-faint uppercase tracking-widest">
-            Projects
-          </p>
-        )}
-        {projects.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => onSelect(p)}
-            className={cn(
-              "w-full flex items-center gap-2 px-3 py-1.5 text-left text-base transition-colors",
-              activeProject?.id === p.id
-                ? "bg-accent-light text-accent font-medium"
-                : "text-ink-secondary hover:bg-paper-warm",
-            )}
-          >
-            <FileText className="w-3.5 h-3.5 shrink-0" />
-            {!collapsed && <span className="truncate">{p.name}</span>}
-          </button>
-        ))}
-
-        {projects.length === 0 && !collapsed && (
+        {conversations.length === 0 && !collapsed && (
           <p className="px-3 py-4 text-sm text-ink-faint">
-            输入研究方向开始
+            发起一段对话，开始你的研究
           </p>
         )}
       </div>

@@ -48,10 +48,12 @@ interface PaperDetailPageProps {
   projectId?: number | null; // 当前研究项目（深入探究/问答需要）
   autoExplore?: boolean;     // L2/L3：点开详情页无分析时自动触发深入探究
   persistAnalysis?: boolean; // L3：分析完成直接写 paper_analysis（无需问答）
-  onBack?: () => void;
+  onBack?: () => void;       // 单返回（无双出口的调用方）
+  onBackChat?: () => void;   // 返回对话历史
+  onBackSearch?: () => void; // 返回检索页
 }
 
-export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = false, persistAnalysis = false, onBack }: PaperDetailPageProps) {
+export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = false, persistAnalysis = false, onBack, onBackChat, onBackSearch }: PaperDetailPageProps) {
   const [detail, setDetail] = useState<PaperDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [exploring, setExploring] = useState(false);
@@ -300,9 +302,23 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
     <div className="flex flex-col h-screen">
       {/* 顶栏 */}
       <header className="flex items-center gap-4 border-b border-line px-4 py-3 shrink-0">
-        <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-ink-muted hover:text-ink transition-colors">
-          <ArrowLeft className="w-4 h-4" /> 返回
-        </button>
+        {onBackChat && onBackSearch ? (
+          /* 双出口：返回对话历史 / 返回检索页 */
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button type="button" onClick={onBackChat}
+              className="flex items-center gap-1 text-sm text-ink-muted hover:text-ink transition-colors">
+              <ArrowLeft className="w-4 h-4" /> 对话
+            </button>
+            <button type="button" onClick={onBackSearch}
+              className="flex items-center gap-1 text-sm text-ink-muted hover:text-ink transition-colors">
+              <ArrowLeft className="w-4 h-4" /> 检索
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-ink-muted hover:text-ink transition-colors">
+            <ArrowLeft className="w-4 h-4" /> 返回
+          </button>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="font-serif text-lg font-semibold text-ink truncate">{detail.title}</h1>

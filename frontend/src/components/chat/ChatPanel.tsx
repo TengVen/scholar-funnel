@@ -22,6 +22,8 @@ interface ChatPanelProps {
   currentProjectId?: number | null;             // 当前项目（会话按项目恢复时记录）
   onRequestConsumed?: () => void;
   onConversationChanged?: (cid: string | null, projectId?: number | null) => void;
+  workspaceOpen?: boolean;                       // 工作台概览开合（按钮状态）
+  onToggleWorkspace?: () => void;                // 工作台概览开关（输入框附近小图标）
 }
 
 const genConvId = () =>
@@ -44,6 +46,8 @@ export function ChatPanel({
   currentProjectId,
   onRequestConsumed,
   onConversationChanged,
+  workspaceOpen,
+  onToggleWorkspace,
 }: ChatPanelProps) {
   const [conversationId, setConversationId] = useState(genConvId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -326,6 +330,8 @@ export function ChatPanel({
           config={config}
           setConfig={setConfig}
           inputRef={inputRef}
+          workspaceOpen={workspaceOpen}
+          onToggleWorkspace={onToggleWorkspace}
         />
       ) : (
         <>
@@ -352,6 +358,8 @@ export function ChatPanel({
             userQuery={userQuery}
             yearFrom={yearFrom}
             yearTo={yearTo}
+            workspaceOpen={workspaceOpen}
+            onToggleWorkspace={onToggleWorkspace}
           />
         </>
       )}

@@ -32,7 +32,12 @@ TOOL_FULL_SEARCH = {
     "type": "function",
     "function": {
         "name": "full_search",
-        "description": "执行一次完整的文献检索（意图拆解→OpenAlex 召回→重排→入库），会生成一个新项目。用户明确要'检索/搜一下/查文献/找论文'且研究方向已明确时调用。",
+        "description": (
+            "执行一次完整的文献检索（意图拆解→OpenAlex 召回→重排→入库），每次调用都会生成一个新项目。"
+            "触发场景：① 用户明确要'检索/搜一下/查文献/找论文'且研究方向已明确；"
+            "② 用户对已有方向说'重新检索/再搜一次/换个关键词再搜/重新跑一遍'——同样调用本工具（生成新项目），"
+            "不要仅凭话术确认。"
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -580,6 +585,7 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
     tool_name = None
     tool_summary = None
     l1_sources: list[dict] | None = None  # L1 来源卡（answer_with_sources hits，随回复落卡）
+    tool_logs: list[dict] = []            # 本轮工具调用痕迹（随回复落库，供排查与历史回传）
     # 回答分层路由（L0/L1/L2）：层级 = 首轮工具选择；辅助工具不改变层级
     t0 = time.time()
     first_round_tools: list[str] = []
@@ -601,6 +607,9 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
             loop_messages, tools=TOOLS, system=SYSTEM_PROMPT, temperature=0.3)
         if not tool_calls:
             reply = (content or "").strip()
+            # B：启动话术强校验——声称"已启动"但本轮无异步任务（task_id 空）→ 如实告知失败
+            if task_id is None and _looks_like_launched(reply):
+                reply = "检索未成功启动，请重试，或再说一次「重新检索」。"
             _emit_routing(_infer_level(first_round_tools), reply)
             return {
                 "reply": reply,
@@ -608,6 +617,7 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
                 "tool_name": tool_name,
                 "tool_summary": tool_summary,
                 "l1_sources": l1_sources,
+                "tool_logs": tool_logs,
             }
         if not first_round_tools:
             first_round_tools = [tc.get("name", "") for tc in tool_calls]
@@ -630,6 +640,8 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
         # 2) 执行工具并回传结果
         for tc in tool_calls:
             result = execute_tool(tc["name"], tc.get("arguments") or {}, conv, user)
+            # C：工具调用痕迹收集（落库 + 历史回传，排查可查）
+            tool_logs.append(_summarize_tool(tc, result))
             # 异步工具（full_search / deep_research）记录 task_id + 工具类型（前端据此选轮询路径）
             if tc["name"] in ("full_search", "deep_research"):
                 tid = result.get("task_id") or result.get("thread_id")
@@ -649,9 +661,42 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
 
     # 超出轮数兜底
     reply = "好的，已处理。有什么想继续深入的吗？"
+    if task_id is None and _looks_like_launched(reply):
+        reply = "检索未成功启动，请重试，或再说一次「重新检索」。"
     _emit_routing(_infer_level(first_round_tools), reply)
     return {
         "reply": reply,
         "task_id": task_id, "tool_name": tool_name, "tool_summary": tool_summary,
         "l1_sources": l1_sources,
+        "tool_logs": tool_logs,
     }
+
+
+# ── 工具痕迹摘要 + 启动话术识别（B/C 方案） ──
+
+def _summarize_tool(tc: dict, result: dict) -> dict:
+    """工具调用摘要（args/result 截断，供落库与历史回传）"""
+    args = tc.get("arguments") or {}
+    return {
+        "name": tc.get("name", ""),
+        "args": json.dumps(args, ensure_ascii=False)[:300],
+        "result": (result.get("message") or "")[:200],
+        "status": result.get("status", "ok"),
+        "task_id": result.get("task_id") or result.get("thread_id") or "",
+        "project_id": result.get("project_id"),
+    }
+
+
+def _looks_like_launched(reply: str) -> bool:
+    """回复是否声称检索/调研已启动（B 方案拦截用）；排除失败/未启动语境"""
+    if not reply:
+        return False
+    lowered = reply.lower()
+    # 排除明确的失败/未启动表述
+    for neg in ("未成功", "失败", "无法启动", "未能启动", "没有启动", "未启动"):
+        if neg in reply:
+            return False
+    for kw in ("已启动", "已经启动", "启动", "已开始", "检索中", "开始检索", "启动检索", "深度调研已启动", "调研已启动"):
+        if kw in lowered or kw in reply:
+            return True
+    return False

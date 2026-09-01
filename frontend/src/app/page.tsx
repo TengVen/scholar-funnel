@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { NAV_TABS } from "@/config/nav";
+import { Suspense, useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { LayoutGrid, ArrowLeft } from "lucide-react";
+import type { SortSpec, Category } from "@/types/domain";
 import { DEFAULT_SORT } from "@/config/search";
-import type { Page, SortSpec, Category } from "@/types/domain";
 import type { Paper, SearchResult, GapSearchResult } from "@/types/dto";
 import { listPapers } from "@/lib/api/search";
 import {
@@ -17,19 +18,20 @@ import { SearchPanel } from "@/components/search/SearchPanel";
 import { PaperList } from "@/components/search/PaperList";
 import { PaperCard } from "@/components/search/PaperCard";
 import { GapPanel } from "@/components/search/GapPanel";
-import { CartPanel } from "@/components/cart/CartPanel";
 import { StatsBar } from "@/components/search/StatsBar";
-import { BranchPanel } from "@/components/branch/BranchPanel";
-import { NetworkPanel } from "@/components/network/NetworkPanel";
 import { ChatPanel } from "@/components/chat/ChatPanel";
-import { CartDetail } from "@/components/cart/CartDetail";
+import { ResizablePanel } from "@/components/paper/ResizablePanel";
+import { WorkspacePanel } from "@/components/workspace/WorkspacePanel";
 import { ToastContainer } from "@/components/common/ToastContainer";
 import { Database } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 export default function Home() {
-  // ── 路由状态（局部 UI 状态，按 spec 用 useState）──
-  const [activePage, setActivePage] = useState<Page>("chat");
+  const router = useRouter();
+  // ── 主区域视图（2-page IA：无顶部 tab，对话为主；检索为工作台进入的子视图）──
+  const [activeView, setActiveView] = useState<"chat" | "search">("chat");
+  const [workspaceOpen, setWorkspaceOpen] = useState(false); // 工作台概览右栏
+  const [workspaceW, setWorkspaceW] = useState(320);         // 工作台右栏宽度（可拖拽）
 
   // ── 项目 / 会话（全局共享 → projectStore）──
   const projects = useProjectStore((s) => s.projects);
@@ -89,7 +91,8 @@ export default function Home() {
   useEffect(() => {
     if (!authInitialized) return;
     resetSession();
-    setActivePage("chat");
+    setActiveView("chat");
+    setWorkspaceOpen(false);
     loadProjects();
     loadConversations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,15 +105,12 @@ export default function Home() {
     return () => window.removeEventListener("chat:updated", handler);
   }, [loadConversations]);
 
-  // ── 跨页导航指令（检索页→对话页 / 分支·网络页→骨架页）──
+  // ── 跨视图导航指令（检索页返回对话）──
   useEffect(() => {
-    const toChat = () => setActivePage("chat");
-    const toCart = () => setActivePage("cart");
+    const toChat = () => setActiveView("chat");
     window.addEventListener("navigate-to-chat", toChat);
-    window.addEventListener("navigate-to-cart", toCart);
     return () => {
       window.removeEventListener("navigate-to-chat", toChat);
-      window.removeEventListener("navigate-to-cart", toCart);
     };
   }, []);
 
@@ -172,7 +172,7 @@ export default function Home() {
     if (!activeProject) return;
     setLocalSearching(true);
     setLocalMode(true);
-    setActivePage("search");
+    setActiveView("search");
     try {
       const res = await runLocalSearch({ project_id: activeProject.id, query, limit: 30 });
       setLocalPapers(res.papers);
@@ -198,6 +198,47 @@ export default function Home() {
       toast(`创建项目失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     }
   };
+
+  // ── 工作台：检索记录 → 检索页（切到该子研究）──
+  const handleOpenSearch = (pid: number) => {
+    loadProjects().then(() => {
+      const found = useProjectStore.getState().projects.find((p) => p.id === pid);
+      if (found) {
+        setActiveProject(found);
+        setActiveView("search");
+      }
+    });
+  };
+
+  // ── 工作台：深入研究 / 论文 → 详情页（带来源对话，供详情页"返回对话"直达）──
+  const handleOpenPaper = (paperId: number, projectId: number) => {
+    const conv = activeConversationId ? `&conv_id=${activeConversationId}` : "";
+    router.push(`/paper/${paperId}?project_id=${projectId}${conv}`);
+  };
+
+  // ── 详情页返回路由：/?view=search&project_id= → 切检索；/?conversation_id= → 打开对话 ──
+  const handleRouteQuery = useCallback((q: URLSearchParams) => {
+    const convId = q.get("conversation_id");
+    if (convId) {
+      selectConversation(convId);
+      setActiveView("chat");
+      return;
+    }
+    const pidRaw = q.get("project_id");
+    if (q.get("view") === "search" && pidRaw) {
+      const pid = Number(pidRaw);
+      if (Number.isFinite(pid)) {
+        loadProjects().then(() => {
+          const found = useProjectStore.getState().projects.find((p) => p.id === pid);
+          if (found) {
+            setActiveProject(found);
+            setActiveView("search");
+          }
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectConversation, loadProjects, setActiveProject]);
 
   // ── 加入/移出骨架（cartStore 内部已自动重载骨架；"已在骨架"标记由 PaperCard 从 store 实时推导，
   //    论文列表数据未变，无需重拉 → 避免列表闪烁）──
@@ -238,7 +279,7 @@ export default function Home() {
           });
       setGapResult(res);
       setGapMode(true);
-      setActivePage("search");            // 跳到检索页查看重检索结果
+      setActiveView("search");            // 跳到检索页查看重检索结果
     } catch (e: unknown) {
       toast(`补充检索失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
@@ -264,7 +305,7 @@ export default function Home() {
       });
       setGapResult(res);
       setGapMode(true);
-      setActivePage("search");
+      setActiveView("search");
     } catch (e: unknown) {
       toast(`标题查找失败: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
@@ -282,19 +323,19 @@ export default function Home() {
   // ── 骨架论文 ID 集合（用于网络面板判断是否已加入） ──
   const cartPaperIds = new Set(cart?.items.map((it) => it.paper_id) ?? []);
 
-  // ── 渲染主内容区（纯页面组装） ──
+  // ── 渲染主内容区（纯页面组装；2-page IA：对话 / 检索两个视图）──
   const renderContent = () => {
-    // 需要项目的页面
-    const needsProject = activePage !== "chat";
+    // 检索视图需要当前子研究（activeProject）
+    const needsProject = activeView !== "chat";
     if (needsProject && !activeProject) {
       return (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-base text-ink-faint">选择或创建一个项目开始</p>
+          <p className="text-base text-ink-faint">请从工作台的检索记录进入</p>
         </div>
       );
     }
 
-    switch (activePage) {
+    switch (activeView) {
       case "search":
         // 重检索模式：展示缺口补充候选（按类别分组）
         if (gapMode) {
@@ -384,26 +425,6 @@ export default function Home() {
             />
           </>
         );
-      case "cart":
-        return (
-          <CartDetail
-            projectId={activeProject!.id}
-            cart={cart}
-            onRefresh={async () => {
-              await Promise.all([
-                loadCart(activeProject!.id),
-                loadPapers(activeProject!.id, page),
-              ]);
-            }}
-            onGapSearch={handleGapSearch}
-            onTitleLookup={handleTitleLookup}
-            gapSearching={gapSearching}
-          />
-        );
-      case "branch":
-        return <BranchPanel projectId={activeProject!.id} cart={cart} />;
-      case "network":
-        return <NetworkPanel projectId={activeProject!.id} cart={cart} />;
       case "chat":
         return (
           <ChatPanel
@@ -420,7 +441,7 @@ export default function Home() {
                 const found = useProjectStore.getState().projects.find((p) => p.id === pid);
                 if (found) {
                   setActiveProject(found);
-                  setActivePage("search");
+                  setActiveView("search");
                 }
               });
             }}
@@ -432,6 +453,8 @@ export default function Home() {
               setActiveConversationId(cid);
               rememberLastConversation(cid, pid ?? null);
             }}
+            workspaceOpen={workspaceOpen}
+            onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}
           />
         );
     }
@@ -439,85 +462,90 @@ export default function Home() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* 左侧边栏 */}
+      {/* 左栏：对话历史（2-page IA：无项目索引） */}
       <Sidebar
-        projects={projects}
-        activeProject={activeProject}
         conversations={conversations}
         activeConversationId={activeConversationId}
-        onSelect={(p) => {
-          selectProject(p);
-          setActivePage("search");
-        }}
         onSelectConversation={(cid) => {
           selectConversation(cid);
-          setActivePage("chat");
+          setActiveView("chat");
         }}
         onNewConversation={() => {
           newConversation();
-          setActivePage("chat");
+          setActiveView("chat");
         }}
-        onNewProject={handleNewProject}
       />
 
-      {/* 中间主区域 */}
+      {/* 主区域（对话 / 检索两视图） */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* 导航标签 —— 分段控制器 + 低饱和珠宝色（居中） */}
-        <div className="flex items-center px-4 border-b border-line bg-paper-white shrink-0">
-          {/* 左侧占位（对称） */}
-          <div className="flex-1" />
+        {activeView === "chat" ? (
+          <div className="flex flex-1 min-h-0">
+            <div className="flex-1 flex flex-col min-w-0">
+              {/* 对话区顶部：对话标题 + 工作台概览入口 */}
+              <div className="flex items-center gap-3 px-4 py-2 border-b border-line bg-paper-white shrink-0">
+                <p className="flex-1 min-w-0 text-sm text-ink-muted truncate">
+                  {conversations.find((c) => c.conversation_id === activeConversationId)?.title || "新对话"}
+                </p>
+              </div>
+              <div className="flex-1 flex flex-col min-h-0">{renderContent()}</div>
+            </div>
 
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-paper-warm border border-line">
-            {NAV_TABS.map((tab) => {
-              const Icon = tab.icon;
-              const active = activePage === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActivePage(tab.key)}
-                  className="nav-tab group flex items-center gap-1.5 px-3.5 py-1.5 text-sm rounded-lg transition-all duration-150"
-                  style={{
-                    ["--tab-color" as string]: tab.color,
-                    ["--tab-glow" as string]: tab.glow,
-                    ...(active
-                      ? {
-                          background: tab.glow,
-                          color: tab.color,
-                          boxShadow: `inset 0 0 0 1px ${tab.color}55`,
-                        }
-                      : {}),
-                  }}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 右侧占位：项目名徽章 */}
-          <div className="flex-1 flex items-center justify-end">
-            {activeProject && (
-              <span className="flex items-center gap-1.5 text-xs text-ink-muted pl-2 pr-1 truncate max-w-[220px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-gold shrink-0" />
-                <span className="truncate">{activeProject.name}</span>
-              </span>
+            {/* 工作台概览右栏（可拖拽/折叠） */}
+            {workspaceOpen && (
+              <ResizablePanel
+                side="right"
+                width={workspaceW}
+                collapsed={false}
+                minWidth={260}
+                maxWidth={440}
+                onResize={setWorkspaceW}
+                onToggle={() => setWorkspaceOpen(false)}
+                header={<><LayoutGrid className="w-4 h-4 text-accent" /> 工作台概览</>}
+              >
+                <WorkspacePanel
+                  conversationId={activeConversationId}
+                  onOpenSearch={handleOpenSearch}
+                  onOpenPaper={handleOpenPaper}
+                />
+              </ResizablePanel>
             )}
           </div>
-        </div>
-
-        {/* 内容区 */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {renderContent()}
-        </div>
+        ) : (
+          <div className="flex flex-1 min-h-0">
+            <div className="flex-1 flex flex-col min-w-0">
+              {/* 检索视图顶部：返回对话 */}
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-line bg-paper-white shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveView("chat")}
+                  className="flex items-center gap-1 text-sm text-ink-muted hover:text-ink transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" /> 返回对话
+                </button>
+                <span className="flex-1 min-w-0 text-sm text-ink-faint truncate">
+                  {activeProject?.name ?? ""}
+                </span>
+              </div>
+              <div className="flex-1 flex flex-col min-h-0">{renderContent()}</div>
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* 右侧骨架面板（仅检索页显示） */}
-      {activePage === "search" && (
-        <CartPanel cart={cart} onRemove={handleRemoveFromCart} />
-      )}
-
+      <Suspense fallback={null}>
+        <RouteQueryBridge onRoute={handleRouteQuery} />
+      </Suspense>
       <ToastContainer />
     </div>
   );
+}
+
+/** URL 路由桥：响应详情页"返回对话/返回检索"携带的 query（Suspense 包裹满足 useSearchParams 要求） */
+function RouteQueryBridge({ onRoute }: { onRoute: (q: URLSearchParams) => void }) {
+  const search = useSearchParams();
+  useEffect(() => {
+    onRoute(search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+  return null;
 }

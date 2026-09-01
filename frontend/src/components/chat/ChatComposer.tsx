@@ -1,7 +1,7 @@
 "use client";
 
 import type { KeyboardEvent, RefObject } from "react";
-import { Send, Loader2 } from "lucide-react";
+import { LayoutGrid, Send, Loader2 } from "lucide-react";
 import type { ChatConfig } from "@/types/domain";
 import { ChatConfigBar } from "./ChatConfigBar";
 
@@ -11,7 +11,7 @@ import { ChatConfigBar } from "./ChatConfigBar";
 export function ChatComposer({
   input, setInput, onSend, onKeyDown, placeholder, inputDisabled, sending,
   config, setConfig, inputRef,
-  stage, userQuery, yearFrom, yearTo,
+  stage, userQuery, yearFrom, yearTo, workspaceOpen, onToggleWorkspace,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -27,10 +27,29 @@ export function ChatComposer({
   userQuery?: string;
   yearFrom?: number;
   yearTo?: number;
+  workspaceOpen?: boolean;
+  onToggleWorkspace?: () => void;
 }) {
   return (
     <div className="shrink-0 px-6 pb-5 pt-2">
       <div className="max-w-4xl mx-auto">
+        {/* 输入框上方一行：工作台概览入口（对话框附近小图标） */}
+        <div className="flex items-center justify-end mb-1">
+          {onToggleWorkspace && (
+            <button
+              type="button"
+              onClick={onToggleWorkspace}
+              title="工作台概览"
+              className={`p-1.5 rounded-lg border transition-colors ${
+                workspaceOpen
+                  ? "border-gold/40 bg-gold/10 text-gold-light"
+                  : "border-transparent text-ink-faint hover:text-ink hover:bg-paper-warm hover:border-line"
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          )}
+        </div>
         <div className="glow-shell">
           <div className="glow-inner">
             <div className="flex items-center gap-2 px-4 py-2.5">

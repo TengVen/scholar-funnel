@@ -89,10 +89,15 @@ def _make_request(endpoint: str, params: dict | None = None) -> dict:
     - 429：尊重 Retry-After（无则指数退避），最多 3 次
     - 5xx / 网络错误：指数退避重试
     - 其他 HTTP 错误：直接抛出（调用方降级）
+
+    Premium：配置了 OPENALEX_API_KEY 时所有请求携带 api_key，
+    走 Premium 配额（10k 请求/天）；否则落匿名公共池（1k/天、按 IP，易 429）。
     """
     if params is None:
         params = {}
     params["mailto"] = get_mailto()
+    if OPENALEX_API_KEY:
+        params["api_key"] = OPENALEX_API_KEY
 
     for attempt in range(3):
         try:

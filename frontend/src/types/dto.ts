@@ -564,6 +564,54 @@ export interface ConversationHistory {
   title: string;
 }
 
+// ── 工作台概览（2-page IA：对话 → 子研究 → 四区块）──
+
+export interface SearchRunRecord {
+  id: number;
+  run_type: string;
+  query?: string | null;
+  user_constraint?: string | null;
+  target_category?: string | null;
+  total_found: number;
+  saved_count: number;
+  covered_ratio?: number | null;
+  created_at: string;
+}
+
+export interface CognitiveCategoryCount {
+  category: string;
+  count: number;
+}
+
+export interface PaperBrief {
+  paper_id: number;
+  openalex_id: string;
+  title: string;
+  year?: number | null;
+  stage: string;
+  explored: boolean;
+  category?: string;   // 建议归类（foundation/mainstream/frontier，深研推荐集）
+  reason?: string;     // 推荐理由（深研结果卡同源）
+}
+
+export interface SubResearchWorkspace {
+  project_id: number;
+  name: string;
+  user_query?: string | null;
+  tech_probe?: string | null;
+  created_at: string;
+  search_runs: SearchRunRecord[];
+  cognitive: { categories: CognitiveCategoryCount[] };
+  papers: PaperBrief[];
+  explored_papers: PaperBrief[];
+}
+
+export interface ConversationWorkspace {
+  conversation_id: string;
+  title: string;
+  sub_researches: SubResearchWorkspace[];
+}
+
 // ── Settings / 公告 ──
 
 export interface Announcement {
