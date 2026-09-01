@@ -8,8 +8,180 @@
    ① 基础层 Base —— 全局 reset / 滚动条 / 表单焦点 / 选区
    ══════════════════════════════════════════════════════════ */
 @layer base {
+  /* ── 主题变量集（2026-09-01 多主题架构）──
+     :root = 深色墨黑 + 鎏金（默认）
+     [data-theme="light"] = 暖米白 #FAF2E0 + 钴蓝强调（可切换）*/
   :root {
     color-scheme: dark;
+    /* 背景 */
+    --paper: 18 17 16;            /* #121110 墨黑 */
+    --paper-white: 23 22 20;      /* #171614 卡片 */
+    --paper-warm: 30 27 23;       /* #1e1b17 暖面 */
+    --paper-chrome: 23 22 20;     /* 框架面（左栏/顶栏）：深墨下与卡片同色 */
+    /* 文字 */
+    --ink: 240 236 228;           /* #f0ece4 暖白 */
+    --ink-secondary: 184 176 164;
+    --ink-muted: 143 138 128;
+    --ink-faint: 107 101 90;
+    /* 强调（鎏金） */
+    --accent: 201 162 75;         /* #c9a24b */
+    --accent-hover: 168 132 58;
+    /* 金阶 */
+    --gold-bright: 243 226 179;
+    --gold-light: 230 200 121;
+    --gold: 201 162 75;
+    --gold-hover: 168 132 58;
+    --gold-deep: 138 106 44;
+    /* 边框 */
+    --line: 42 38 32;             /* #2a2620 */
+    --line-light: 34 31 26;
+    /* 语义 */
+    --success: 127 199 158;
+    --warn: 224 181 106;
+    --danger: 248 113 113;
+    /* 状态 */
+    --status-running: 194 123 160;  /* #C27BA0 粉 */
+    --status-partial: 224 181 106;  /* 金 */
+    --status-failed: 248 113 113;   /* 红 */
+    /* 分类三色（深色主题：亮金/亮蓝/亮青） */
+    --cat-foundation: 201 162 75;
+    --cat-mainstream: 123 167 255;
+    --cat-frontier: 95 207 190;
+    /* 辅助冷调点缀（关键词徽章/证据徽章/标记；深色主题=亮色） */
+    --aux-teal: 95 207 190;
+    --aux-gold: 214 179 90;
+    --aux-amber: 239 159 39;
+    --aux-gray: 180 178 169;
+    --aux-blue: 91 143 249;
+    --aux-green: 122 189 142;
+    --aux-purple: 180 160 240;
+    --aux-cyan: 110 200 230;
+  }
+
+  [data-theme="light"] {
+    color-scheme: light;
+    /* 背景：暖米白纸面（侧栏同色，靠边框区隔） */
+    --paper: 250 242 224;         /* #FAF2E0 暖米白 */
+    --paper-white: 255 255 255;   /* 白卡 */
+    --paper-warm: 236 227 207;    /* 暖米白深一档 #ECE3CF */
+    /* 框架面（左栏/顶栏）：暖砂色，与暖米白底同色系，避免纯白的冷调硬边 */
+    --paper-chrome: 233 219 182;  /* #E9DBB6 */
+    /* 文字：深蓝灰 */
+    --ink: 42 58 71;              /* #2A3A47 */
+    --ink-secondary: 90 107 125;
+    --ink-muted: 122 136 148;
+    --ink-faint: 154 164 173;
+    /* 强调：钴蓝（学术理性） */
+    --accent: 14 97 172;          /* #0E61AC */
+    --accent-hover: 11 78 140;
+    /* 金阶：暖底加深（金色按钮/高亮保持可读） */
+    --gold-bright: 240 200 120;
+    --gold-light: 212 168 88;
+    --gold: 176 137 58;
+    --gold-hover: 138 106 44;
+    --gold-deep: 106 80 32;
+    /* 边框：暖灰 */
+    --line: 210 199 176;
+    --line-light: 224 216 195;
+    /* 语义（浅底加深） */
+    --success: 52 122 84;
+    --warn: 168 122 48;
+    --danger: 190 60 45;
+    /* 状态 */
+    --status-running: 165 88 138;  /* 粉加深 */
+    --status-partial: 168 122 48;
+    --status-failed: 190 60 45;
+    /* 分类三色：浅色主题用深版本保证可读 */
+    --cat-foundation: 176 137 58;   /* 深金 */
+    --cat-mainstream: 24 95 165;    /* #185FA5 深蓝 */
+    --cat-frontier: 15 110 86;      /* #0F6E56 深青 */
+    /* 辅助冷调点缀：浅色主题加深（保证徽章文字可读） */
+    --aux-teal: 15 110 86;
+    --aux-gold: 176 137 58;
+    --aux-amber: 178 108 20;
+    --aux-gray: 120 118 110;
+    --aux-blue: 24 95 165;
+    --aux-green: 56 116 72;
+    --aux-purple: 104 90 168;
+    --aux-cyan: 28 128 158;
+  }
+
+  [data-theme="ivory"] {
+    color-scheme: light;
+    /* 背景：象牙白纸面（#fffbf0）+ 普鲁士蓝强调 */
+    --paper: 255 251 240;         /* #fffbf0 象牙白 */
+    --paper-white: 255 255 255;   /* 白卡 */
+    --paper-warm: 240 234 220;    /* #F0EADC 深一档 */
+    --paper-chrome: 255 255 255;  /* 框架面：暂与卡片同色（待单独调色） */
+    --ink: 31 58 85;              /* #1F3A55 深蓝灰 */
+    --ink-secondary: 90 100 116;
+    --ink-muted: 122 136 148;
+    --ink-faint: 154 164 173;
+    --accent: 1 62 117;           /* #013E75 普鲁士蓝 */
+    --accent-hover: 0 48 92;
+    --gold-bright: 240 200 120;
+    --gold-light: 212 168 88;
+    --gold: 176 137 58;
+    --gold-hover: 138 106 44;
+    --gold-deep: 106 80 32;
+    --line: 214 205 185;
+    --line-light: 228 221 204;
+    --success: 52 122 84;
+    --warn: 168 122 48;
+    --danger: 190 60 45;
+    --status-running: 165 88 138;
+    --status-partial: 168 122 48;
+    --status-failed: 190 60 45;
+    --cat-foundation: 176 137 58;
+    --cat-mainstream: 24 95 165;
+    --cat-frontier: 15 110 86;
+    --aux-teal: 15 110 86;
+    --aux-gold: 176 137 58;
+    --aux-amber: 178 108 20;
+    --aux-gray: 120 118 110;
+    --aux-blue: 24 95 165;
+    --aux-green: 56 116 72;
+    --aux-purple: 104 90 168;
+    --aux-cyan: 28 128 158;
+  }
+
+  [data-theme="frost"] {
+    color-scheme: light;
+    /* 背景：雾蓝灰（#E8F0F2）+ 古驰绿强调 */
+    --paper: 232 240 242;         /* #E8F0F2 雾蓝灰 */
+    --paper-white: 255 255 255;   /* 白卡 */
+    --paper-warm: 218 228 231;    /* #DAE4E7 深一档 */
+    --paper-chrome: 255 255 255;  /* 框架面：暂与卡片同色（待单独调色） */
+    --ink: 42 59 51;              /* #2A3B33 深绿灰 */
+    --ink-secondary: 86 104 95;
+    --ink-muted: 122 136 130;
+    --ink-faint: 154 166 160;
+    --accent: 31 68 51;           /* #1F4433 古驰绿 */
+    --accent-hover: 24 54 40;
+    --gold-bright: 240 200 120;
+    --gold-light: 212 168 88;
+    --gold: 176 137 58;
+    --gold-hover: 138 106 44;
+    --gold-deep: 106 80 32;
+    --line: 200 214 214;
+    --line-light: 214 226 226;
+    --success: 52 122 84;
+    --warn: 168 122 48;
+    --danger: 190 60 45;
+    --status-running: 165 88 138;
+    --status-partial: 168 122 48;
+    --status-failed: 190 60 45;
+    --cat-foundation: 176 137 58;
+    --cat-mainstream: 24 95 165;
+    --cat-frontier: 15 110 86;
+    --aux-teal: 15 110 86;
+    --aux-gold: 176 137 58;
+    --aux-amber: 178 108 20;
+    --aux-gray: 120 118 110;
+    --aux-blue: 24 95 165;
+    --aux-green: 56 116 72;
+    --aux-purple: 104 90 168;
+    --aux-cyan: 28 128 158;
   }
 
   body {
@@ -53,7 +225,7 @@
   }
 
   .btn {
-    @apply px-3.5 py-1.5 rounded-md text-[13px] font-medium
+    @apply px-3.5 py-1.5 rounded-md text-base font-medium
            transition-colors duration-100
            disabled:opacity-40 disabled:cursor-not-allowed;
   }
@@ -71,7 +243,7 @@
 
   .badge {
     @apply inline-flex items-center gap-1 px-1.5 py-0.5
-           rounded text-[11px] font-medium tracking-wide;
+           rounded text-xs font-medium tracking-wide;
   }
   .badge-blue {
     @apply badge bg-accent-light text-gold-light border border-gold/25;
@@ -85,7 +257,7 @@
 
   .input {
     @apply w-full px-3 py-2 bg-paper-warm border border-line rounded-md
-           text-[13px] text-ink placeholder:text-ink-faint
+           text-base text-ink placeholder:text-ink-faint
            focus:border-gold/60 focus:ring-1 focus:ring-gold/25
            transition-colors;
   }
@@ -143,6 +315,22 @@
     width: 14px;
     height: 14px;
   }
+}
+
+/* 浅色主题适配：流光特效降透明度（暖米白底上避免显脏） */
+[data-theme="light"] .glow-shell::before {
+  background: conic-gradient(
+    from 0deg,
+    rgba(176, 137, 58, 0.4),
+    rgba(212, 168, 88, 0.22),
+    rgba(24, 95, 165, 0.28),
+    rgba(28, 128, 158, 0.22),
+    rgba(212, 168, 88, 0.22),
+    rgba(176, 137, 58, 0.4)
+  );
+}
+[data-theme="light"] .glow-shell {
+  border-color: rgba(176, 137, 58, 0.35);
 }
 
 /* ══════════════════════════════════════════════════════════

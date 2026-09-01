@@ -362,9 +362,9 @@ export default function Home() {
                 onNewProject={handleNewProject}
                 onLocalSearch={handleLocalSearch}
               />
-              <div className="flex items-center justify-between px-6 py-2 border-b border-[#4FAF9F]/25 bg-[#4FAF9F]/[0.06] shrink-0">
+              <div className="flex items-center justify-between px-6 py-2 border-b border-aux-teal/25 bg-aux-teal/[0.06] shrink-0">
                 <span className="flex items-center gap-2 text-sm text-ink-muted">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#4FAF9F]/15 text-[#6fcebd] border border-[#4FAF9F]/30">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-aux-teal/15 text-aux-teal border border-aux-teal/30">
                     <Database className="w-3 h-3" />
                     本地库召回
                   </span>
@@ -378,10 +378,10 @@ export default function Home() {
                   退出本地检索
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2 bg-[#4FAF9F]/[0.02]">
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2 bg-aux-teal/[0.02]">
                 {localSearching && localPapers.length === 0 ? (
                   <div className="flex items-center justify-center py-12">
-                    <div className="w-5 h-5 border-2 border-line border-t-[#4FAF9F] rounded-full animate-spin" />
+                    <div className="w-5 h-5 border-2 border-line border-t-aux-teal rounded-full animate-spin" />
                   </div>
                 ) : localPapers.length === 0 ? (
                   <div className="flex-1 flex flex-col items-center justify-center gap-2 text-ink-faint">
@@ -482,7 +482,7 @@ export default function Home() {
           <div className="flex flex-1 min-h-0">
             <div className="flex-1 flex flex-col min-w-0">
               {/* 对话区顶部：对话标题 + 工作台概览入口 */}
-              <div className="flex items-center gap-3 px-4 py-2 border-b border-line bg-paper-white shrink-0">
+              <div className="flex items-center gap-3 px-4 py-2 border-b border-line bg-paper-chrome shrink-0">
                 <p className="flex-1 min-w-0 text-sm text-ink-muted truncate">
                   {conversations.find((c) => c.conversation_id === activeConversationId)?.title || "新对话"}
                 </p>
@@ -514,7 +514,7 @@ export default function Home() {
           <div className="flex flex-1 min-h-0">
             <div className="flex-1 flex flex-col min-w-0">
               {/* 检索视图顶部：返回对话 */}
-              <div className="flex items-center gap-2 px-4 py-2 border-b border-line bg-paper-white shrink-0">
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-line bg-paper-chrome shrink-0">
                 <button
                   type="button"
                   onClick={() => setActiveView("chat")}

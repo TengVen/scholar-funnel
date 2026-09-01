@@ -35,7 +35,7 @@ export function PaperContentPanel({ abstract, abstractSource = "", sections, mat
           <div className="flex items-center gap-2 mb-2">
             <h2 className="font-serif text-base font-semibold text-ink">摘要</h2>
             {isAiTldr && (
-              <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-[#C27BA0]/30 text-[#C27BA0] bg-[#C27BA0]/10 whitespace-nowrap">
+              <span className="text-xs px-1.5 py-0.5 rounded-full border border-status-running/30 text-status-running bg-status-running/10 whitespace-nowrap">
                 AI 生成概要 · 非原文
               </span>
             )}

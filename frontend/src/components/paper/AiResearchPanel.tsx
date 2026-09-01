@@ -120,7 +120,7 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
   return (
     <div className="flex flex-col gap-4">
       {materialType === "无材料" && (
-        <div className="text-xs text-[#C27BA0] border border-[#C27BA0]/25 bg-[#C27BA0]/10 rounded-md px-3 py-2 leading-relaxed">
+        <div className="text-xs text-status-running border border-status-running/25 bg-status-running/10 rounded-md px-3 py-2 leading-relaxed">
           未获取到论文材料（无摘要无全文），以下分析仅供参考；上传 PDF 后可自动升级为全文级分析。
         </div>
       )}
@@ -249,7 +249,7 @@ function EvidenceItems({ evidence, onLocate, sections }: {
         >
           {ev.section ? (
             <span
-              className="text-[11px] px-1.5 py-0.5 rounded-md whitespace-nowrap shrink-0 mt-px"
+              className="text-xs px-1.5 py-0.5 rounded-md whitespace-nowrap shrink-0 mt-px"
               style={{
                 background: "rgba(95,207,190,0.16)",
                 color: "#5DCAA5",

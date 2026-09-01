@@ -73,7 +73,7 @@ export function PaperQaBox({ detail, projectId, onAsk, onLocate }: PaperQaBoxPro
                 >
                   {c.section ? (
                     <span
-                      className="px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap shrink-0 mt-px"
+                      className="px-1.5 py-0.5 rounded text-xs whitespace-nowrap shrink-0 mt-px"
                       style={{ background: "rgba(120,170,255,0.14)", color: "#9FC4FF" }}
                     >
                       {c.section}

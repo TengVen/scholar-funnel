@@ -9,42 +9,68 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // ── 主题化语义色（2026-09-01：全部引用 CSS 变量，支持多主题切换）──
+        // 变量集定义在 globals.css：:root=深色（默认）/ [data-theme=light]=暖米白
         // 深墨暖黑（Obsidian）背景体系
         paper: {
-          DEFAULT: "#121110",
-          white: "#171614",
-          warm: "#1e1b17",
+          DEFAULT: "rgb(var(--paper) / <alpha-value>)",
+          white: "rgb(var(--paper-white) / <alpha-value>)",
+          warm: "rgb(var(--paper-warm) / <alpha-value>)",
+          chrome: "rgb(var(--paper-chrome) / <alpha-value>)",
         },
         // 暖白（Ivory）文字体系
         ink: {
-          DEFAULT: "#f0ece4",
-          secondary: "#b8b0a4",
-          muted: "#8f8a80",
-          faint: "#6b655a",
+          DEFAULT: "rgb(var(--ink) / <alpha-value>)",
+          secondary: "rgb(var(--ink-secondary) / <alpha-value>)",
+          muted: "rgb(var(--ink-muted) / <alpha-value>)",
+          faint: "rgb(var(--ink-faint) / <alpha-value>)",
         },
         // 鎏金（Gilded Gold）主强调色
         accent: {
-          DEFAULT: "#c9a24b",
-          hover: "#a8843a",
-          light: "rgba(201,162,75,0.16)",
+          DEFAULT: "rgb(var(--accent) / <alpha-value>)",
+          hover: "rgb(var(--accent-hover) / <alpha-value>)",
+          light: "rgb(var(--accent) / 0.16)",
         },
         // 金阶（供渐变/高亮使用）
         gold: {
-          bright: "#f3e2b3",
-          light: "#e6c879",
-          DEFAULT: "#c9a24b",
-          hover: "#a8843a",
-          deep: "#8a6a2c",
+          bright: "rgb(var(--gold-bright) / <alpha-value>)",
+          light: "rgb(var(--gold-light) / <alpha-value>)",
+          DEFAULT: "rgb(var(--gold) / <alpha-value>)",
+          hover: "rgb(var(--gold-hover) / <alpha-value>)",
+          deep: "rgb(var(--gold-deep) / <alpha-value>)",
         },
         // 暖金调边框
         line: {
-          DEFAULT: "#2a2620",
-          light: "#221f1a",
+          DEFAULT: "rgb(var(--line) / <alpha-value>)",
+          light: "rgb(var(--line-light) / <alpha-value>)",
         },
         // 深色下提亮的语义色
-        success: "#7fc79e",
-        warn: "#e0b56a",
-        danger: "#f87171",
+        success: "rgb(var(--success) / <alpha-value>)",
+        warn: "rgb(var(--warn) / <alpha-value>)",
+        danger: "rgb(var(--danger) / <alpha-value>)",
+        // 状态语义色（running=分析中 · partial=部分/降级 · failed=失败）
+        status: {
+          running: "rgb(var(--status-running) / <alpha-value>)",
+          partial: "rgb(var(--status-partial) / <alpha-value>)",
+          failed: "rgb(var(--status-failed) / <alpha-value>)",
+        },
+        // 分类三色（奠基/主流/前沿，主题化：浅色下自动变深保证可读）
+        cat: {
+          foundation: "rgb(var(--cat-foundation) / <alpha-value>)",
+          mainstream: "rgb(var(--cat-mainstream) / <alpha-value>)",
+          frontier: "rgb(var(--cat-frontier) / <alpha-value>)",
+        },
+        // 辅助冷调点缀（关键词/证据徽章/标记，主题化：深色亮、浅色深）
+        aux: {
+          teal: "rgb(var(--aux-teal) / <alpha-value>)",
+          gold: "rgb(var(--aux-gold) / <alpha-value>)",
+          amber: "rgb(var(--aux-amber) / <alpha-value>)",
+          gray: "rgb(var(--aux-gray) / <alpha-value>)",
+          blue: "rgb(var(--aux-blue) / <alpha-value>)",
+          green: "rgb(var(--aux-green) / <alpha-value>)",
+          purple: "rgb(var(--aux-purple) / <alpha-value>)",
+          cyan: "rgb(var(--aux-cyan) / <alpha-value>)",
+        },
       },
       fontFamily: {
         serif: ['"Source Serif 4"', "Georgia", "Cambria", "serif"],

@@ -31,7 +31,7 @@ export function PaperAbstractBar({ abstract, abstractSource = "" }: { abstract?:
         <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
         <span className="text-xs font-medium text-ink-secondary shrink-0">摘要</span>
         {isAiTldr && (
-          <span className="text-[10px] px-1.5 py-px rounded-full border border-[#C27BA0]/30 text-[#C27BA0] bg-[#C27BA0]/10 whitespace-nowrap shrink-0">
+          <span className="text-2xs px-1.5 py-px rounded-full border border-status-running/30 text-status-running bg-status-running/10 whitespace-nowrap shrink-0">
             AI 概要
           </span>
         )}

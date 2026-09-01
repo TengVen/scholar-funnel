@@ -31,7 +31,7 @@ export function ResearchResultCard({ att, projectId }: ResearchResultCardProps) 
   return (
     <div className="max-w-[85%] w-full rounded-2xl card overflow-hidden">
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
-        <Sparkles className="w-3.5 h-3.5 text-[#C27BA0]" />
+        <Sparkles className="w-3.5 h-3.5 text-status-running" />
         <p className="text-base font-medium text-ink">深度调研完成</p>
       </div>
 
@@ -70,7 +70,7 @@ export function ResearchResultCard({ att, projectId }: ResearchResultCardProps) 
           <p className="text-xs text-ink-muted mb-1">研究探针</p>
           <div className="flex flex-wrap gap-1.5">
             {att.probes.slice(0, 3).map((p) => (
-              <span key={p.probe} className="text-2xs px-2 py-0.5 rounded-full border border-[#C27BA0]/30 text-[#C27BA0]">
+              <span key={p.probe} className="text-2xs px-2 py-0.5 rounded-full border border-status-running/30 text-status-running">
                 {p.probe}
               </span>
             ))}

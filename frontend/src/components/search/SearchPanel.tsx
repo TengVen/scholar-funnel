@@ -69,7 +69,7 @@ export function SearchPanel({
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm transition-colors",
                   scope === "local"
-                    ? "bg-[#4FAF9F] text-white shadow-sm"
+                    ? "bg-aux-teal text-white shadow-sm"
                     : "text-ink-muted hover:text-ink-secondary",
                 )}
               >

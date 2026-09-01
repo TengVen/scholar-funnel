@@ -20,28 +20,28 @@ const CONFIG: Record<EvidenceLevel, { label: string; hint: string; cls: string }
   E1: {
     label: "锚定原文",
     hint: "结论可回溯到论文章节（点击跳转）",
-    cls: "bg-[rgba(95,207,190,0.16)] text-[#5DCAA5] border-[rgba(95,207,190,0.4)]",
+    cls: "bg-aux-teal/15 text-aux-teal border-aux-teal/40",
   },
   E2: {
     label: "元数据依据",
     hint: "来自结构化数据 / 引用网络",
-    cls: "bg-[rgba(214,179,90,0.16)] text-[#D6B35A] border-[rgba(214,179,90,0.4)]",
+    cls: "bg-aux-gold/15 text-aux-gold border-aux-gold/40",
   },
   E3: {
     label: "AI 归纳",
     hint: "基于全文 / 摘要的模型归纳",
-    cls: "bg-[rgba(239,159,39,0.16)] text-[#EF9F27] border-[rgba(239,159,39,0.4)]",
+    cls: "bg-aux-amber/15 text-aux-amber border-aux-amber/40",
   },
   E4: {
     label: "推测·无锚点",
     hint: "自由生成，无文献锚定",
-    cls: "bg-[rgba(136,135,128,0.16)] text-[#B4B2A9] border-[rgba(136,135,128,0.4)]",
+    cls: "bg-aux-gray/15 text-aux-gray border-aux-gray/40",
   },
 };
 
 export function EvidenceBadge({ level, onClick, label }: EvidenceBadgeProps) {
   const c = CONFIG[level];
-  const cls = `text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap ${c.cls} ${onClick ? "cursor-pointer hover:opacity-80" : ""}`;
+  const cls = `text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${c.cls} ${onClick ? "cursor-pointer hover:opacity-80" : ""}`;
   return onClick ? (
     <button type="button" title={c.hint} onClick={onClick} className={cls}>
       {label ?? c.label}

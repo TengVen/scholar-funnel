@@ -106,7 +106,7 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
           <Bell className="w-3.5 h-3.5" />
           公告
           {unreadCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-[#e24b4a] text-white text-2xs font-semibold flex items-center justify-center border border-paper-white shadow shadow-black/30">
+            <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-status-failed text-white text-2xs font-semibold flex items-center justify-center border border-paper-white shadow shadow-black/30">
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           )}
@@ -279,7 +279,7 @@ export function ChatConfigBar({ config, onChange }: ChatConfigBarProps) {
               <Bell className="w-3.5 h-3.5 text-gold-light" />
               <p className="text-sm font-medium text-ink tracking-wide">系统公告</p>
               {unreadCount > 0 && (
-                <span className="px-1.5 py-px rounded-full text-2xs font-medium bg-[#e24b4a]/15 text-[#ff8a85]">
+                <span className="px-1.5 py-px rounded-full text-2xs font-medium bg-status-failed/15 text-status-failed">
                   {unreadCount} 条未读
                 </span>
               )}

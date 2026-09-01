@@ -9,6 +9,7 @@ import type {
 } from "@/types/dto";
 import { getWorkspace } from "@/lib/api/chat";
 import { cn } from "@/lib/utils";
+import { CATEGORY_META, CATEGORY_SECTION } from "@/config/categories";
 
 /**
  * 工作台概览（对话页伸缩右栏，2-page IA）——方案 B：指标面板式 + 区块就地展开。
@@ -176,14 +177,9 @@ const STATUS_TEXT: Record<string, string> = {
 };
 const STATUS_STYLE: Record<string, string> = {
   done: "border-line text-ink-muted",
-  partial: "border-gold/40 text-gold-light",
-  failed: "border-red-400/40 text-red-400",
-  rate_limited: "border-gold/50 text-gold-light",
-};
-const CATEGORY_META: Record<string, { label: string; dot: string; color: string }> = {
-  foundation: { label: "奠基理论", dot: "#c9a24b", color: "text-gold-light" },
-  mainstream: { label: "主流方法", dot: "#7BA7FF", color: "text-[#B5D4F4]" },
-  frontier: { label: "最新前沿", dot: "#5FCFBE", color: "text-[#9FE1CB]" },
+  partial: "border-status-partial/40 text-status-partial",
+  failed: "border-status-failed/40 text-status-failed",
+  rate_limited: "border-status-partial/50 text-status-partial",
 };
 
 /** 任务动作语义标题（非首次时按 Planner 模式区分动作） */
@@ -240,12 +236,12 @@ function RunCard({ run, isFirst, open, collapsed, onToggle, onToggleSection, onO
         {open ? <ChevronDown className="w-3 h-3 text-ink-faint shrink-0" /> : <ChevronRight className="w-3 h-3 text-ink-faint shrink-0" />}
         <span className="text-xs font-semibold text-ink truncate">{actionTitle}</span>
         {modeLabel && (
-          <span className="text-[11px] px-1.5 py-0.5 rounded border border-accent/30 text-accent whitespace-nowrap shrink-0">
+          <span className="text-xs px-1.5 py-0.5 rounded border border-accent/30 text-accent whitespace-nowrap shrink-0">
             {modeLabel}
           </span>
         )}
         {statusText && (
-          <span className={`text-[11px] px-1.5 py-0.5 rounded border whitespace-nowrap shrink-0 ${STATUS_STYLE[run.status ?? ""] ?? ""}`}>
+          <span className={`text-xs px-1.5 py-0.5 rounded border whitespace-nowrap shrink-0 ${STATUS_STYLE[run.status ?? ""] ?? ""}`}>
             {statusText}
           </span>
         )}
@@ -310,10 +306,11 @@ function RunCard({ run, isFirst, open, collapsed, onToggle, onToggleSection, onO
               ) : (
                 <div className="flex flex-wrap gap-1">
                   {recGroups.map(({ cat, items }) => {
+                    const sec = CATEGORY_SECTION[cat];
                     const meta = CATEGORY_META[cat];
                     return (
                       <span key={cat} className="text-2xs px-1.5 py-0.5 rounded-md border border-line/60 bg-paper-warm/40 whitespace-nowrap">
-                        <span className={meta.color}>{meta.label}</span>
+                        <span className={sec.color}>{meta.label}</span>
                         <span className="text-ink-faint"> · {items.length}</span>
                       </span>
                     );
@@ -329,12 +326,13 @@ function RunCard({ run, isFirst, open, collapsed, onToggle, onToggleSection, onO
                 <p className="text-2xs text-ink-faint">暂无核心推荐（检索完成后生成）</p>
               ) : (
                 recGroups.map(({ cat, items }) => {
+                  const sec = CATEGORY_SECTION[cat];
                   const meta = CATEGORY_META[cat];
                   return (
                     <div key={cat}>
                       <div className="flex items-center gap-1.5 mb-1">
-                        <span className="w-2 h-2 rounded-full" style={{ background: meta.dot }} />
-                        <span className={`text-2xs font-medium ${meta.color}`}>{meta.label} · {items.length}</span>
+                        <span className="w-2 h-2 rounded-full" style={{ background: sec.dot }} />
+                        <span className={`text-2xs font-medium ${sec.color}`}>{meta.label} · {items.length}</span>
                       </div>
                       <div className="space-y-0.5">
                         {items.map((p) => (

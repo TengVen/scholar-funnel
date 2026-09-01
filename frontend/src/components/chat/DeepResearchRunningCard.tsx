@@ -18,7 +18,7 @@ export function DeepResearchRunningCard({
     <div className="max-w-[85%] w-[400px] rounded-2xl card px-4 py-3">
       <div className="flex items-center gap-2">
         {!ended ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C27BA0]" />
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-status-running" />
         ) : (
           <Sparkles className="w-3.5 h-3.5 text-ink-faint" />
         )}

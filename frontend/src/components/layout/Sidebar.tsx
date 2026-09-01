@@ -3,11 +3,13 @@
 import { useState } from "react";
 import {
   Search, PanelLeftClose, PanelLeft, User, LogOut, LogIn,
-  MessageSquare, Plus, ChevronDown, ChevronRight,
+  MessageSquare, Plus, ChevronDown, ChevronRight, Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ConversationSummary } from "@/types/dto";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/hooks/useTheme";
+import { THEMES } from "@/config/theme";
 import { AuthModal } from "@/components/common/AuthModal";
 
 /**
@@ -32,6 +34,9 @@ export function Sidebar({
 
   // 认证状态由 authStore + useAuth 管理（登录/登出/游客升级自动刷新）
   const { user, logout } = useAuth();
+  // 主题切换（多主题架构：深色墨黑 / 暖米白）
+  const { theme, cycleTheme } = useTheme();
+  const themeLabel = THEMES.find((t) => t.key === theme)?.label ?? "";
 
   const handleLogout = async () => {
     await logout();
@@ -54,7 +59,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-line bg-paper-white transition-[width] duration-200",
+        "flex flex-col border-r border-line bg-paper-chrome transition-[width] duration-200",
         collapsed ? "w-12" : "w-56",
       )}
     >
@@ -141,6 +146,29 @@ export function Sidebar({
           <p className="px-3 py-4 text-sm text-ink-faint">
             发起一段对话，开始你的研究
           </p>
+        )}
+      </div>
+
+      {/* 主题切换 */}
+      <div className="border-t border-line shrink-0">
+        {collapsed ? (
+          <button
+            onClick={cycleTheme}
+            title="切换主题"
+            className="w-full flex justify-center py-2.5 text-ink-muted hover:text-accent"
+          >
+            {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+          </button>
+        ) : (
+          <button
+            onClick={cycleTheme}
+            title="切换主题"
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-ink-muted hover:text-accent transition-colors"
+          >
+            {theme === "dark" ? <Sun className="w-3.5 h-3.5 shrink-0" /> : <Moon className="w-3.5 h-3.5 shrink-0" />}
+            <span className="flex-1 text-left">主题</span>
+            <span className="text-2xs text-ink-faint">{themeLabel}</span>
+          </button>
         )}
       </div>
 

@@ -15,10 +15,12 @@ export const CATEGORIES: { key: Category; label: string; limit: number; desc: st
 ];
 
 // ── 分类区块视觉（认知结构卡分组标题：圆点 + 文字色）──
+// 2026-09-01 主题化：dot 用 CSS 变量（rgb(var(--cat-*))），color 用 tailwind cat 语义类——
+// 深色主题=亮金/亮蓝/亮青，浅色主题=深金/深蓝/深青（globals.css 变量集切换）
 export const CATEGORY_SECTION: Record<Category, { dot: string; color: string }> = {
-  foundation: { dot: "#c9a24b", color: "text-gold-light" },
-  mainstream: { dot: "#7BA7FF", color: "text-[#B5D4F4]" },
-  frontier: { dot: "#5FCFBE", color: "text-[#9FE1CB]" },
+  foundation: { dot: "rgb(var(--cat-foundation) / 1)", color: "text-cat-foundation" },
+  mainstream: { dot: "rgb(var(--cat-mainstream) / 1)", color: "text-cat-mainstream" },
+  frontier: { dot: "rgb(var(--cat-frontier) / 1)", color: "text-cat-frontier" },
 };
 
 /** 分类 → label/desc（GapPanel 等按 key 查） */
@@ -35,7 +37,8 @@ export const CATEGORY_GROUPS: { key: Category; label: string }[] = [
   { key: "frontier", label: "最新前沿" },
 ];
 
-// ── 分类专属色（亮色版，与顶部导航珠宝色统一）+ 流光渐变对 ──
+// ── 分类专属色（亮色版）── 2026-09-01 定版：奠基=金 / 主流=蓝 / 前沿=青（与 CATEGORY_SECTION 对齐，消除旧"蓝金青"矛盾）
+// 唯一来源：分类色一律以 CATEGORY_SECTION（dot/color）+ CATEGORY_COLORS（亮色/渐变）为准，禁止组件内另定义
 
 export interface CategoryColors {
   text: string;
@@ -45,9 +48,9 @@ export interface CategoryColors {
 }
 
 export const CATEGORY_COLORS: Record<Category, CategoryColors> = {
-  foundation: { text: "#7BA7FF", textBright: "#A8C6FF", bar: "linear-gradient(90deg,#5B8FF9,#B7D2FF,#5B8FF9)", dot: "rgba(123,167,255,1)" },
-  mainstream: { text: "#F0CE6E", textBright: "#FFE9A8", bar: "linear-gradient(90deg,#D6B35A,#FFE9A8,#D6B35A)", dot: "rgba(240,206,110,1)" },
-  frontier: { text: "#5FCFBE", textBright: "#A8EADF", bar: "linear-gradient(90deg,#4FAF9F,#A8EADF,#4FAF9F)", dot: "rgba(95,207,190,1)" },
+  foundation: { text: "#c9a24b", textBright: "#e6c879", bar: "linear-gradient(90deg,#c9a24b,#e6c879,#c9a24b)", dot: "rgba(201,162,75,1)" },
+  mainstream: { text: "#7BA7FF", textBright: "#B5D4F4", bar: "linear-gradient(90deg,#7BA7FF,#B5D4F4,#7BA7FF)", dot: "rgba(123,167,255,1)" },
+  frontier: { text: "#5FCFBE", textBright: "#9FE1CB", bar: "linear-gradient(90deg,#4FAF9F,#9FE1CB,#4FAF9F)", dot: "rgba(95,207,190,1)" },
 };
 
 // ── 手动选择分类时的默认理由 ──

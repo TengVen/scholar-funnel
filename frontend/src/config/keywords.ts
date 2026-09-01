@@ -9,11 +9,11 @@ export interface KeywordColor {
   text: string;
 }
 
-/** 清透冷调玻璃色，按序循环 */
+/** 清透冷调玻璃色，按序循环（2026-09-01 主题化：色相走 aux 变量，深色亮/浅色深） */
 export const KEYWORD_COLORS: KeywordColor[] = [
-  { bg: "rgba(94, 205, 196, 0.12)", border: "rgba(94, 205, 196, 0.32)", text: "#8FE3DA" }, // 淡青
-  { bg: "rgba(120, 170, 255, 0.12)", border: "rgba(120, 170, 255, 0.32)", text: "#9FC4FF" }, // 淡蓝
-  { bg: "rgba(140, 220, 160, 0.12)", border: "rgba(140, 220, 160, 0.32)", text: "#A9E8BC" }, // 淡绿
-  { bg: "rgba(180, 160, 240, 0.12)", border: "rgba(180, 160, 240, 0.32)", text: "#C4B4F5" }, // 淡紫
-  { bg: "rgba(110, 200, 230, 0.12)", border: "rgba(110, 200, 230, 0.32)", text: "#8FD8EC" }, // 青蓝
+  { bg: "rgb(var(--aux-teal) / 0.12)", border: "rgb(var(--aux-teal) / 0.32)", text: "rgb(var(--aux-teal) / 1)" },   // 淡青
+  { bg: "rgb(var(--aux-blue) / 0.12)", border: "rgb(var(--aux-blue) / 0.32)", text: "rgb(var(--aux-blue) / 1)" },   // 淡蓝
+  { bg: "rgb(var(--aux-green) / 0.12)", border: "rgb(var(--aux-green) / 0.32)", text: "rgb(var(--aux-green) / 1)" }, // 淡绿
+  { bg: "rgb(var(--aux-purple) / 0.12)", border: "rgb(var(--aux-purple) / 0.32)", text: "rgb(var(--aux-purple) / 1)" }, // 淡紫
+  { bg: "rgb(var(--aux-cyan) / 0.12)", border: "rgb(var(--aux-cyan) / 0.32)", text: "rgb(var(--aux-cyan) / 1)" },   // 青蓝
 ];

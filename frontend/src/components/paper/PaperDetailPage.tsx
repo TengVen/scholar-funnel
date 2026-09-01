@@ -375,7 +375,7 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
             {pdfError ? (
               /* PDF 获取失败：错误提示 + arXiv 兜底 + 完整摘要回退（保证最基础的可读内容） */
               <div className="flex-1 min-h-0 overflow-y-auto">
-                <div className="flex items-center gap-2 px-4 py-2 bg-[#C27BA0]/10 border-b border-[#C27BA0]/20 text-xs text-[#C27BA0]">
+                <div className="flex items-center gap-2 px-4 py-2 bg-status-running/10 border-b border-status-running/20 text-xs text-status-running">
                   <FileText className="w-3.5 h-3.5 shrink-0" />
                   <span className="flex-1">PDF 获取失败：{pdfError}</span>
                   {detail.oa_landing_url && (
@@ -447,7 +447,7 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
 function StatusBadge({ analysis }: { analysis: PaperDetail["analysis"] }) {
   const map = {
     none: { label: "待分析", cls: "text-ink-faint border-line" },
-    running: { label: "分析中", cls: "text-[#C27BA0] border-[#C27BA0]/30" },
+    running: { label: "分析中", cls: "text-status-running border-status-running/30" },
     done: { label: "已完成分析", cls: "text-gold-light border-gold/30" },
   } as const;
   const m = map[analysis.status] ?? map.none;

@@ -103,7 +103,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
           {paper.year && (
             <span className="flex items-center gap-1.5 justify-end text-sm text-ink leading-none" title="发布年份">
               <span className="w-3.5 h-3.5 shrink-0 rounded-[4px] bg-[rgba(91,143,249,0.18)] flex items-center justify-center">
-                <Calendar className="w-2.5 h-2.5 text-[#5B8FF9]" />
+                <Calendar className="w-2.5 h-2.5 text-aux-blue" />
               </span>
               <span className="w-12 text-right font-medium tabular-nums">{paper.year}</span>
             </span>
@@ -111,7 +111,7 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
           {paper.cited_by_count > 0 && (
             <span className="flex items-center gap-1.5 justify-end text-sm text-ink leading-none" title="被引量">
               <span className="w-3.5 h-3.5 shrink-0 rounded-[4px] bg-[rgba(79,175,159,0.18)] flex items-center justify-center">
-                <Quote className="w-2.5 h-2.5 text-[#4FAF9F]" />
+                <Quote className="w-2.5 h-2.5 text-aux-teal" />
               </span>
               <span className="w-12 text-right font-medium tabular-nums">{paper.cited_by_count}</span>
             </span>
