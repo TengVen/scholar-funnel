@@ -26,6 +26,8 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
     { key: "mainstream", papers: structure.mainstream },
     { key: "frontier", papers: structure.frontier },
   ];
+  // 展开后实际可见 = 三类入选论文总数（≠ 候选池 total_candidates）
+  const shownTotal = groups.reduce((n, g) => n + g.papers.length, 0);
 
   return (
     <div className="card max-w-[85%] w-full px-4 py-3">
@@ -74,11 +76,11 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
           className="btn-secondary text-xs !py-1.5"
         >
           {showAll ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          查看全部 {structure.total_candidates} 篇
+          {showAll ? "收起" : `展开全部核心推荐（${shownTotal} 篇）`}
         </button>
         {!showAll && (
           <span className="text-xs text-ink-faint">
-            候选结果池已保留全部 {structure.total_candidates} 篇，其余论文可继续探索
+            候选结果池已保留全部 {structure.total_candidates} 篇，其余论文可在检索页/工作台继续探索
           </span>
         )}
       </div>

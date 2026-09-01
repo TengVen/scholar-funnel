@@ -40,12 +40,22 @@ class TrunkSearchEngine:
             score_threshold: float = 0.0,
             top_k: int = 100,
             max_queries: int = 8,  # ← 限制检索词数量
+            # ── P2/P3：Retrieval Planner 模式 ──
+            mode: str = "full",          # full / incremental / local_filter / hybrid
+            pool_window_from: int = None,  # incremental：池内合并的完整窗口下界（新约束窗口）
+            pool_window_to: int = None,    # incremental：池内合并的完整窗口上界
+            methodology: str = None,       # hybrid：方法论词（池内匹配 + 参与拆解）
+            plan_reason: str = None,       # Planner 决策说明（写入 Run）
     ) -> dict:
         trace = {"timing": {}, "slow_warnings": []}
 
         # ── 1. Decomposition ──
         t0 = time.time()
-        intent = self.decomposer.decompose(user_query, tech_probe)
+        # hybrid：方法论词并入查询参与拆解（召回偏向新方法论）
+        intent_query = user_query
+        if mode == "hybrid" and methodology:
+            intent_query = f"{user_query} {methodology}".strip()
+        intent = self.decomposer.decompose(intent_query, tech_probe)
         t1 = time.time()
         trace["timing"]["step1_decomposition"] = round(t1 - t0, 1)
 
@@ -68,12 +78,34 @@ class TrunkSearchEngine:
             "used_query_count": len(intent.combined_queries),
         }
 
-        # ── 2. Lexical Recall ──
+        # ── 2. Lexical Recall（Retrieval Planner 模式分派）──
         self.lexical.per_query = per_query
         t0 = time.time()
-        candidates = self.lexical.recall(intent, year_from=year_from, year_to=year_to)
+        if mode == "incremental":
+            # 窗口放宽：只召新增时间段（year_from/to = 新增段），合并池内完整窗口论文
+            candidates = self.lexical.recall(intent, year_from=year_from, year_to=year_to)
+            pool = self._pool_candidates(project_id, pool_window_from, pool_window_to)
+            candidates = self._merge_candidates(candidates, pool)
+            logger.info(f"[Planner] incremental: 新增段召回 {len(candidates)}（含池内 {len(pool)}）")
+        elif mode == "local_filter":
+            # 窗口收窄：池内过滤优先，不足 top_k 再补一次召回
+            candidates = self._pool_candidates(project_id, year_from, year_to)
+            if len(candidates) < top_k:
+                remote = self.lexical.recall(intent, year_from=year_from, year_to=year_to)
+                candidates = self._merge_candidates(candidates, remote)
+            logger.info(f"[Planner] local_filter: 池内 {len(candidates)}（补召回后）")
+        elif mode == "hybrid":
+            # 方法论偏移：池内方法论匹配 + OpenAlex 补召回（methodology 已并入 intent_query）
+            pool = self._pool_candidates(project_id, year_from, year_to, methodology=methodology)
+            remote = self.lexical.recall(intent, year_from=year_from, year_to=year_to)
+            candidates = self._merge_candidates(pool, remote)
+            logger.info(f"[Planner] hybrid: 池内 {len(pool)} + 召回合并 {len(candidates)}")
+        else:
+            # full：完整全量召回（现状）
+            candidates = self.lexical.recall(intent, year_from=year_from, year_to=year_to)
         t1 = time.time()
         trace["timing"]["step2_recall"] = round(t1 - t0, 1)
+        trace["step2_recall_mode"] = mode
 
         recall_meta = candidates[0].get("_recall_meta") if candidates else None
         if recall_meta:
@@ -182,7 +214,7 @@ class TrunkSearchEngine:
                 covered = coverage_ratio(project_id, [p["paper"]["id"] for p in final_papers])
             except Exception as e:
                 logger.warning(f"覆盖率统计失败（忽略）: {e}")
-        saved = self._save(project_id, final_papers)
+        saved, saved_ids = self._save(project_id, final_papers)
         t1 = time.time()
         trace["timing"]["step5_storage"] = round(t1 - t0, 1)
 
@@ -204,14 +236,24 @@ class TrunkSearchEngine:
                     }.get(step, step),
                 })
 
-        # ── 6. 检索记录（工作台"检索记录"视图 + 收敛检测）──
+        # ── 6. 检索记录（工作台"检索记录"视图 + 收敛检测 + Retrieval Planner 快照）──
+        run_id = None
         try:
-            from storage.search_runs import record_search_run
-            record_search_run(
+            from storage.search_runs import record_search_run, link_paper_runs
+            # incremental 的 year_from/to 是新增段——Run 约束快照记完整窗口（用户意图）
+            run_year_from = pool_window_from if mode == "incremental" else year_from
+            run_year_to = pool_window_to if mode == "incremental" else year_to
+            run_id = record_search_run(
                 project_id=project_id, run_type="trunk", query=user_query,
                 tech_probe=tech_probe, top_k=top_k, score_threshold=score_threshold,
                 total_found=len(candidates), saved_count=saved, covered_ratio=covered,
+                # P1/P3：模式/状态/约束快照（Planner 决策留痕）
+                mode=mode, status="done", plan_reason=plan_reason,
+                year_from=run_year_from, year_to=run_year_to, methodology=methodology,
             )
+            # 论文 ↔ 检索记录 多对多（Run = 独立资产快照）
+            if run_id and saved_ids:
+                link_paper_runs(saved_ids, run_id)
         except Exception as e:
             logger.warning(f"检索记录写入失败（忽略）: {e}")
 
@@ -222,6 +264,7 @@ class TrunkSearchEngine:
             "after_rerank": len(results),
             "new_saved": saved,
             "survey_count": trace["step4_scoring"]["survey_count"],
+            "run_id": run_id,   # 本次检索的 Run（finalize 写认知结构/结果卡时关联）
             "trace": trace,
         }
 
@@ -298,74 +341,98 @@ class TrunkSearchEngine:
             logger.info(f"本地语义召回新增 {added} 篇候选（共 {len(candidates)} 篇）")
         return added
 
-    def _save(self, project_id: int, results: List[Dict]) -> int:
-        count = 0
-        with get_session() as session:
-            # ── 1. 本项目已入骨架的 paper_id（删除时必须排除，否则撞外键崩溃） ──
-            cart_ids = [
-                cid for (cid,) in (
-                    session.query(CartItem.paper_id)
-                    .filter_by(project_id=project_id)
-                    .all()
+    def _pool_candidates(self, project_id: int, year_from: int | None = None,
+                         year_to: int | None = None,
+                         methodology: str | None = None) -> List[Dict]:
+        """Candidate Pool 候选：该子研究池内（stage=trunk）按窗口过滤的论文，转候选 dict。
+        methodology 提供时仅保留标题/摘要命中的论文（hybrid 模式池内先筛）。"""
+        from storage.mysql_db import get_session
+        from storage.models import Paper
+
+        try:
+            with get_session() as session:
+                q = session.query(Paper).filter(
+                    Paper.project_id == project_id, Paper.stage == "trunk"
                 )
-            ]
+                if year_from:
+                    q = q.filter(Paper.year >= year_from)
+                if year_to:
+                    q = q.filter(Paper.year <= year_to)
+                rows = q.limit(500).all()
+        except Exception as e:
+            logger.warning(f"池内候选加载失败（忽略）: {e}")
+            return []
 
-            # ── 2. 删除旧 trunk（排除已在骨架中的，保留它们的行并稍后更新） ──
-            del_q = session.query(Paper).filter(
-                Paper.project_id == project_id,
-                Paper.stage == "trunk",
-            )
-            if cart_ids:
-                del_q = del_q.filter(~Paper.id.in_(cart_ids))
-            deleted = del_q.delete(synchronize_session=False)
-            if deleted:
-                logger.info(f"已清理旧 trunk 数据 {deleted} 篇")
+        kw = (methodology or "").strip().lower()
+        out: List[Dict] = []
+        for r in rows:
+            if kw:
+                blob = f"{r.title or ''} {r.abstract or ''}".lower()
+                if kw not in blob:
+                    continue
+            out.append({
+                "id": r.openalex_id, "title": r.title or "", "abstract": r.abstract or "",
+                "authors": r.authors if isinstance(r.authors, list) else [],
+                "year": r.year or 0, "venue": r.venue or "",
+                "doi": r.doi, "cited_by_count": r.cited_by_count or 0,
+                "keywords": r.keywords if isinstance(r.keywords, list) else [],
+                "github_url": r.github_url,
+                "source": "pool", "_routes": ["pool"], "_matched_terms": [],
+            })
+        return out
 
-            # ── 3. 写入/更新（按 openalex_id + project_id 定位，支持跨项目各自收录）──
+    @staticmethod
+    def _merge_candidates(base: List[Dict], extra: List[Dict]) -> List[Dict]:
+        """候选合并（按 openalex_id 去重，base 优先；extra 为池内/召回补充）"""
+        seen = {c["id"] for c in base if c.get("id")}
+        for c in extra:
+            if not c.get("id") or c["id"] in seen:
+                continue
+            seen.add(c["id"])
+            base.append(c)
+        return base
+
+    def _save(self, project_id: int, results: List[Dict]) -> tuple[int, list[int]]:
+        """累积式原子写入：按 (project_id, openalex_id) upsert（ON CONFLICT），
+        不清空旧 trunk（Candidate Pool 累积语义，Search Run 以多对多归属视图）。
+        返回 (count, paper_ids) 供 paper↔run 关联。"""
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        count = 0
+        paper_ids: list[int] = []
+        with get_session() as session:
             for item in results:
                 p = item["paper"]
-                existing = (
-                    session.query(Paper)
-                    .filter_by(openalex_id=p["id"], project_id=project_id)
-                    .first()
+                fields = {
+                    "title": p.get("title", ""),
+                    "authors": p.get("authors", []),
+                    "year": p.get("year", 0),
+                    "venue": p.get("venue", ""),
+                    "doi": p.get("doi"),
+                    "abstract": p.get("abstract", ""),
+                    "cited_by_count": p.get("cited_by_count", 0),
+                    "is_survey": item["is_survey"],
+                    "stage": "trunk",
+                    "trunk_score": round(item["final_score"], 2),
+                    "keywords": p.get("keywords") or None,
+                    "github_url": p.get("github_url") or None,
+                    "recall_meta": self._build_recall_meta(p, item),
+                }
+                stmt = (
+                    pg_insert(Paper)
+                    .values(project_id=project_id, openalex_id=p["id"], **fields)
+                    .on_conflict_do_update(
+                        index_elements=["project_id", "openalex_id"],
+                        set_=fields,
+                    )
+                    .returning(Paper.id)
                 )
-                if existing:
-                    existing.title = p.get("title", "")
-                    existing.authors = p.get("authors", [])
-                    existing.year = p.get("year", 0)
-                    existing.venue = p.get("venue", "")
-                    existing.doi = p.get("doi")
-                    existing.abstract = p.get("abstract", "")
-                    existing.cited_by_count = p.get("cited_by_count", 0)
-                    existing.is_survey = item["is_survey"]
-                    existing.stage = "trunk"
-                    existing.trunk_score = round(item["final_score"], 2)
-                    existing.keywords = p.get("keywords") or None
-                    existing.github_url = p.get("github_url") or None
-                    existing.recall_meta = self._build_recall_meta(p, item)
+                row = session.execute(stmt).first()
+                if row:
+                    paper_ids.append(row[0])
                     count += 1
-                    continue
-
-                db_paper = Paper(
-                    project_id=project_id,
-                    openalex_id=p["id"],
-                    title=p.get("title", ""),
-                    authors=p.get("authors", []),
-                    year=p.get("year", 0),
-                    venue=p.get("venue", ""),
-                    doi=p.get("doi"),
-                    abstract=p.get("abstract", ""),
-                    cited_by_count=p.get("cited_by_count", 0),
-                    is_survey=item["is_survey"],
-                    stage="trunk",
-                    trunk_score=round(item["final_score"], 2),
-                    keywords=p.get("keywords") or None,
-                    github_url=p.get("github_url") or None,
-                    recall_meta=self._build_recall_meta(p, item),
-                )
-                session.add(db_paper)
-                count += 1
-        return count
+            session.commit()
+        return count, paper_ids
 
     @staticmethod
     def _build_recall_meta(p: Dict, item: Dict) -> Dict:

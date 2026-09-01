@@ -11,6 +11,7 @@ import { ResizablePanel } from "./ResizablePanel";
 import { TocSidebar } from "./TocSidebar";
 import { PaperQaBox } from "./PaperQaBox";
 import { PaperContentPanel } from "./PaperContentPanel";
+import { PaperAbstractBar } from "./PaperAbstractBar";
 import { AiResearchPanel } from "./AiResearchPanel";
 import { AnalysisUpgradeBanner } from "./AnalysisUpgradeBanner";
 import { PdfViewer } from "./PdfViewer";
@@ -372,22 +373,38 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
         {showPdf ? (
           <main className="flex-1 min-w-0 flex flex-col">
             {pdfError ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-ink-faint px-6">
-                <FileText className="w-6 h-6" />
-                <p>PDF 获取失败：{pdfError}</p>
-                {detail.oa_landing_url && (
-                  <a href={detail.oa_landing_url} target="_blank" rel="noreferrer"
-                    className="text-accent hover:underline">
-                    前往 arXiv 查看原文 ↗
-                  </a>
+              /* PDF 获取失败：错误提示 + arXiv 兜底 + 完整摘要回退（保证最基础的可读内容） */
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="flex items-center gap-2 px-4 py-2 bg-[#C27BA0]/10 border-b border-[#C27BA0]/20 text-xs text-[#C27BA0]">
+                  <FileText className="w-3.5 h-3.5 shrink-0" />
+                  <span className="flex-1">PDF 获取失败：{pdfError}</span>
+                  {detail.oa_landing_url && (
+                    <a href={detail.oa_landing_url} target="_blank" rel="noreferrer"
+                      className="text-accent hover:underline shrink-0">
+                      前往 arXiv 查看原文 ↗
+                    </a>
+                  )}
+                </div>
+                {detail.abstract ? (
+                  <section className="px-6 py-5">
+                    <h2 className="font-serif text-base font-semibold text-ink mb-2">摘要</h2>
+                    <p className="text-base text-ink-secondary leading-relaxed whitespace-pre-wrap">{detail.abstract}</p>
+                  </section>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-sm text-ink-faint px-6 py-10">
+                    该论文暂无摘要信息，可尝试「深入探究」获取分析
+                  </div>
                 )}
               </div>
             ) : pdfBlobUrl ? (
-              <PdfViewer
-                blobUrl={pdfBlobUrl}
-                page={pdfPage > 0 ? pdfPage : undefined}
-                fallbackUrl={detail.oa_landing_url}
-              />
+              <>
+                <PaperAbstractBar abstract={detail.abstract} abstractSource={detail.abstract_source} />
+                <PdfViewer
+                  blobUrl={pdfBlobUrl}
+                  page={pdfPage > 0 ? pdfPage : undefined}
+                  fallbackUrl={detail.oa_landing_url}
+                />
+              </>
             ) : (
               <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="w-5 h-5 animate-spin text-accent" />
@@ -397,7 +414,13 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
         ) : (
           <div className="flex-1 min-w-0 flex flex-col">
             {detail.paper_id && <PaperUploadBar uploading={uploading} onUpload={handleUpload} />}
-            <PaperContentPanel abstract={detail.abstract} sections={sections} materialType={detail.analysis.material_type} />
+            <PaperContentPanel
+              abstract={detail.abstract}
+              abstractSource={detail.abstract_source}
+              sections={sections}
+              materialType={detail.analysis.material_type}
+              landingUrl={detail.oa_landing_url}
+            />
           </div>
         )}
 

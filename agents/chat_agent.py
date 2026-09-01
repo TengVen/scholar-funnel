@@ -33,10 +33,10 @@ TOOL_FULL_SEARCH = {
     "function": {
         "name": "full_search",
         "description": (
-            "执行一次完整的文献检索（意图拆解→OpenAlex 召回→重排→入库），每次调用都会生成一个新项目。"
-            "触发场景：① 用户明确要'检索/搜一下/查文献/找论文'且研究方向已明确；"
-            "② 用户对已有方向说'重新检索/再搜一次/换个关键词再搜/重新跑一遍'——同样调用本工具（生成新项目），"
-            "不要仅凭话术确认。"
+            "执行文献检索（意图拆解→召回→重排→入库）。"
+            "触发场景：① 用户明确要'检索/搜一下/查文献/找论文'且研究方向已明确（生成新项目）；"
+            "② 用户对已有方向说'重新检索/再搜一次/换个关键词再搜/重新跑一遍'——re_search=true，"
+            "复用该子研究重跑（不新建项目，由 Retrieval Planner 自动选择增量/过滤/全量模式）。"
         ),
         "parameters": {
             "type": "object",
@@ -46,7 +46,9 @@ TOOL_FULL_SEARCH = {
                 "year_from": {"type": "integer", "description": "起始年份"},
                 "year_to": {"type": "integer", "description": "结束年份"},
                 "paper_type": {"type": "string", "enum": ["all", "survey", "original"], "description": "论文类型"},
-                "methodology": {"type": "string", "description": "方法论偏好"},
+                "methodology": {"type": "string", "description": "方法论偏好（如 diffusion）"},
+                "re_search": {"type": "boolean", "description": "是否对已有子研究重新检索（用户说'重新检索/再搜一次/换限定'时 true，复用当前子研究而非新建）"},
+                "target_project_id": {"type": "integer", "description": "re_search=true 时目标子研究 id（从对话上下文/消息卡 project_id 判断；缺省用会话当前子研究）"},
             },
             "required": ["user_query"],
         },
@@ -172,65 +174,191 @@ MAX_AGENT_ROUNDS = 4
 
 # ── 后台检索任务（full_search 异步） ──
 _search_tasks: dict[str, dict] = {}
+_TASK_TTL = 3600  # 完成的任务 1h 后清理（防内存驻留）
+
+# 会话级检索防重（P1 并发地基）：同一会话同时只允许一个 full_search 在跑（防用户连点双开）
+_conv_busy: set[str] = set()
+_conv_busy_lock = threading.Lock()
+
+
+def _try_acquire_conv(conv_id: str) -> bool:
+    with _conv_busy_lock:
+        if conv_id in _conv_busy:
+            return False
+        _conv_busy.add(conv_id)
+        return True
+
+
+def _release_conv(conv_id: str) -> None:
+    with _conv_busy_lock:
+        _conv_busy.discard(conv_id)
+
+
+def _cleanup_stale_tasks() -> None:
+    """惰性清理：删除完成/失败超过 TTL 的任务（get/start 时触发）"""
+    now = time.time()
+    stale = [
+        tid for tid, t in _search_tasks.items()
+        if t.get("status") != "running"
+        and (now - t.get("_done_at", now)) > _TASK_TTL
+    ]
+    for tid in stale:
+        _search_tasks.pop(tid, None)
 
 
 def _run_full_search(task_id: str, conv_id: str, params: dict, user_id: int):
-    """后台执行全量检索（复用 TrunkSearchEngine），完成后更新会话 project_ids"""
+    """后台执行检索（复用 TrunkSearchEngine + Retrieval Planner）。
+
+    - 新建场景（默认）：创建新 Project 并关联会话
+    - 重检索场景（re_search=true）：复用目标子研究（target_project_id 或会话当前 project），
+      由 Planner 决策模式（incremental/local_filter/hybrid/full）
+    - 0 召回（新建场景）：不追加 project_ids（不产生无意义空子研究），对话端提示
+    """
     task = _search_tasks[task_id]
+    re_search = bool(params.get("re_search"))
+    target_pid = params.get("target_project_id")
     try:
         from retrieval.pipeline import TrunkSearchEngine
+        from retrieval.planner import Constraints, constraint_diff, coverage_check, plan
         from storage.models import Project
+        from storage.search_runs import recent_runs
 
-        task["detail"] = "creating project..."
+        user_query = params.get("user_query", "")
+        tech_probe = params.get("tech_probe", "")
+        year_from = params.get("year_from")
+        year_to = params.get("year_to")
+        methodology = params.get("methodology") or ""
+        paper_type = params.get("paper_type") or ""
+
+        # ── 1. 确定 project_id（新建 or 复用）──
         with get_session() as session:
-            p = Project(
-                name=params.get("user_query", "chat")[:80],
-                user_query=params.get("user_query", ""),
-                tech_probe=params.get("tech_probe", ""),
-                user_id=user_id,
-            )
-            session.add(p)
-            session.flush()
-            project_id = p.id
-            # 会话关联：project_ids 追加 + 当前 project_id
             conv = (
                 session.query(Conversation)
                 .filter(Conversation.uuid == conv_id, Conversation.user_id == user_id)
                 .first()
             )
+            if re_search and target_pid:
+                p = session.get(Project, target_pid)
+                if not p or p.user_id != user_id:
+                    raise RuntimeError("目标子研究不存在或无权访问")
+                project_id = p.id
+            elif re_search and conv and conv.project_id:
+                project_id = conv.project_id
+            else:
+                p = Project(
+                    name=user_query[:80],
+                    user_query=user_query,
+                    tech_probe=tech_probe,
+                    user_id=user_id,
+                )
+                session.add(p)
+                session.flush()
+                project_id = p.id
             if conv:
                 ids = list(conv.project_ids or [])
                 if project_id not in ids:
                     ids.append(project_id)
                 conv.project_ids = ids
                 conv.project_id = project_id
-                conv.title = params.get("user_query", "new")[:30]
+                conv.title = user_query[:30]
                 session.commit()
 
+        # ── 2. Retrieval Planner：约束差异 → 模式决策 ──
+        prev_run = None
+        runs = recent_runs(project_id, 1)
+        if runs:
+            prev_run = runs[0]
+        new_c = Constraints(
+            user_query=user_query, tech_probe=tech_probe,
+            year_from=year_from, year_to=year_to,
+            methodology=methodology or None, paper_type=paper_type or None,
+        )
+        mode = "full"
+        plan_reason = "首次检索，全量召回建立研究池"
+        pool_from = pool_to = None
+        recall_from, recall_to = year_from, year_to
+        try:
+            if prev_run:
+                prev_c = Constraints.from_run(prev_run)
+                diff = constraint_diff(prev_c, new_c)
+                cov = coverage_check(project_id, new_c, top_k=params.get("top_k", 100))
+                p = plan(diff, cov, top_k=params.get("top_k", 100), prev_exists=True)
+                mode, plan_reason = p.mode, p.reason
+                if p.mode == "incremental":
+                    # 新增段 = 新窗口与 prev 窗口的差集；池合并窗口 = 新完整窗口
+                    pf = prev_c.year_from or 0
+                    pt = prev_c.year_to or 9999
+                    nf = new_c.year_from or 0
+                    nt = new_c.year_to or 9999
+                    if nf < pf and nt <= pt:
+                        recall_from, recall_to = nf, (pf - 1) or None
+                    elif nt > pt and nf >= pf:
+                        recall_from, recall_to = (pt + 1) if pt < 9999 else None, nt
+                    else:  # 双侧放宽（罕见）：全窗口召回
+                        recall_from, recall_to = new_c.year_from, new_c.year_to
+                    pool_from, pool_to = new_c.year_from, new_c.year_to
+                task["mode"] = mode
+                task["plan_reason"] = plan_reason
+        except Exception as e:
+            logger.warning(f"Planner 决策失败，回退 full: {e}")
+            mode, plan_reason = "full", "Planner 异常，回退全量"
+
+        # ── 3. 执行检索 ──
         task["detail"] = "searching..."
         engine = TrunkSearchEngine()
         result = engine.search(
             project_id=project_id,
-            user_query=params.get("user_query", ""),
-            tech_probe=params.get("tech_probe", ""),
-            year_from=params.get("year_from"),
-            year_to=params.get("year_to"),
+            user_query=user_query,
+            tech_probe=tech_probe,
+            year_from=recall_from,
+            year_to=recall_to,
             score_threshold=params.get("score_threshold", 0.0),
-            top_k=params.get("top_k", 100))
+            top_k=params.get("top_k", 100),
+            mode=mode,
+            pool_window_from=pool_from,
+            pool_window_to=pool_to,
+            methodology=methodology or None,
+            plan_reason=plan_reason,
+        )
+
+        # ── 4. 0 召回（新建场景）：移除 project_ids 关联，不产生空子研究 ──
+        if result.get("total_found", 0) == 0 and not re_search:
+            with get_session() as session:
+                conv = (
+                    session.query(Conversation)
+                    .filter(Conversation.uuid == conv_id, Conversation.user_id == user_id)
+                    .first()
+                )
+                if conv:
+                    ids = list(conv.project_ids or [])
+                    if project_id in ids:
+                        ids.remove(project_id)
+                    conv.project_ids = ids
+                    if conv.project_id == project_id:
+                        conv.project_id = ids[-1] if ids else None
+                    session.commit()
+            logger.info(f"检索 0 召回，子研究 {project_id} 未关联会话（工作台不显示空子研究）")
 
         task["result"] = {
             "ok": True, "project_id": project_id,
-            "project_name": params.get("user_query", "")[:80],
+            "project_name": user_query[:80],
+            "run_id": result.get("run_id"),
             "result": result,
         }
         task["status"] = "done"
     except Exception as e:
         task["status"] = "error"
         task["error"] = str(e)
+    finally:
+        task["_done_at"] = time.time()
+        _release_conv(conv_id)
 
 
 def start_full_search(conv_id: str, params: dict, user_id: int) -> dict:
-    """启动后台全量检索，返回 task_id"""
+    """启动后台全量检索，返回 task_id。同会话已有检索在跑 → busy（不启动，防连点双开）。"""
+    _cleanup_stale_tasks()
+    if not _try_acquire_conv(conv_id):
+        return {"status": "busy", "message": "该会话已有检索正在进行，请等待完成后再试"}
     task_id = uuid.uuid4().hex[:12]
     _search_tasks[task_id] = {
         "status": "running", "detail": "", "result": None, "error": None,
@@ -244,6 +372,7 @@ def start_full_search(conv_id: str, params: dict, user_id: int) -> dict:
 
 
 def get_search_task(task_id: str) -> dict | None:
+    _cleanup_stale_tasks()
     return _search_tasks.get(task_id)
 
 
@@ -257,9 +386,12 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
     try:
         if name == "full_search":
             result = start_full_search(conv.uuid, args, user.id)
+            if result.get("status") == "busy":
+                # 同会话已有检索在跑（P1 并发防重）：如实告知，不假装启动
+                return {"status": "busy", "message": result.get("message", "该会话已有检索正在进行，请等待完成后再试")}
             return {
                 "status": result["status"],
-                "task_id": result["task_id"],
+                "task_id": result.get("task_id"),
                 "message": "检索已启动，正在后台执行（预计 1-2 分钟）。完成后再通知用户去检索页查看。",
             }
 

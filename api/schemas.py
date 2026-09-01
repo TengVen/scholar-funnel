@@ -177,6 +177,7 @@ class PaperDetailOut(BaseModel):
     doi: str | None = None
     arxiv_id: str | None = None
     abstract: str | None = None
+    abstract_source: str = ""         # 摘要来源："" 原文 / ai_tldr（Semantic Scholar AI 概要，非原文）
     cited_by_count: int = 0
     github_url: str | None = None
     keywords: list[str] = []

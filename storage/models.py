@@ -103,6 +103,7 @@ class Paper(Base):
     cart_entry: Mapped["CartItem | None"] = relationship(
         back_populates="paper", uselist=False
     )
+    run_links: Mapped[list["PaperRunLink"]] = relationship(back_populates="paper")
 
 
 class AnalysisResult(Base):
@@ -265,7 +266,7 @@ class PaperQuestion(Base):
 
 
 class SearchRun(Base):
-    """检索记录（工作台"检索记录"视图 + 认知收敛检测数据源，一表两用）"""
+    """检索记录（工作台"检索记录"视图 + 认知收敛检测数据源 + Retrieval Planner 快照）"""
     __tablename__ = "ai_search_runs"
     __table_args__ = (
         Index("idx_search_runs_project", "project_id", "created_at"),
@@ -284,6 +285,21 @@ class SearchRun(Base):
     target_category: Mapped[str | None] = mapped_column(String(20), default=None, doc="gap 类别")
     top_k: Mapped[int | None] = mapped_column(Integer, default=None)
     score_threshold: Mapped[float | None] = mapped_column(Float, default=None)
+    # ── P1：约束快照 + 模式/状态（Retrieval Planner 架构）──
+    mode: Mapped[str | None] = mapped_column(
+        String(20), default=None,
+        doc="检索模式: full 全量 / incremental 增量 / local_filter 本地过滤 / hybrid 混合"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default="done",
+        doc="done / partial 部分（降级保底） / failed / rate_limited（OpenAlex 限流）"
+    )
+    error: Mapped[str | None] = mapped_column(Text, default=None, doc="错误摘要（失败/降级留痕，前端可见）")
+    plan_reason: Mapped[str | None] = mapped_column(Text, default=None, doc="Planner 决策说明（为什么这次这么搜）")
+    year_from: Mapped[int | None] = mapped_column(Integer, default=None, doc="约束快照：年份窗口")
+    year_to: Mapped[int | None] = mapped_column(Integer, default=None)
+    methodology: Mapped[str | None] = mapped_column(Text, default=None, doc="约束快照：方法论偏好")
+    paper_type: Mapped[str | None] = mapped_column(String(20), default=None, doc="约束快照：all/survey/original")
     total_found: Mapped[int] = mapped_column(Integer, default=0, doc="召回数")
     saved_count: Mapped[int] = mapped_column(Integer, default=0, doc="入库/候选数")
     covered_ratio: Mapped[float | None] = mapped_column(
@@ -292,6 +308,25 @@ class SearchRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     project: Mapped["Project"] = relationship()
+    paper_links: Mapped[list["PaperRunLink"]] = relationship(back_populates="search_run")
+
+
+class PaperRunLink(Base):
+    """论文 ↔ 检索记录 多对多（Search Run = 独立资产快照；论文跨 Run 共享不重复入库）"""
+    __tablename__ = "ai_paper_runs"
+    __table_args__ = (
+        UniqueConstraint("paper_id", "search_run_id", name="uq_paper_run"),
+        Index("idx_paper_runs_run", "search_run_id"),
+        Index("idx_paper_runs_paper", "paper_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    paper_id: Mapped[int] = mapped_column(ForeignKey("ai_papers.id"), nullable=False)
+    search_run_id: Mapped[int] = mapped_column(ForeignKey("ai_search_runs.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    paper: Mapped["Paper"] = relationship(back_populates="run_links")
+    search_run: Mapped["SearchRun"] = relationship(back_populates="paper_links")
 
 
 # ══════════════════════════════════════════════════════════

@@ -49,12 +49,13 @@ def get_task(project_id: int, openalex_id: str) -> dict | None:
 
 def start_analysis(project_id: int, openalex_id: str, title: str, abstract: str,
                    year: int | None, cited_by_count: int, user_query: str = "",
-                   oa_pdf_url: str | None = None,
+                   oa_pdf_url: str | None = None, doi: str | None = None,
                    persist: bool = False, paper_id: int | None = None) -> dict:
     """
     触发单篇深度分析（幂等：同论文已有 running 任务则复用）。
     persist=True 且提供 paper_id 时：分析完成后直接写库（L3 直接落库）；
     否则结果仅进内存缓存（L2 预热，落库标志=问答交互）。
+    doi：摘要缺失时 Semantic Scholar TLDR 兜底（sources/abstract_fallback.py）
     返回 {status, task_id}。
     """
     k = _key(project_id, openalex_id)
@@ -70,7 +71,7 @@ def start_analysis(project_id: int, openalex_id: str, title: str, abstract: str,
         args=(k, project_id, openalex_id, {
             "title": title, "abstract": abstract, "year": year,
             "cited_by_count": cited_by_count, "user_query": user_query,
-            "oa_pdf_url": oa_pdf_url,
+            "oa_pdf_url": oa_pdf_url, "doi": doi,
             "persist": persist, "paper_id": paper_id,
         }),
         daemon=True,
@@ -96,10 +97,39 @@ def _run(k: str, project_id: int, openalex_id: str, info: dict) -> None:
             _cache[k] = {"status": "done", "result": result, "ts": time.time()}
         if info.get("persist") and info.get("paper_id"):
             _persist_result(info["paper_id"], sections, analysis, result["material_type"])
+        # 全文分节含 Abstract 节 → 回填论文摘要（仅当库里 abstract 为空；
+        # 覆盖 OpenAlex/Crossref 均无摘要的 Elsevier 论文，摘要条与分析材料都从原文 PDF 来）
+        if sections and info.get("paper_id"):
+            _backfill_abstract(info["paper_id"], sections)
         logger.info(f"论文分析完成: {openalex_id} (material={material_type})")
     except Exception as e:
         logger.error(f"论文分析失败 {openalex_id}: {e}")
         task.update({"status": "error", "error": str(e)})
+
+
+def _backfill_abstract(paper_id: int, sections) -> None:
+    """从分节中提取 Abstract 节回填 ai_papers.abstract（仅当为空；失败静默）"""
+    if not sections:
+        return
+    from storage.models import Paper
+    from storage.mysql_db import get_session
+    try:
+        abstract = ""
+        for s in sections:
+            heading = (s.get("heading") or "").strip().lower()
+            if heading == "abstract" or heading.startswith("abstract"):
+                abstract = (s.get("content") or "").strip()
+                break
+        if not abstract:
+            return
+        with get_session() as session:
+            p = session.get(Paper, paper_id)
+            if p and not (p.abstract or "").strip():
+                p.abstract = abstract[:4000]
+                session.commit()
+                logger.info(f"已从 PDF Abstract 节回填摘要 paper={paper_id} ({len(abstract)} 字)")
+    except Exception as e:
+        logger.warning(f"摘要回填失败 paper={paper_id}: {e}")
 
 
 def _persist_result(paper_id: int, sections, analysis, material_type: str = "摘要") -> None:
@@ -177,6 +207,11 @@ def _load_material(info: dict, openalex_id: str) -> tuple[list | None, str, str]
             logger.warning(f"全文获取失败 {pdf_url}: {e}")
     abstract = (info.get("abstract") or "").strip()
     if not abstract:
+        # 原文摘要缺失 → Semantic Scholar TLDR 兜底（AI 概要，非原文，明确标注）
+        from sources.abstract_fallback import fetch_tldr
+        tldr = fetch_tldr(info.get("doi"))
+        if tldr:
+            return None, tldr, "AI 概要"
         return None, "", "无材料"
     return None, abstract, "摘要"
 

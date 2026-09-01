@@ -17,7 +17,7 @@ from sqlalchemy import func
 from api.schemas import ChatRequest, ChatResponse
 from llm import client as llm
 from storage.mysql_db import get_session
-from storage.models import Conversation, Message, Project, User, CartItem, Paper, SearchRun
+from storage.models import Conversation, Message, Project, User, CartItem, Paper, SearchRun, PaperRunLink
 from utils.auth import get_current_user, get_owned_project
 from utils.task_guard import assert_task_owner
 from utils.log import setup_logger
@@ -224,6 +224,8 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
         logger.warning(f"认知结构构建失败（不影响总结）: {e}")
 
     # 存会话消息（role=assistant，带 L2 认知结构卡）——按 user 过滤，防跨用户越权
+    # run_id：关联本次检索的 Run（核心推荐按 Run 归属，工作台论文推荐按 Run 区分）
+    run_id = result.get("run_id")
     with get_session() as session:
         conv = (
             session.query(Conversation)
@@ -239,7 +241,8 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
                 summary,
                 project_id=project_id, project_name=project_name,
                 attachments=(
-                    {"type": "l2_structure", "level": "L2", "cognitive_structure": cognitive}
+                    {"type": "l2_structure", "level": "L2", "run_id": run_id,
+                     "cognitive_structure": cognitive}
                     if cognitive else None
                 ),
             )
@@ -296,6 +299,14 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
     recs = state.get("skeleton_recommendations") or []
     probes = state.get("derived_probes") or []
 
+    # 深研项目的 trunk 检索 run（funnel 内部走 pipeline.search，run 已落库）——结果卡按 Run 归属
+    try:
+        from storage.search_runs import recent_runs
+        _runs = recent_runs(project_id, 1)
+        _deep_run_id = _runs[0]["id"] if _runs else None
+    except Exception:
+        _deep_run_id = None
+
     # 候选富化：从 ai_papers 补作者/被引（推荐理由之外的元数据，供三分类分组下的论文行展示）
     paper_ids = [r.get("paper_id") for r in recs[:12] if r.get("paper_id")]
     paper_info: dict[int, dict] = {}
@@ -318,6 +329,7 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
         "level": "L3",
         "thread_id": thread_id,
         "project_id": project_id,
+        "run_id": _deep_run_id,  # 关联本次检索的 Run（论文推荐按 Run 归属）
         "metrics": {
             "core_papers": core_n,          # 核心论文（AI 推荐骨架候选）
             "new_papers": trunk.get("new_saved", 0),   # 新增文献（主干新入库）
@@ -365,6 +377,15 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
             .first()
         )
         if conv:
+            # 0 召回：不产生无意义空子研究——移除会话关联（project 保留为孤儿，工作台不可见）
+            if trunk.get("total_found", 0) == 0:
+                ids = list(conv.project_ids or [])
+                if project_id in ids:
+                    ids.remove(project_id)
+                conv.project_ids = ids
+                if conv.project_id == project_id:
+                    conv.project_id = ids[-1] if ids else None
+                session.commit()
             # 幂等：该 thread 已生成过结果卡 → 直接返回既有，避免重复落库
             for m in (
                 session.query(Message)
@@ -380,6 +401,13 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
             proj = session.get(Project, project_id)
             if proj:
                 pname = proj.name
+            # 0 召回时结果卡文案明确提示（区别于正常完成）
+            if trunk.get("total_found", 0) == 0:
+                content = (
+                    f"深度调研未能召回到文献（「{pname}」）。\n"
+                    "可能原因：关键词过于具体、或数据源暂时不可用。"
+                    "建议调整方向描述后重新调研，或稍后再试。"
+                )
             _append_message(
                 session, conv, user.id, "assistant", content,
                 project_id=project_id, project_name=pname, attachments=payload,
@@ -389,10 +417,17 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
 
 
 def _generate_summary(search: dict, project_name: str) -> str:
-    """用检索统计生成一句话总结（不调 LLM，避免额外耗时和成本）"""
+    """用检索统计生成一句话总结（不调 LLM，避免额外耗时和成本）。
+    0 召回时给出明确提示（区别于"正常完成"），引导用户调整关键词。"""
     total = search.get("total_found", 0)
     saved = search.get("new_saved", 0)
     surveys = search.get("survey_count", 0)
+    if total == 0:
+        return (
+            f"「{project_name}」方向的检索未能召回到文献。\n"
+            "可能原因：关键词过于具体、或 OpenAlex 暂时限流。"
+            "建议调整关键词/方向描述后重新检索，或稍后再试。"
+        )
     lines = [
         f"「{project_name}」方向的检索已完成：共召回 {total} 篇，新入库 {saved} 篇"
         + (f"，其中综述 {surveys} 篇" if surveys else "") + "。",
@@ -493,7 +528,7 @@ def get_workspace(conversation_id: str, user: User = Depends(get_current_user)):
 
 def _project_workspace(session, p: Project) -> dict:
     """单个子研究的四区块摘要（同一 session 聚合，避免嵌套连接）"""
-    # 检索记录（时间倒序）
+    # 检索记录（时间倒序；每条带归属论文——Search Run 独立资产视图）
     runs = (
         session.query(SearchRun)
         .filter(SearchRun.project_id == p.id)
@@ -501,44 +536,100 @@ def _project_workspace(session, p: Project) -> dict:
         .limit(20)
         .all()
     )
-    # L2 认知结构（骨架摘要：按类别分组计数，只读展示）
-    cart_counts = (
-        session.query(CartItem.category, func.count(CartItem.id))
-        .filter(CartItem.project_id == p.id)
-        .group_by(CartItem.category)
+    run_ids = [r.id for r in runs]
+    # 批量加载 run→papers（避免 N+1）：ai_paper_runs + ai_papers 一次查
+    run_papers: dict[int, list[dict]] = {rid: [] for rid in run_ids}
+    run_keywords: dict[int, list[str]] = {rid: [] for rid in run_ids}  # 各 run 归属论文的高频关键词 top5
+    if run_ids:
+        links = (
+            session.query(PaperRunLink)
+            .filter(PaperRunLink.search_run_id.in_(run_ids))
+            .all()
+        )
+        pids = {l.paper_id for l in links}
+        paper_map: dict[int, Paper] = {}
+        if pids:
+            for row in session.query(Paper).filter(Paper.id.in_(pids)).all():
+                paper_map[row.id] = row
+        for l in links:
+            row = paper_map.get(l.paper_id)
+            if row:
+                run_papers[l.search_run_id].append({
+                    "paper_id": row.id,
+                    "openalex_id": row.openalex_id,
+                    "title": row.title,
+                    "year": row.year,
+                    "explored": row.explored_at is not None,
+                })
+                # 关键词聚合（ai_papers.keywords JSON 数组，OpenAlex concepts）
+                kws = row.keywords if isinstance(row.keywords, list) else []
+                if kws:
+                    run_keywords[l.search_run_id].extend(
+                        k for k in kws if isinstance(k, str) and k.strip()
+                    )
+    from collections import Counter
+    for rid in run_ids:
+        cnt = Counter(run_keywords[rid])
+        run_keywords[rid] = [k for k, _ in cnt.most_common(5)]
+    # 各 Run 的核心推荐（按 run_id 关联消息卡）：l2_structure（full_search 三分类认知结构）
+    # 或 deep_research_result（深研骨架候选，按 suggested_category 分组）
+    run_cognitive: dict[int, dict] = {rid: {} for rid in run_ids}
+    if run_ids:
+        for m in (
+            session.query(Message)
+            .filter(Message.project_id == p.id)
+            .order_by(Message.id.desc())
+            .all()
+        ):
+            att = m.attachments
+            if not isinstance(att, dict):
+                continue
+            rid = att.get("run_id")
+            if rid not in run_cognitive or run_cognitive[rid]:
+                continue
+            if att.get("type") == "l2_structure" and isinstance(att.get("cognitive_structure"), dict):
+                cs = att["cognitive_structure"]
+                run_cognitive[rid] = {
+                    "topic": cs.get("topic", ""),
+                    "selected_count": cs.get("selected_count", 0),
+                    "foundation": cs.get("foundation", []) or [],
+                    "mainstream": cs.get("mainstream", []) or [],
+                    "frontier": cs.get("frontier", []) or [],
+                }
+            elif att.get("type") == "deep_research_result":
+                cands = att.get("candidates") or []
+                groups: dict[str, list] = {"foundation": [], "mainstream": [], "frontier": []}
+                for c in cands:
+                    cat = c.get("suggested_category", "mainstream")
+                    groups.setdefault(cat, []).append({
+                        "paper_id": c.get("paper_id"),
+                        "title": c.get("title", ""),
+                        "year": c.get("year", 0),
+                        "reason": c.get("reason", ""),
+                    })
+                run_cognitive[rid] = {
+                    "topic": att.get("project_name") or "",
+                    "selected_count": sum(len(v) for v in groups.values()),
+                    **groups,
+                }
+    # 论文推荐 = 子研究池内论文（全量/增量检索入库的累积论文池；按 Run 归属由 search_runs.papers 细化）
+    paper_rows = (
+        session.query(Paper)
+        .filter(Paper.project_id == p.id)
+        .order_by(Paper.explored_at.desc().nullslast(), Paper.id.desc())
+        .limit(100)
         .all()
     )
-    # 论文推荐（深研推荐集）：最近一条 deep_research_result 结果卡的 candidates。
-    # 不用 project 下全量 ai_papers（全量属检索页范畴，工作台只展示"这次研究推荐的论文"）
-    rec_candidates: list[dict] = []
-    for m in (
-        session.query(Message)
-        .filter(Message.project_id == p.id)
-        .order_by(Message.id.desc())
-        .all()
-    ):
-        att = m.attachments
-        if isinstance(att, dict) and att.get("type") == "deep_research_result":
-            rec_candidates = att.get("candidates") or []
-            break
-
-    rec_ids = [c.get("paper_id") for c in rec_candidates if c.get("paper_id")]
-    paper_map: dict[int, Paper] = {}
-    if rec_ids:
-        for row in session.query(Paper).filter(Paper.id.in_(rec_ids)).all():
-            paper_map[row.id] = row
     papers = [
         {
-            "paper_id": c.get("paper_id"),
-            "openalex_id": (paper_map.get(c["paper_id"]).openalex_id if c.get("paper_id") in paper_map else ""),
-            "title": c.get("title", ""),
-            "year": c.get("year", 0),
-            "stage": (paper_map.get(c["paper_id"]).stage if c.get("paper_id") in paper_map else ""),
-            "explored": (paper_map.get(c["paper_id"]).explored_at is not None if c.get("paper_id") in paper_map else False),
-            "category": c.get("suggested_category", ""),
-            "reason": c.get("reason", ""),
+            "paper_id": row.id,
+            "openalex_id": row.openalex_id,
+            "title": row.title,
+            "year": row.year,
+            "stage": row.stage,
+            "explored": row.explored_at is not None,
         }
-        for c in rec_candidates
+        for row in paper_rows
     ]
     # 深入研究 = 该子研究已探究的历史论文（独立查询：不限推荐集，探究入口可能来自检索页）
     explored_rows = (
@@ -567,13 +658,19 @@ def _project_workspace(session, p: Project) -> dict:
                 "user_constraint": r.user_constraint, "target_category": r.target_category,
                 "total_found": r.total_found, "saved_count": r.saved_count,
                 "covered_ratio": r.covered_ratio,
+                # ── P1/P3：模式/状态/决策留痕（工作台可见）──
+                "mode": r.mode, "status": r.status, "error": r.error,
+                "plan_reason": r.plan_reason,
+                "year_from": r.year_from, "year_to": r.year_to,
+                "methodology": r.methodology, "paper_type": r.paper_type,
+                "keywords": run_keywords.get(r.id, []),
+                "papers": run_papers.get(r.id, []),
+                "cognitive": run_cognitive.get(r.id, {}),
                 "created_at": r.created_at.isoformat() if r.created_at else "",
             }
             for r in runs
         ],
-        "cognitive": {
-            "categories": [{"category": c, "count": n} for c, n in cart_counts],
-        },
+        "cognitive": run_cognitive,  # 兼容：顶层汇总（各 Run 已内嵌 cognitive）
         "papers": papers,
         "explored_papers": explored_papers,
     }

@@ -284,6 +284,7 @@ export interface PaperDetail {
   doi?: string | null;
   arxiv_id?: string | null;
   abstract?: string | null;
+  abstract_source?: string;          // "" 原文 / ai_tldr（Semantic Scholar AI 概要，非原文）
   cited_by_count: number;
   github_url?: string | null;
   keywords: string[];
@@ -575,6 +576,18 @@ export interface SearchRunRecord {
   total_found: number;
   saved_count: number;
   covered_ratio?: number | null;
+  // ── P1/P3：模式/状态/决策留痕（工作台可见）──
+  mode?: string | null;          // full / incremental / local_filter / hybrid
+  status?: string | null;        // done / partial / failed / rate_limited
+  error?: string | null;
+  plan_reason?: string | null;   // Planner 决策说明
+  year_from?: number | null;
+  year_to?: number | null;
+  methodology?: string | null;
+  paper_type?: string | null;
+  keywords?: string[];          // 该 Run 归属论文的高频关键词 top5（工作台任务信息行）
+  papers?: PaperBrief[];         // 该 Run 归属论文（Search Run 独立资产视图）
+  cognitive?: Partial<CognitiveStructure>;  // 该 Run 的核心推荐（三分类，finalize 时按 run_id 关联）
   created_at: string;
 }
 
@@ -601,9 +614,8 @@ export interface SubResearchWorkspace {
   tech_probe?: string | null;
   created_at: string;
   search_runs: SearchRunRecord[];
-  cognitive: { categories: CognitiveCategoryCount[] };
-  papers: PaperBrief[];
-  explored_papers: PaperBrief[];
+  papers: PaperBrief[];            // 子研究池内论文（头部统计）
+  explored_papers: PaperBrief[];   // 已探究论文（头部统计）
 }
 
 export interface ConversationWorkspace {

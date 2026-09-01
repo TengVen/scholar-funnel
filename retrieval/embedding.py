@@ -8,6 +8,7 @@ Embedding 向量化 —— 双后端（本地模型 / SiliconFlow API）
 - 输出 L2 归一化向量（配合 pgvector cosine 检索）
 """
 import os
+import threading
 from typing import List, Optional
 
 from sentence_transformers import SentenceTransformer
@@ -125,11 +126,14 @@ class EmbeddingService:
 
 # 模块级默认实例（provider 由运行时配置决定，首次调用时生效）
 _default: EmbeddingService | None = None
+_default_lock = threading.Lock()  # 并发安全：多任务同时触发懒加载时不重复构造模型
 
 
 def get_embedder() -> EmbeddingService:
-    """获取全局默认 EmbeddingService（单例）"""
+    """获取全局默认 EmbeddingService（单例，双重检查锁——并发检索/分析共享一个模型实例）"""
     global _default
     if _default is None:
-        _default = EmbeddingService()
+        with _default_lock:
+            if _default is None:
+                _default = EmbeddingService()
     return _default

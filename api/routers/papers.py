@@ -245,6 +245,18 @@ def _detail_out(mode: str, work, paper: Paper | None,
     if not sections and analysis.get("sections"):
         sections = pa.normalize_sections(analysis["sections"])
     has_analysis = analysis.get("status") == "done"
+
+    # 摘要：原文优先；缺失时 Semantic Scholar TLDR 兜底（AI 概要，明确标注来源）
+    abstract = (paper.abstract if paper else work.abstract) if (paper or work) else ""
+    abstract_source = ""
+    if not (abstract or "").strip():
+        doi = (paper.doi if paper else (work.doi if work else None)) if (paper or work) else None
+        from sources.abstract_fallback import fetch_tldr
+        tldr = fetch_tldr(doi)
+        if tldr:
+            abstract = tldr
+            abstract_source = "ai_tldr"
+
     return PaperDetailOut(
         mode=mode,
         paper_id=paper.id if paper else None,
@@ -255,7 +267,8 @@ def _detail_out(mode: str, work, paper: Paper | None,
         venue=(paper.venue if paper else work.venue) or "",
         doi=(paper.doi if paper else work.doi) if (paper or work) else None,
         arxiv_id=(paper.arxiv_id if paper else work.arxiv_id) if (paper or work) else None,
-        abstract=(paper.abstract if paper else work.abstract) if (paper or work) else "",
+        abstract=abstract,
+        abstract_source=abstract_source,
         cited_by_count=(paper.cited_by_count if paper else work.cited_by_count) or 0,
         github_url=(paper.github_url if paper else work.github_url) if (paper or work) else None,
         keywords=((paper.keywords if paper else work.concepts) or []) if isinstance((paper.keywords if paper else work.concepts), list) else [],
@@ -356,7 +369,7 @@ async def upload_pdf(paper_id: int = Form(...), project_id: int = Form(...),
 
     r = pa.start_analysis(
         project_id, openalex_id, title, abstract, year, cited,
-        user_query=topic, persist=True, paper_id=paper_id,
+        user_query=topic, doi=paper.doi, persist=True, paper_id=paper_id,
     )
     return {"paper_id": paper_id, "status": r["status"], "task_id": r["task_id"]}
 
@@ -379,19 +392,20 @@ def explore_openalex(body: ExploreRequest, user: User = Depends(get_current_user
     paper_id = result["paper_id"]
     _mark_explored(paper_id, body.project_id)
 
-    title, abstract, year, cited, topic = "", "", None, 0, ""
+    title, abstract, year, cited, topic, doi = "", "", None, 0, "", ""
     with get_session() as session:
         paper = session.get(Paper, paper_id)
         proj = session.get(Project, body.project_id)
         if paper:
             title, abstract = paper.title or "", paper.abstract or ""
             year, cited = paper.year, paper.cited_by_count or 0
+            doi = paper.doi or ""
         if proj:
             topic = proj.user_query or ""
 
     r = pa.start_analysis(
         body.project_id, body.openalex_id, title, abstract, year, cited,
-        user_query=topic, persist=body.persist, paper_id=paper_id,
+        user_query=topic, doi=doi or None, persist=body.persist, paper_id=paper_id,
     )
     return {"paper_id": paper_id, "status": r["status"], "task_id": r["task_id"]}
 
@@ -430,7 +444,7 @@ def explore_paper(paper_id: int, project_id: int = Query(...),
     r = pa.start_analysis(
         project_id, paper.openalex_id, paper.title, paper.abstract or "",
         paper.year, paper.cited_by_count or 0, user_query=topic, oa_pdf_url=pdf_url,
-        persist=persist, paper_id=paper_id,
+        doi=paper.doi, persist=persist, paper_id=paper_id,
     )
     return {"status": r["status"], "task_id": r["task_id"]}
 
@@ -484,7 +498,7 @@ def ask_paper(paper_id: int, body: AskRequest, user: User = Depends(get_current_
         pa.start_analysis(
             body.project_id, paper.openalex_id, paper.title, paper.abstract or "",
             paper.year, paper.cited_by_count or 0, user_query=topic,
-            oa_pdf_url=(work.oa_pdf_url if work else None),
+            oa_pdf_url=(work.oa_pdf_url if work else None), doi=paper.doi,
         )
         return AskResponse(answer="分析准备中，请稍后再问", citations=[])
 

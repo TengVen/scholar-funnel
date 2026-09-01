@@ -110,11 +110,20 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
   // per-block 证据（A 正解）：方法框架 / 实验结论各自内嵌原文锚点
   const mfEvidence = asEvidence(a.method_framework?.evidence);
   const expEvidence = asEvidence(a.experiments?.evidence);
-  // 归纳徽章文案：全文级 vs 摘要级（摘要未看全文，强度降一档）
-  const e3Label = materialType === "全文分节" ? "AI 归纳 · 全文" : "AI 归纳 · 仅摘要";
+  // 归纳徽章文案：全文级 / 摘要级 / AI 概要 / 无材料（2026-09-01：无材料不再标"仅摘要"误导；AI 概要区分标注）
+  const e3Label =
+    materialType === "全文分节" ? "AI 归纳 · 全文"
+      : materialType === "摘要" ? "AI 归纳 · 仅摘要"
+        : materialType === "AI 概要" ? "AI 归纳 · AI 概要"
+          : "AI 归纳 · 无材料";
 
   return (
     <div className="flex flex-col gap-4">
+      {materialType === "无材料" && (
+        <div className="text-xs text-[#C27BA0] border border-[#C27BA0]/25 bg-[#C27BA0]/10 rounded-md px-3 py-2 leading-relaxed">
+          未获取到论文材料（无摘要无全文），以下分析仅供参考；上传 PDF 后可自动升级为全文级分析。
+        </div>
+      )}
       {a.summary && (
         <Block title="摘要学术化总结" badge={<EvidenceBadge level="E3" label={e3Label} />}>
           <p className="text-sm text-ink-secondary leading-relaxed">{a.summary}</p>
