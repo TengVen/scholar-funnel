@@ -31,10 +31,14 @@ def join_project(body: JoinProjectRequest, user: User = Depends(get_current_user
     return {"ok": True, "paper_id": result["paper_id"], "created": result.get("created", False)}
 
 
-def _build_reason(category: str | None, topic: str) -> str:
-    """按类别模板 + 主题注入生成推荐理由（模板集中 prompt/reason.py）"""
+def _build_reason(category: str | None, topic: str, **features) -> str:
+    """按类别模板 + 主题注入生成推荐理由（模板集中 prompt/reason.py）。
+
+    features 透传论文特征（title/year/cited/is_survey）：同一类别多篇时
+    文案因论文元数据不同而不同（2026-09-03 方案 A）。
+    """
     from prompt.reason import build_reason
-    return build_reason(category, topic)
+    return build_reason(category, topic, **features)
 
 
 def _why_from_meta(meta) -> PaperWhy | None:
@@ -149,7 +153,13 @@ def list_papers(
             if why is not None:
                 # 分类优先取骨架分类，其次 gap 推荐分类；均无则通用模板
                 category = cart_cats.get(r.id) or r.recommended_category
-                why.reason = _build_reason(category, topic)
+                why.reason = _build_reason(
+                    category, topic,
+                    title=r.title or "",
+                    year=r.year,
+                    cited=r.cited_by_count or 0,
+                    is_survey=bool(r.is_survey),
+                )
             papers.append(PaperOut(
                 id=r.id,
                 title=r.title,
@@ -180,12 +190,26 @@ def list_papers(
 #  论文详情页（三栏 + 三态：Transient / Candidate / Research Asset）
 # ══════════════════════════════════════════════════════════
 
-def _is_arxiv_pdf(work) -> bool:
-    """该论文是否可站内 PDF 预览：仅 arXiv 域名的 oa_pdf_url（产品约定非 arXiv 不考虑）"""
-    if not work or not work.oa_pdf_url:
-        return False
-    from sources.pdf_cache import is_arxiv_url
-    return is_arxiv_url(work.oa_pdf_url)
+def _arxiv_pdf_url(work, arxiv_id: str | None = None) -> str | None:
+    """站内 PDF 直链解析（仅 arXiv，产品约定非 arXiv 不站内预览）。
+
+    2026-09-03 修复：OpenAlex 对 arXiv 论文常不填 open_access.pdf_url
+    （best_oa_location.landing_page 为 abs 页），但存在 arxiv_id 时
+    https://arxiv.org/pdf/{id} 直链稳定可用 → 由 arxiv_id 构造兜底，
+    避免"能打开 arXiv 却无站内 PDF"的断点。
+    """
+    if work and work.oa_pdf_url:
+        from sources.pdf_cache import is_arxiv_url
+        if is_arxiv_url(work.oa_pdf_url):
+            return work.oa_pdf_url
+    aid = arxiv_id or (getattr(work, "arxiv_id", None) if work else None)
+    aid = str(aid or "").strip().lower()
+    # 清理可能的前缀/版本杂质（arxiv:2303.17114v2 → 2303.17114v2）
+    for pre in ("arxiv:", "http://arxiv.org/abs/", "https://arxiv.org/abs/", "arxiv.org/abs/"):
+        if aid.startswith(pre):
+            aid = aid[len(pre):]
+    aid = aid.split("?")[0].strip()
+    return f"https://arxiv.org/pdf/{aid}" if aid else None
 
 
 def _pdf_file_exists(openalex_id: str) -> bool:
@@ -275,7 +299,9 @@ def _detail_out(mode: str, work, paper: Paper | None,
         is_oa=(work.is_oa if work else False),
         oa_pdf_url=(work.oa_pdf_url if work else None),
         oa_landing_url=(work.oa_landing_url if work else None),
-        pdf_available=bool(_is_arxiv_pdf(work)) or _pdf_file_exists(openalex_id),
+        pdf_available=bool(_pdf_file_exists(openalex_id)) or bool(
+            _arxiv_pdf_url(work, paper.arxiv_id if paper else None)
+        ),
         in_project=paper is not None,
         stage=paper.stage if paper else None,
         in_cart=bool(cart_category),
@@ -323,7 +349,7 @@ def get_transient_paper(openalex_id: str = Query(...),
 @router.get("/pdf")
 def get_pdf(openalex_id: str = Query(...), user: User = Depends(get_current_user)):
     """详情页"原文 PDF"预览：本地文件（上传补全/已缓存）直接返回；
-    否则仅 arXiv 域名可下载（同源代理避免 X-Frame-Options 拦截）。"""
+    否则仅 arXiv 可下载（oa_pdf_url 或 arxiv_id 直链；同源代理避免 X-Frame-Options 拦截）。"""
     from sources import openalex as oa
     from sources.pdf_cache import get_pdf_path, download_pdf
 
@@ -332,10 +358,18 @@ def get_pdf(openalex_id: str = Query(...), user: User = Depends(get_current_user
     local = get_pdf_path(openalex_id)
     if local:
         return FileResponse(local, media_type="application/pdf")
-    # 2) 未上传 → 仅 arXiv 走下载缓存
+    # 2) 未上传 → 解析 arXiv 直链（oa_pdf_url → arxiv_id 构造兜底）；库内 arxiv_id 一并兜底
     work = oa.get_work_by_id(openalex_id)
-    pdf_url = work.oa_pdf_url if work else None
-    if not _is_arxiv_pdf(work):
+    db_arxiv_id = None
+    with get_session() as session:
+        row = (
+            session.query(Paper.arxiv_id)
+            .filter(Paper.openalex_id == openalex_id, Paper.arxiv_id.isnot(None))
+            .first()
+        )
+        db_arxiv_id = row[0] if row else None
+    pdf_url = _arxiv_pdf_url(work, db_arxiv_id)
+    if not pdf_url:
         return PlainTextResponse("该论文无 PDF（可在详情页上传补全）", status_code=404)
     path = download_pdf(openalex_id, pdf_url)
     if not path:
@@ -583,7 +617,13 @@ def get_paper_detail(paper_id: int, project_id: int = Query(...), user: User = D
             topic = proj.user_query or ""
         why = _why_from_meta(paper.recall_meta)
         if why is not None:
-            why.reason = _build_reason(paper.recommended_category, topic)
+            why.reason = _build_reason(
+                paper.recommended_category, topic,
+                title=paper.title or "",
+                year=paper.year,
+                cited=paper.cited_by_count or 0,
+                is_survey=bool(paper.is_survey),
+            )
         judgment = None
         for j in judgments.list_judgments(project_id):
             if j["paper_id"] == paper_id:

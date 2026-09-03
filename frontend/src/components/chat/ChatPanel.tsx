@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { sendChatMessage, getChatHistory } from "@/lib/api/chat";
-import type { ChatMessage } from "@/types/dto";
+import { streamChatMessage, getChatHistory } from "@/lib/api/chat";
+import type { ChatMessage, ChatResponse } from "@/types/dto";
 import { ChatHero } from "./ChatHero";
 import { ChatComposer } from "./ChatComposer";
 import { MessageList } from "./MessageList";
@@ -66,6 +66,11 @@ export function ChatPanel({
     return () => clearInterval(timer);
   }, [pendingIdx !== null]);
 
+  // 流式输出：进行中的草稿正文（null=无在途流）；非 null 时 MessageList 渲染为平铺流式块
+  const [streamText, setStreamText] = useState<string | null>(null);
+  // 在途流的 AbortController（切会话/新对话/卸载/连点时中断，防止跨会话写入）
+  const streamAbortRef = useRef<AbortController | null>(null);
+
   // 深度调研：当前是否正在轮询（避免重复提交）
   const drActiveRef = useRef(false);
   // 组件挂载标记：切换 tab 卸载后不再 setState，避免 React 警告/内存泄漏
@@ -97,6 +102,14 @@ export function ChatPanel({
     setMessages((prev) => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   }, []);
 
+  // 中断在途流式回复并清理草稿（切会话/新对话/卸载/连点时调用，防跨会话写入）
+  const stopStream = useCallback(() => {
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setStreamText(null);
+    setPendingIdx(null);
+  }, []);
+
   // 主 Agent 发起的异步任务轮询：
   // - full_search：单次检索 → /chat/search/status + 总结
   // - deep_research：多智能体调研 → /funnel/state + 结果卡
@@ -112,15 +125,16 @@ export function ChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 卸载（切换 tab）时取消在途轮询，避免对已卸载组件 setState / 泄漏请求
+  // 卸载（切换 tab）时取消在途轮询与流式请求，避免对已卸载组件 setState / 泄漏请求
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      stopStream();
       cancelSearchPoll();
       cancelDeepResearch();
     };
-  }, [cancelSearchPoll, cancelDeepResearch]);
+  }, [stopStream, cancelSearchPoll, cancelDeepResearch]);
 
   // ── 历史恢复：把"运行中"的深度调研卡升级为结果卡 / 结束态（幂等）──
   useDeepResearchRecovery(messages, mountedRef, patchMessage);
@@ -139,6 +153,7 @@ export function ChatPanel({
   const openConversation = async (cid: string) => {
     latestReqRef.current = cid;
     openAbortRef.current?.abort();
+    stopStream();  // 切换会话：中断在途流，防止旧会话回复写入新会话
     const ac = new AbortController();
     openAbortRef.current = ac;
     try {
@@ -166,6 +181,7 @@ export function ChatPanel({
 
   // ── 新对话（左侧点击触发）──
   const newConversation = () => {
+    stopStream();  // 清空在途流与草稿
     setConversationId(genConvId());
     setMessages([]);
     setStage("greeting");
@@ -198,7 +214,7 @@ export function ChatPanel({
 
   useEffect(() => {
     if (hasConversation) scrollToBottom();
-  }, [messages, hasConversation]);
+  }, [messages, hasConversation, streamText]);
 
   const handleSend = async (textOverride?: string) => {
     const text = (textOverride ?? input).trim();
@@ -207,36 +223,35 @@ export function ChatPanel({
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setSending(true);
-    setPendingIdx(0);   // 显示执行中占位（轮换文案）
 
-    try {
-      const llmConfig: Record<string, string> = {};
-      if (config.llm.api_key) llmConfig.api_key = config.llm.api_key;
-      if (config.llm.base_url) llmConfig.base_url = config.llm.base_url;
-      if (config.llm.model) llmConfig.model = config.llm.model;
-      // 向量化/重排模型来源（本地 / API）→ 后端全局生效（检索/深度调研同样用）
-      llmConfig.embedding_provider = config.advanced.modelProvider;
+    // 中断可能残留的在途流（防连点双开），并接管本次流
+    stopStream();
+    const ac = new AbortController();
+    streamAbortRef.current = ac;
 
-      const res = await sendChatMessage(conversationId, text, {
-        ...(Object.keys(llmConfig).length > 0 ? { llm_config: llmConfig } : {}),
-      });
-      setPendingIdx(null);   // 收到响应，占位结束
+    const llmConfig: Record<string, string> = {};
+    if (config.llm.api_key) llmConfig.api_key = config.llm.api_key;
+    if (config.llm.base_url) llmConfig.base_url = config.llm.base_url;
+    if (config.llm.model) llmConfig.model = config.llm.model;
+    // 向量化/重排模型来源（本地 / API）→ 后端全局生效（检索/深度调研同样用）
+    llmConfig.embedding_provider = config.advanced.modelProvider;
 
+    setPendingIdx(0);   // 首 token 前显示执行中占位（轮换文案）
+
+    // 流式完成收尾：done 事件负载语义与旧 sendChatMessage 返回的 ChatResponse 一致
+    const finish = (res: ChatResponse) => {
+      setStage(res.stage);
       if (res.reply) {
         // L1 来源卡：answer_with_sources 的 hits 随回复渲染（论文 = 回答来源）
         const l1 = res.l1_sources;
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: res.reply,
-            project_id: currentProjectId ?? undefined,
-            attachments: l1?.length
-              ? { type: "l1_sources", level: "L1", sources: l1 }
-              : undefined,
-          },
-        ]);
-        setStage(res.stage);
+        pushMessage({
+          role: "assistant",
+          content: res.reply,
+          project_id: currentProjectId ?? undefined,
+          attachments: l1?.length
+            ? { type: "l1_sources", level: "L1", sources: l1 }
+            : undefined,
+        });
       }
       onConversationChanged?.(conversationId, currentProjectId);   // 当前会话跟随（切页回来可恢复）
       window.dispatchEvent(new CustomEvent("chat:updated"));   // 刷新左侧会话列表（消息数/时间）
@@ -273,13 +288,49 @@ export function ChatPanel({
           runSearchPoll(res.task_id);
         }
       }
+    };
+
+    let acc = "";
+    try {
+      await streamChatMessage(
+        conversationId,
+        text,
+        { ...(Object.keys(llmConfig).length > 0 ? { llm_config: llmConfig } : {}) },
+        (ev) => {
+          if (streamAbortRef.current !== ac) return;   // 已被新请求接管：丢弃过期事件
+          if (ev.type === "token") {
+            acc += String(ev.text ?? "");
+            setPendingIdx(null);   // 首 token 到达，占位结束
+            setStreamText(acc);
+          } else if (ev.type === "done") {
+            setPendingIdx(null);
+            setStreamText(null);
+            finish(ev as unknown as ChatResponse);
+          } else if (ev.type === "error") {
+            setPendingIdx(null);
+            setStreamText(null);
+            const msg = String(ev.message ?? "生成失败");
+            // 已有部分内容 → 保留已生成部分并标注中断；无内容 → 纯错误提示
+            pushMessage({
+              role: "assistant",
+              content: acc ? `${acc}\n\n_（生成中断：${msg}）_` : `抱歉，出了点问题：${msg}`,
+            });
+          }
+        },
+        ac.signal,
+      );
     } catch (e) {
-      setPendingIdx(null);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `抱歉，出了点问题：${e instanceof Error ? e.message : String(e)}` },
-      ]);
+      // 主动取消（切会话/新对话/卸载）→ 静默；真实失败 → 本地错误消息
+      if (!ac.signal.aborted) {
+        setPendingIdx(null);
+        setStreamText(null);
+        pushMessage({
+          role: "assistant",
+          content: `抱歉，出了点问题：${e instanceof Error ? e.message : String(e)}`,
+        });
+      }
     } finally {
+      if (streamAbortRef.current === ac) streamAbortRef.current = null;
       setSending(false);
       inputRef.current?.focus();
     }
@@ -341,6 +392,7 @@ export function ChatPanel({
             onOpenProject={onOpenProject}
             pendingIdx={pendingIdx}
             searching={searching}
+            streamingText={streamText}
             messagesEndRef={messagesEndRef}
           />
           <ChatComposer

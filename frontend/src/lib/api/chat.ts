@@ -1,7 +1,7 @@
 /**
- * 对话 API —— 发消息 / 检索任务轮询 / 会话历史
+ * 对话 API —— 发消息（含 SSE 流式）/ 检索任务轮询 / 会话历史
  */
-import { request } from "../http";
+import { request, requestEventStream } from "../http";
 import type {
   ChatResponse,
   ConversationHistory,
@@ -21,6 +21,25 @@ export function sendChatMessage(
     method: "POST",
     body: JSON.stringify({ conversation_id: conversationId, message, ...extra }),
   });
+}
+
+/** 流式发送对话消息（SSE）：token/done/error 事件经 onEvent 回调；signal 可中断在途流 */
+export function streamChatMessage(
+  conversationId: string,
+  message: string,
+  extra: Record<string, unknown>,
+  onEvent: (ev: Record<string, unknown>) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return requestEventStream(
+    "/api/chat/message/stream",
+    {
+      method: "POST",
+      body: JSON.stringify({ conversation_id: conversationId, message, ...extra }),
+    },
+    onEvent,
+    signal,
+  );
 }
 
 export function getChatSearchStatus(taskId: string): Promise<TaskStatus> {

@@ -71,7 +71,14 @@ def build_cognitive_structure(
             "year": r.year,
             "cited_by_count": r.cited_by_count or 0,
             "suggested_category": cat,
-            "reason": build_reason(cat, topic),
+            # 论文特征注入：同类别内每篇因标题/年份/被引不同而文案不同（2026-09-03）
+            "reason": build_reason(
+                cat, topic,
+                title=r.title or "",
+                year=r.year,
+                cited=r.cited_by_count or 0,
+                is_survey=bool(r.is_survey),
+            ),
         })
 
     selected = sum(len(v) for v in groups.values())

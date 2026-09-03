@@ -5,7 +5,7 @@ import { Map, ChevronDown, ChevronUp } from "lucide-react";
 import type { CognitiveStructure, StructurePaper } from "@/types/dto";
 import type { Category } from "@/types/domain";
 import { CATEGORY_SECTION, CATEGORY_META } from "@/config/categories";
-import { PaperNavRow } from "./PaperNavRow";
+import { PaperAbstractRow } from "./PaperAbstractRow";
 
 /**
  * L2 认知结构卡（L2Renderer）：论文 = 认知结构节点。
@@ -30,7 +30,7 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
   const shownTotal = groups.reduce((n, g) => n + g.papers.length, 0);
 
   return (
-    <div className="card max-w-[85%] w-full px-4 py-3">
+    <div className="card bg-paper-chrome max-w-[85%] w-full px-4 py-3">
       {content && <div className="text-base leading-relaxed text-ink-secondary mb-2 whitespace-pre-wrap">{content}</div>}
 
       <div className="flex items-center gap-2">
@@ -55,12 +55,14 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
               </div>
               <div className="space-y-1">
                 {visible.map((p) => (
-                  <PaperNavRow
+                  <PaperAbstractRow
                     key={p.paper_id}
                     title={p.title}
                     meta={[p.year ? String(p.year) : "", p.cited_by_count ? `被引 ${p.cited_by_count}` : ""]}
                     reason={p.reason}
                     href={`/paper/${p.paper_id}${projectId ? `?project_id=${projectId}&auto=1` : ""}`}
+                    paperId={p.paper_id}
+                    projectId={projectId}
                   />
                 ))}
               </div>

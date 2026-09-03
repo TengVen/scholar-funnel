@@ -249,13 +249,21 @@ def search_local(body: LocalSearchRequest, user: User = Depends(get_current_user
         why_map = {}
         pids = [p.get("paper_id") for p in raw if p.get("paper_id")]
         if pids:
+            # 论文特征（标题/年份/被引）供"为什么推荐"注入（同一批多篇文案各不相同）
+            feat_by_id = {p.get("paper_id"): p for p in raw}
             with get_session() as session:
                 for row in session.query(PaperModel.recall_meta, PaperModel.id).filter(
                     PaperModel.id.in_(pids)
                 ).all():
                     why = _why_from_meta(row.recall_meta)
                     if why is not None:
-                        why.reason = _build_reason(None, topic)
+                        feat = feat_by_id.get(row.id) or {}
+                        why.reason = _build_reason(
+                            None, topic,
+                            title=feat.get("title") or "",
+                            year=feat.get("year"),
+                            cited=feat.get("cited_by_count") or 0,
+                        )
                         why_map[row.id] = why
 
         papers = [

@@ -29,7 +29,7 @@ export function ResearchResultCard({ att, projectId }: ResearchResultCardProps) 
   })).filter((g) => g.papers.length > 0);
 
   return (
-    <div className="max-w-[85%] w-full rounded-2xl card overflow-hidden">
+    <div className="max-w-[85%] w-full rounded-2xl card bg-paper-chrome overflow-hidden">
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
         <Sparkles className="w-3.5 h-3.5 text-status-running" />
         <p className="text-base font-medium text-ink">深度调研完成</p>

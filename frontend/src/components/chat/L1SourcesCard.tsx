@@ -17,7 +17,7 @@ interface L1SourcesCardProps {
 
 export function L1SourcesCard({ content, sources, projectId }: L1SourcesCardProps) {
   return (
-    <div className="card max-w-[85%] w-full px-4 py-3">
+    <div className="card bg-paper-chrome max-w-[85%] w-full px-4 py-3">
       <div className="text-base leading-relaxed text-ink-secondary whitespace-pre-wrap">{content}</div>
       {sources.length > 0 && (
         <div className="mt-3 border-t border-line pt-3">

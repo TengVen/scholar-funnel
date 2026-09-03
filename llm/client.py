@@ -203,6 +203,92 @@ def chat_with_tools(
     return message.content, tool_calls
 
 
+def chat_with_tools_stream(
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    system: str | None = None,
+    model: str = None,
+    temperature: float = 0.2,
+    max_tokens: int = 300000,
+):
+    """带工具调用的流式对话（OpenAI SDK stream=True，逐 token 产出）。
+
+    与 chat_with_tools 语义等价，差异只在产出方式：
+    - 每段文本增量 yield {"type": "text", "text": str}
+    - 整轮结束 yield {"type": "done", "content": str, "tool_calls": list | None}
+      tool_calls 为 None 表示模型直接作答；否则本轮为工具调用轮（content 一般为空）。
+
+    可靠性：仅在「尚未产出任何文本」时可整轮重试（限流/超时/5xx，参数与 _call_with_retry 一致）；
+    一旦已产出文本后出错 → 抛 LLMError（已产出内容由调用方保留展示，不重复生成）。
+    """
+    client = _get_client()
+    model = _resolve_model(model)
+
+    msgs = []
+    if system:
+        msgs.append({"role": "system", "content": system})
+    msgs.extend(messages)
+
+    kwargs = {
+        "model": model,
+        "messages": msgs,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    if tools:
+        kwargs["tools"] = tools
+
+    for attempt in range(_MAX_RETRIES):
+        started = False          # 是否已产出过文本（决定可否整轮重试）
+        parts: list[str] = []
+        tool_acc: dict[int, dict] = {}
+        try:
+            stream = client.chat.completions.create(**kwargs)
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    parts.append(delta.content)
+                    started = True
+                    yield {"type": "text", "text": delta.content}
+                if delta and getattr(delta, "tool_calls", None):
+                    for t in delta.tool_calls:
+                        acc = tool_acc.setdefault(t.index, {"id": "", "name": "", "arguments": ""})
+                        if t.id:
+                            acc["id"] = t.id
+                        fn = getattr(t, "function", None)
+                        if fn:
+                            if fn.name:
+                                acc["name"] += fn.name
+                            if fn.arguments:
+                                acc["arguments"] += fn.arguments
+            break  # 正常流结束
+        except Exception as e:
+            # 已产出文本（或已达最大尝试）→ 中断抛出；否则整轮重试
+            if started or attempt >= _MAX_RETRIES - 1:
+                raise LLMError(f"LLM 流式调用失败: {e}") from e
+            wait = _BASE_DELAY * (2 ** attempt)
+            logger.warning(
+                f"LLM 流式调用中断且未产出文本（第{attempt + 1}次），{wait:.0f}s 后整轮重试: {e}"
+            )
+            time.sleep(wait)
+            continue
+
+    tool_calls = None
+    if tool_acc:
+        tool_calls = [
+            {
+                "id": v["id"] or f"call_{i}",
+                "name": v["name"],
+                "arguments": json_loads_safe(v["arguments"]),
+            }
+            for i, v in sorted(tool_acc.items())
+        ]
+    yield {"type": "done", "content": "".join(parts), "tool_calls": tool_calls}
+
+
 def json_loads_safe(s: str) -> dict:
     """安全解析工具参数 JSON（DeepSeek 可能返回带格式的字符串）"""
     import json

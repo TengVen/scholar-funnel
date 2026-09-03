@@ -39,6 +39,10 @@ const config: Config = {
           hover: "rgb(var(--gold-hover) / <alpha-value>)",
           deep: "rgb(var(--gold-deep) / <alpha-value>)",
         },
+        // 用户气泡（暖米白=浅蓝 #8ABCD1，深色兜底金色）
+        bubble: {
+          user: "rgb(var(--bubble-user) / <alpha-value>)",
+        },
         // 暖金调边框
         line: {
           DEFAULT: "rgb(var(--line) / <alpha-value>)",

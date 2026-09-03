@@ -118,5 +118,58 @@ export async function requestBlob(path: string, options?: RequestInit, _retry = 
   return res.blob();
 }
 
+/** SSE/事件流请求（对话流式输出）——统一走传输层（带鉴权、401 刷新重试）。
+ *  按 \n\n 分帧解析 `data: {json}` 并逐帧回调 onEvent；HTTP 错误规范化抛 ApiError。
+ *  调用方通过 signal 中断（AbortController）可随时断开在途流。
+ */
+export async function requestEventStream(
+  path: string,
+  options: RequestInit,
+  onEvent: (data: Record<string, unknown>) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const doFetch = (sig?: AbortSignal) =>
+    fetch(buildUrl(path), { ...options, headers: buildHeaders(options), signal: sig });
+  let res = await doFetch(signal);
+  if (res.status === 401) {
+    if (await refreshToken()) {
+      res = await doFetch(signal);
+    } else {
+      await handleUnauthorized();
+    }
+  }
+  if (!res.ok) {
+    throw await toApiError(res);
+  }
+  if (!res.body) {
+    throw new ApiError("当前环境不支持流式读取", 0);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    // SSE 帧以空行分隔；每帧内容为 `data: {json}`（可能一帧内多段 data，逐行处理）
+    let sep: number;
+    while ((sep = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+      for (const line of block.split("\n")) {
+        const l = line.trim();
+        if (!l.startsWith("data:")) continue;
+        const payload = l.slice(5).trim();
+        if (!payload) continue;
+        try {
+          onEvent(JSON.parse(payload) as Record<string, unknown>);
+        } catch {
+          /* 单帧解析失败：跳过，不影响后续帧 */
+        }
+      }
+    }
+  }
+}
+
 /** 登出时需要（api/auth 使用） */
 export { getRefreshToken, clearTokens };

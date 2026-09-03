@@ -92,7 +92,7 @@ export function Sidebar({
         <div className="px-3 pt-3 pb-1 shrink-0">
           <button
             onClick={onNewConversation}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-gold/30 bg-accent-light/20 text-sm text-gold-light hover:bg-accent-light/40 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-paper text-ink text-sm border border-line hover:bg-paper-warm transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             新对话
@@ -123,7 +123,7 @@ export function Sidebar({
                       className={cn(
                         "w-full flex items-center gap-2 px-3 py-1.5 text-left text-base transition-colors",
                         activeConversationId === c.conversation_id
-                          ? "bg-accent-light text-accent font-medium"
+                          ? "bg-gold/15 text-gold-deep font-medium"
                           : "text-ink-secondary hover:bg-paper-warm",
                       )}
                     >

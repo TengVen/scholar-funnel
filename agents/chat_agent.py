@@ -804,6 +804,124 @@ def run_agent(conv: Conversation, user: User, messages: list[dict]) -> dict:
     }
 
 
+def run_agent_stream(conv: Conversation, user: User, messages: list[dict]):
+    """
+    流式版主 Agent 循环 —— 语义等价 run_agent，差异只在产出方式：
+
+    - 模型生成过程中的文本增量逐段 yield {"type": "text", "text": str}（SSE 转发用）
+    - 结束 yield {"type": "done", ...}（reply / task_id / l1_sources 等同 run_agent 返回值）
+
+    说明：
+    - 工具轮（模型决定调用工具）通常无文本 → 本轮不产生 text 事件，界面保持等待占位；
+      模型在工具轮内夹带少量文字时同样实时转发（下一轮若为终答，最终 reply 只含终轮文字，
+      与 run_agent 落库语义一致）。
+    - 生成中途失败抛 LLMError，由路由层转成 SSE error 事件（已流出的文字由前端保留展示）。
+    """
+    from llm import client as llm
+
+    loop_messages = list(messages)
+    task_id = None
+    tool_name = None
+    tool_summary = None
+    l1_sources: list[dict] | None = None
+    tool_logs: list[dict] = []
+    t0 = time.time()
+    first_round_tools: list[str] = []
+
+    def _emit_routing(level: str, reply: str) -> None:
+        """routing 日志：消息级一条，供误升监控抽检（DbLogHandler 落 sys_app_logs）"""
+        _routing_logger.info(
+            "routing level=%s first_tools=%s conv=%s project=%s reply_len=%s latency=%.1fs",
+            level,
+            first_round_tools,
+            getattr(conv, "uuid", ""),
+            getattr(conv, "project_id", None),
+            len(reply),
+            time.time() - t0,
+        )
+
+    def _done(reply: str):
+        yield {
+            "type": "done",
+            "reply": reply,
+            "task_id": task_id,
+            "tool_name": tool_name,
+            "tool_summary": tool_summary,
+            "l1_sources": l1_sources,
+            "tool_logs": tool_logs,
+        }
+
+    for _ in range(MAX_AGENT_ROUNDS):
+        round_parts: list[str] = []
+        tool_calls: list[dict] | None = None
+        for ev in llm.chat_with_tools_stream(
+            loop_messages, tools=TOOLS, system=SYSTEM_PROMPT, temperature=0.3,
+        ):
+            if ev["type"] == "text":
+                round_parts.append(ev["text"])
+                yield {"type": "text", "text": ev["text"]}
+            else:  # {"type": "done", "content", "tool_calls"}
+                tool_calls = ev["tool_calls"]
+        content = "".join(round_parts)
+
+        # 无工具调用 → 本轮即最终回复
+        if not tool_calls:
+            reply = (content or "").strip()
+            # B：启动话术强校验——声称"已启动"但本轮无异步任务（task_id 空）→ 如实告知失败
+            if task_id is None and _looks_like_launched(reply):
+                reply = "检索未成功启动，请重试，或再说一次「重新检索」。"
+            _emit_routing(_infer_level(first_round_tools), reply)
+            yield from _done(reply)
+            return
+
+        if not first_round_tools:
+            first_round_tools = [tc.get("name", "") for tc in tool_calls]
+        # 1) 追加 assistant 消息（含 tool_calls 结构，tool 消息必须跟在其后）
+        loop_messages.append({
+            "role": "assistant",
+            "content": content or None,
+            "tool_calls": [
+                {
+                    "id": tc.get("id") or f"call_{i}",
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc.get("arguments") or {}, ensure_ascii=False),
+                    },
+                }
+                for i, tc in enumerate(tool_calls)
+            ],
+        })
+        # 2) 执行工具并回传结果
+        for tc in tool_calls:
+            result = execute_tool(tc["name"], tc.get("arguments") or {}, conv, user)
+            # C：工具调用痕迹收集（落库 + 历史回传，排查可查）
+            tool_logs.append(_summarize_tool(tc, result))
+            # 异步工具（full_search / deep_research）记录 task_id + 工具类型（前端据此选轮询路径）
+            if tc["name"] in ("full_search", "deep_research"):
+                tid = result.get("task_id") or result.get("thread_id")
+                if tid:
+                    task_id = tid
+                    tool_name = tc["name"]
+            if tc["name"] != "full_search":
+                tool_summary = result.get("message", "")
+            # L1 来源卡：answer_with_sources 的 hits 随回复持久化（前端渲染来源列表）
+            if tc["name"] == "answer_with_sources" and result.get("hits"):
+                l1_sources = result["hits"]
+            loop_messages.append({
+                "role": "tool",
+                "tool_call_id": tc.get("id") or "",
+                "content": json.dumps(result, ensure_ascii=False),
+            })
+
+    # 超出轮数兜底
+    reply = "好的，已处理。有什么想继续深入的吗？"
+    if task_id is None and _looks_like_launched(reply):
+        reply = "检索未成功启动，请重试，或再说一次「重新检索」。"
+    _emit_routing(_infer_level(first_round_tools), reply)
+    yield from _done(reply)
+
+
 # ── 工具痕迹摘要 + 启动话术识别（B/C 方案） ──
 
 def _summarize_tool(tc: dict, result: dict) -> dict:

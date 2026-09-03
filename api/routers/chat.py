@@ -8,10 +8,12 @@ Chat API —— 主 Agent（Function Calling 工具化）
 
 对话只返回文字总结 + 引导跳转，检索详情在检索页查看。
 """
+import json
 import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 
 from api.schemas import ChatRequest, ChatResponse
@@ -106,8 +108,8 @@ def _append_message(session, conv: Conversation, user_id: int, role: str, conten
 
 # ── 对话（主 Agent 循环） ──
 
-@router.post("/message", response_model=ChatResponse)
-def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
+def _apply_runtime_config(body: ChatRequest, user: User) -> None:
+    """对话请求前置：OpenAlex 礼貌邮箱 + 运行时 LLM/向量模型配置（/message 与 /message/stream 共用）"""
     # OpenAlex 礼貌邮箱：用户邮箱优先，否则默认（游客/未填邮箱）
     from sources import openalex as oa
     oa.set_mailto(user.email)
@@ -127,6 +129,11 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
             from retrieval import embedding, reranker
             embedding.configure(provider=provider)
             reranker.configure(provider=provider)
+
+
+@router.post("/message", response_model=ChatResponse)
+def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
+    _apply_runtime_config(body, user)
 
     with get_session() as session:
         conv = _get_conv(session, body.conversation_id, user)
@@ -172,6 +179,89 @@ def send_message(body: ChatRequest, user: User = Depends(get_current_user)):
         task_type=agent_result.get("tool_name"),
         params=conv.params or {},
         l1_sources=agent_result.get("l1_sources"),
+    )
+
+
+def _sse(obj: dict) -> str:
+    """SSE 事件帧（单行 JSON，避免多行 payload 破坏帧结构）"""
+    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+
+@router.post("/message/stream")
+def send_message_stream(body: ChatRequest, user: User = Depends(get_current_user)):
+    """流式对话（SSE）——与 /message 同一主 Agent 链路，最终文字逐 token 推送。
+
+    事件帧（text/event-stream，每帧 data: {json}）：
+    - {"type":"token","text":...}            生成中文本增量
+    - {"type":"done", ...ChatResponse 字段}  完成（assistant 消息已落库）
+    - {"type":"error","message":...}         失败（用户消息已存，assistant 未落库，语义同 /message 失败）
+    """
+    _apply_runtime_config(body, user)
+
+    with get_session() as session:
+        conv = _get_conv(session, body.conversation_id, user)
+        # 若前端带了 project_id（用户切到某项目后继续讨论）→ 关联会话
+        if body.project_id:
+            get_owned_project(session, body.project_id, user)
+            if conv.project_id != body.project_id:
+                ids = list(conv.project_ids or [])
+                if body.project_id not in ids:
+                    ids.append(body.project_id)
+                conv.project_ids = ids
+                conv.project_id = body.project_id
+                session.commit()
+
+        _append_message(session, conv, user.id, "user", body.message)
+        history = _conv_messages(session, conv, for_llm=True)
+
+    def _gen():
+        try:
+            for ev in chat_agent.run_agent_stream(conv, user, history):
+                if ev["type"] == "text":
+                    yield _sse({"type": "token", "text": ev["text"]})
+                    continue
+                # done：先落库 assistant 回复（attachments 组装与 /message 一致），再回执完成事件
+                reply = ev["reply"]
+                l1_sources = ev.get("l1_sources")
+                tool_logs = ev.get("tool_logs") or []
+                att: dict = {}
+                if l1_sources:
+                    att.update({"type": "l1_sources", "level": "L1", "sources": l1_sources})
+                if tool_logs:
+                    att["tool_calls"] = tool_logs
+                    att.setdefault("type", "tool_calls")
+                with get_session() as session:
+                    _append_message(
+                        session, conv, user.id, "assistant", reply,
+                        project_id=conv.project_id,
+                        attachments=att if att else None,
+                    )
+                yield _sse({
+                    "type": "done",
+                    "conversation_id": conv.uuid,
+                    "reply": reply,
+                    "stage": "chat",
+                    "params": conv.params or {},
+                    "task_id": ev.get("task_id"),
+                    "task_type": ev.get("tool_name"),
+                    "l1_sources": l1_sources,
+                })
+                return
+        except llm.LLMError as e:
+            logger.warning(f"对话流式生成失败: {e}")
+            yield _sse({"type": "error", "message": str(e)})
+        except Exception as e:  # 工具/落库等意外：如实透出，前端本地展示错误消息
+            logger.exception("对话流式生成意外异常")
+            yield _sse({"type": "error", "message": f"生成失败: {e}"})
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # 关闭反代缓冲，避免长流被吞（本地直连无碍）
+        },
     )
 
 
