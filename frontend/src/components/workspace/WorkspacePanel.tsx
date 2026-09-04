@@ -22,7 +22,7 @@ import { CATEGORY_META, CATEGORY_SECTION } from "@/config/categories";
  */
 interface WorkspacePanelProps {
   conversationId: string | null;
-  onOpenSearch: (projectId: number) => void;
+  onOpenSearch: (projectId: number, runId?: number) => void;
   onOpenPaper: (paperId: number, projectId: number) => void;
 }
 
@@ -129,7 +129,7 @@ function SubResearchCard({ sub, open, runOpen, collapsed, onToggle, onToggleRun,
   onToggle: () => void;
   onToggleRun: (runId: number) => void;
   onToggleSection: (key: string) => void;
-  onOpenSearch: (pid: number) => void;
+  onOpenSearch: (pid: number, runId?: number) => void;
   onOpenPaper: (pid: number, projId: number) => void;
 }) {
   return (
@@ -157,7 +157,7 @@ function SubResearchCard({ sub, open, runOpen, collapsed, onToggle, onToggleRun,
                 collapsed={collapsed}
                 onToggle={() => onToggleRun(r.id)}
                 onToggleSection={onToggleSection}
-                onOpenSearch={() => onOpenSearch(sub.project_id)}
+                onOpenSearch={() => onOpenSearch(sub.project_id, r.id)}
                 onOpenPaper={(pid) => onOpenPaper(pid, sub.project_id)} />
             ))
           )}
@@ -397,7 +397,7 @@ function SectionChip({ active, onClick, children }: {
 /* ── 核心推荐行（StructurePaper：标题 + 年份 + 理由） ── */
 
 function StructureRow({ item, onClick }: {
-  item: { paper_id?: number | null; title?: string; year?: number | null; reason?: string };
+  item: { paper_id?: number | null; title?: string; year?: number | null; reason?: string; one_liner?: string; recall_basis?: string };
   onClick?: () => void;
 }) {
   return (
@@ -411,7 +411,8 @@ function StructureRow({ item, onClick }: {
         <span className="block text-xs text-ink-secondary leading-snug">{item.title || "未命名论文"}</span>
         <span className="block text-2xs text-ink-faint mt-0.5">
           {item.year ? String(item.year) : ""}
-          {item.reason ? ` · ${item.reason}` : ""}
+          {item.one_liner || item.reason ? ` · ${item.one_liner || item.reason}` : ""}
+          {item.recall_basis ? ` · 召回依据：${item.recall_basis}` : ""}
         </span>
       </span>
       {onClick && <ExternalLink className="w-3 h-3 text-ink-faint shrink-0 mt-1" />}

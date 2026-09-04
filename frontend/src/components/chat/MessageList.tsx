@@ -48,7 +48,7 @@ export function MessageList({
                 projectId={msg.project_id ?? null}
               />
             ) : msg.role === "user" ? (
-              <div className="max-w-[85%] rounded-2xl px-4 py-3 text-base leading-relaxed bg-bubble-user text-[#171614] whitespace-pre-wrap">
+              <div className="max-w-[85%] rounded-2xl px-4 py-3 text-base leading-relaxed bg-paper-chrome text-ink whitespace-pre-wrap">
                 {msg.content}
               </div>
             ) : (

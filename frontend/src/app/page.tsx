@@ -1,15 +1,12 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LayoutGrid, ArrowLeft } from "lucide-react";
-import type { SortSpec, Category } from "@/types/domain";
+import type { SortSpec } from "@/types/domain";
 import { DEFAULT_SORT } from "@/config/search";
-import type { Paper, SearchResult, GapSearchResult } from "@/types/dto";
-import { listPapers } from "@/lib/api/search";
-import {
-  runTrunkSearch, runGapSearch, runGapSemantic, lookupTitleByTitle, runLocalSearch,
-} from "@/lib/api/search";
+import type { Paper, SearchResult, RunDetail } from "@/types/dto";
+import { listPapers, getRunDetail, runTrunkSearch, runLocalSearch } from "@/lib/api/search";
 import { useProjectStore } from "@/stores/projectStore";
 import { useCartStore } from "@/stores/cartStore";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,7 +14,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { PaperList } from "@/components/search/PaperList";
 import { PaperCard } from "@/components/search/PaperCard";
-import { GapPanel } from "@/components/search/GapPanel";
+import { RecommendedPanel } from "@/components/search/RecommendedPanel";
 import { StatsBar } from "@/components/search/StatsBar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ResizablePanel } from "@/components/paper/ResizablePanel";
@@ -30,6 +27,10 @@ export default function Home() {
   const router = useRouter();
   // ── 主区域视图（2-page IA：无顶部 tab，对话为主；检索为工作台进入的子视图）──
   const [activeView, setActiveView] = useState<"chat" | "search">("chat");
+  const [activeRunId, setActiveRunId] = useState<number | null>(null); // 检索页当前 run 上下文（工作台 run 进入 / 详情页返回恢复）
+  const [runDetail, setRunDetail] = useState<RunDetail | null>(null);  // 当前 run 详情（已推荐视图 + 主列表剔除数据源）
+  const [runLoading, setRunLoading] = useState(false);
+  const [searchView, setSearchView] = useState<"list" | "recommended">("list"); // 检索页视图：全部结果 / 已推荐
   const [workspaceOpen, setWorkspaceOpen] = useState(false); // 工作台概览右栏
   const [workspaceW, setWorkspaceW] = useState(320);         // 工作台右栏宽度（可拖拽）
 
@@ -53,11 +54,8 @@ export default function Home() {
   const resetSession = useProjectStore((s) => s.resetSession);
   const createProjectStore = useProjectStore((s) => s.createProject);
 
-  // ── 骨架（全局共享 → cartStore）──
-  const cart = useCartStore((s) => s.cart);
+  // ── 骨架（全局共享 → cartStore；页面本身无骨架 UI，loadCart 供其它视图读取）──
   const loadCart = useCartStore((s) => s.loadCart);
-  const cartAddItem = useCartStore((s) => s.addItem);
-  const cartRemoveItem = useCartStore((s) => s.removeItem);
 
   // ── 认证（authStore + useAuth）──
   const { init: initAuth, user: authUser, initialized: authInitialized } = useAuth();
@@ -71,9 +69,6 @@ export default function Home() {
   const [loadingPapers, setLoadingPapers] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
-  const [gapMode, setGapMode] = useState(false);            // 是否显示重检索视图
-  const [gapResult, setGapResult] = useState<GapSearchResult | null>(null);
-  const [gapSearching, setGapSearching] = useState(false);
 
   // ── 本地库二次检索（对已入库论文按领域/技术语义召回）──
   const [scope, setScope] = useState<"openalex" | "local">("openalex");
@@ -92,6 +87,7 @@ export default function Home() {
     if (!authInitialized) return;
     resetSession();
     setActiveView("chat");
+    setActiveRunId(null);
     setWorkspaceOpen(false);
     loadProjects();
     loadConversations();
@@ -105,16 +101,52 @@ export default function Home() {
     return () => window.removeEventListener("chat:updated", handler);
   }, [loadConversations]);
 
-  // ── 跨视图导航指令（检索页返回对话）──
+  // ── 跨视图导航指令（检索页"去对话页"引导）──
+  // 返回对话须带恢复指令：ChatPanel 在检索视图期间被卸载，重挂载后仅凭
+  // requestedConversationId（chatOpenConvId）恢复历史；selectConversation 会设置该指令。
   useEffect(() => {
-    const toChat = () => setActiveView("chat");
+    const toChat = () => {
+      if (activeConversationId) selectConversation(activeConversationId);
+      setActiveView("chat");
+    };
     window.addEventListener("navigate-to-chat", toChat);
     return () => {
       window.removeEventListener("navigate-to-chat", toChat);
     };
-  }, []);
+  }, [activeConversationId, selectConversation]);
 
-  // ── 加载论文和骨架 ──
+  // ── 当前 run 详情：进入检索页（带 run_id）时拉取 → 「已推荐」视图 + 主列表剔除的数据源 ──
+  useEffect(() => {
+    if (activeRunId == null) {
+      setRunDetail(null);
+      setSearchView("list");
+      return;
+    }
+    let alive = true;
+    setRunLoading(true);
+    getRunDetail(activeRunId)
+      .then((d) => {
+        if (!alive) return;
+        setRunDetail(d);
+        // 从 run 进入默认落「全部结果」主视图（推荐论文在工具栏「已推荐」切换查看）
+      })
+      .catch(() => { /* 静默：run 详情加载失败不打断检索页（列表视图降级可用） */ })
+      .finally(() => {
+        if (alive) setRunLoading(false);
+      });
+    return () => { alive = false; };
+  }, [activeRunId]);
+
+  // 当前 run 的推荐论文 id（剔除主列表用；无 run / 无推荐 = 空）
+  const recommendedIds = useMemo(() => {
+    const cs = runDetail?.cognitive;
+    if (!cs) return [] as number[];
+    return [...(cs.foundation ?? []), ...(cs.mainstream ?? []), ...(cs.frontier ?? [])]
+      .map((p) => p.paper_id)
+      .filter((pid): pid is number => pid != null);
+  }, [runDetail]);
+
+  // ── 加载论文和骨架（主视图=trunk 池，SQL 层剔除当前 run 推荐论文）──
   const loadPapers = useCallback(
     async (pid: number, p = 0) => {
       setLoadingPapers(true);
@@ -125,6 +157,7 @@ export default function Home() {
           sort_by: sortBy.map((s) => s.field).join(","),
           sort_order: sortBy.map((s) => s.order).join(","),
           filter_survey: filterSurvey,
+          exclude_paper_ids: activeRunId != null ? recommendedIds : undefined,
         });
         setPapers(res.papers);
         setPaperTotal(res.total);
@@ -135,7 +168,7 @@ export default function Home() {
         setLoadingPapers(false);
       }
     },
-    [sortBy, filterSurvey],
+    [sortBy, filterSurvey, activeRunId, recommendedIds],
   );
 
   useEffect(() => {
@@ -199,24 +232,26 @@ export default function Home() {
     }
   };
 
-  // ── 工作台：检索记录 → 检索页（切到该子研究）──
-  const handleOpenSearch = (pid: number) => {
+  // ── 工作台：检索记录 → 检索页（切到该子研究 + 当前 run 上下文）──
+  const handleOpenSearch = (pid: number, runId?: number) => {
     loadProjects().then(() => {
       const found = useProjectStore.getState().projects.find((p) => p.id === pid);
       if (found) {
         setActiveProject(found);
+        setActiveRunId(runId ?? null);
         setActiveView("search");
       }
     });
   };
 
-  // ── 工作台：深入研究 / 论文 → 详情页（带来源对话，供详情页"返回对话"直达）──
-  const handleOpenPaper = (paperId: number, projectId: number) => {
+  // ── 工作台：深入研究 / 论文 → 详情页（带来源对话 + run 上下文；auto=1 点开即预热升 L2）──
+  const handleOpenPaper = (paperId: number, projectId: number, auto = false) => {
     const conv = activeConversationId ? `&conv_id=${activeConversationId}` : "";
-    router.push(`/paper/${paperId}?project_id=${projectId}${conv}`);
+    const run = activeRunId != null ? `&run_id=${activeRunId}` : "";
+    router.push(`/paper/${paperId}?project_id=${projectId}${auto ? "&auto=1" : ""}${conv}${run}`);
   };
 
-  // ── 详情页返回路由：/?view=search&project_id= → 切检索；/?conversation_id= → 打开对话 ──
+  // ── 详情页返回路由：/?view=search&project_id=&run_id= → 切检索并恢复 run；/?conversation_id= → 打开对话 ──
   const handleRouteQuery = useCallback((q: URLSearchParams) => {
     const convId = q.get("conversation_id");
     if (convId) {
@@ -232,6 +267,8 @@ export default function Home() {
           const found = useProjectStore.getState().projects.find((p) => p.id === pid);
           if (found) {
             setActiveProject(found);
+            const rid = q.get("run_id");
+            setActiveRunId(rid && Number.isFinite(Number(rid)) ? Number(rid) : null);
             setActiveView("search");
           }
         });
@@ -240,88 +277,12 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectConversation, loadProjects, setActiveProject]);
 
-  // ── 加入/移出骨架（cartStore 内部已自动重载骨架；"已在骨架"标记由 PaperCard 从 store 实时推导，
-  //    论文列表数据未变，无需重拉 → 避免列表闪烁）──
-  const handleAddToCart = async (paperId: number, category = "mainstream", notes = "") => {
-    if (!activeProject) return;
-    try {
-      await cartAddItem(activeProject.id, paperId, category, notes);
-    } catch (e: unknown) {
-      toast(e instanceof Error ? e.message : String(e), "error");
-    }
-  };
-
-  const handleRemoveFromCart = async (paperId: number) => {
-    if (!activeProject) return;
-    try {
-      await cartRemoveItem(activeProject.id, paperId);
-    } catch (e: unknown) {
-      toast(e instanceof Error ? e.message : String(e), "error");
-    }
-  };
-
-  // ── 缺口补充检索（重检索）──
-  const handleGapSearch = async (
-    targetCategory: Category, constraint = "", threshold = 0.35, mode = "search",
-  ) => {
-    if (!activeProject) return;
-    setGapSearching(true);
-    try {
-      const res = mode === "semantic"
-        ? await runGapSemantic(activeProject.id, targetCategory, 20, threshold)
-        : await runGapSearch({
-            project_id: activeProject.id,
-            user_query: activeProject.name,   // 领域描述用项目名
-            tech_probe: activeProject.tech_probe || "",
-            target_category: targetCategory,
-            user_constraint: constraint,
-            score_threshold: threshold,
-          });
-      setGapResult(res);
-      setGapMode(true);
-      setActiveView("search");            // 跳到检索页查看重检索结果
-    } catch (e: unknown) {
-      toast(`补充检索失败: ${e instanceof Error ? e.message : String(e)}`, "error");
-    } finally {
-      setGapSearching(false);
-    }
-  };
-
-  // 退出重检索视图
-  const handleExitGapMode = () => {
-    setGapMode(false);
-    setGapResult(null);
-  };
-
-  // ── 标题直达查找（骨架补充"输入标题"模式）──
-  const handleTitleLookup = async (targetCategory: Category, title: string) => {
-    if (!activeProject) return;
-    setGapSearching(true);
-    try {
-      const res = await lookupTitleByTitle({
-        project_id: activeProject.id,
-        title,
-        target_category: targetCategory,
-      });
-      setGapResult(res);
-      setGapMode(true);
-      setActiveView("search");
-    } catch (e: unknown) {
-      toast(`标题查找失败: ${e instanceof Error ? e.message : String(e)}`, "error");
-    } finally {
-      setGapSearching(false);
-    }
-  };
-
   // ── 翻页 ──
   const handlePageChange = (newPage: number) => {
     if (activeProject) {
       loadPapers(activeProject.id, newPage);
     }
   };
-
-  // ── 骨架论文 ID 集合（用于网络面板判断是否已加入） ──
-  const cartPaperIds = new Set(cart?.items.map((it) => it.paper_id) ?? []);
 
   // ── 渲染主内容区（纯页面组装；2-page IA：对话 / 检索两个视图）──
   const renderContent = () => {
@@ -337,18 +298,6 @@ export default function Home() {
 
     switch (activeView) {
       case "search":
-        // 重检索模式：展示缺口补充候选（按类别分组）
-        if (gapMode) {
-          return (
-            <GapPanel
-              result={gapResult}
-              searching={gapSearching}
-              cartPaperIds={cartPaperIds}
-              onAddToCart={handleAddToCart}
-              onExit={handleExitGapMode}
-            />
-          );
-        }
         // 本地库二次检索模式：对已入库论文做领域/技术语义召回
         if (localMode) {
           return (
@@ -390,10 +339,67 @@ export default function Home() {
                   </div>
                 ) : (
                   localPapers.map((p) => (
-                    <PaperCard key={p.id} paper={p} onAddToCart={handleAddToCart} />
+                    <PaperCard key={p.id} paper={p} onOpenPaper={() => handleOpenPaper(p.id, activeProject!.id, true)} />
                   ))
                 )}
               </div>
+            </>
+          );
+        }
+        // run 上下文视图：对话推荐论文与全量结果分离（2026-09-03 拍板）
+        if (activeRunId != null) {
+          const cs = runDetail?.cognitive;
+          const recCount =
+            (cs?.foundation?.length ?? 0) + (cs?.mainstream?.length ?? 0) + (cs?.frontier?.length ?? 0);
+          return searchView === "recommended" ? (
+            runLoading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-line border-t-gold-light rounded-full animate-spin" />
+              </div>
+            ) : runDetail ? (
+              <RecommendedPanel
+                run={runDetail}
+                projectId={runDetail.project_id}
+                view={searchView}
+                recCount={recCount}
+                onViewChange={setSearchView}
+                onOpenPaper={(pid) => handleOpenPaper(pid, runDetail.project_id, true)}
+              />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-ink-faint">
+                <p className="text-base">加载推荐失败</p>
+                <button type="button" onClick={() => setSearchView("list")} className="btn-ghost text-sm">
+                  查看全部结果
+                </button>
+              </div>
+            )
+          ) : (
+            <>
+              <SearchPanel
+                activeProject={activeProject}
+                searching={scope === "local" ? localSearching : searching}
+                scope={scope}
+                onScopeChange={handleScopeChange}
+                onSearch={handleSearch}
+                onNewProject={handleNewProject}
+                onLocalSearch={handleLocalSearch}
+              />
+              {searchResult && <StatsBar result={searchResult} />}
+              <PaperList
+                papers={papers}
+                total={paperTotal}
+                page={page}
+                loading={loadingPapers}
+                sortBy={sortBy}
+                filterSurvey={filterSurvey}
+                view={searchView}
+                recCount={recCount}
+                onViewChange={setSearchView}
+                onSortChange={setSortBy}
+                onFilterChange={setFilterSurvey}
+                onPageChange={handlePageChange}
+                onOpenPaper={(pid) => handleOpenPaper(pid, activeProject!.id, true)}
+              />
             </>
           );
         }
@@ -416,12 +422,10 @@ export default function Home() {
               loading={loadingPapers}
               sortBy={sortBy}
               filterSurvey={filterSurvey}
-              gapActive={gapMode}
-              onToggleGap={() => setGapMode(!gapMode)}
               onSortChange={setSortBy}
               onFilterChange={setFilterSurvey}
               onPageChange={handlePageChange}
-              onAddToCart={handleAddToCart}
+              onOpenPaper={(pid) => handleOpenPaper(pid, activeProject!.id, true)}
             />
           </>
         );
@@ -517,7 +521,11 @@ export default function Home() {
               <div className="flex items-center gap-2 px-4 py-2 border-b border-line bg-paper-chrome shrink-0">
                 <button
                   type="button"
-                  onClick={() => setActiveView("chat")}
+                  onClick={() => {
+                    // 带恢复指令回对话：ChatPanel 重挂载后凭 chatOpenConvId 加载该会话历史
+                    if (activeConversationId) selectConversation(activeConversationId);
+                    setActiveView("chat");
+                  }}
                   className="flex items-center gap-1 text-sm text-ink-muted hover:text-ink transition-colors"
                 >
                   <ArrowLeft className="w-4 h-4" /> 返回对话

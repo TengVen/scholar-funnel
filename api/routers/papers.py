@@ -73,6 +73,8 @@ def list_papers(
         description="排序方向，支持逗号分隔与 sort_by 一一对应，如: desc,asc（缺省用首值补齐）",
     ),
     filter_survey: str = Query("all", description="筛选: all / survey / non_survey"),
+    exclude_paper_ids: str = Query("", description="剔除的论文 id 列表（逗号分隔，如当前 run 的推荐论文）"),
+    include_paper_ids: str = Query("", description="仅保留的论文 id 列表（逗号分隔，如取推荐论文完整数据）"),
     min_citations: int = Query(0, ge=0),
     page: int = Query(0, ge=0),
     page_size: int = Query(20, ge=5, le=100),
@@ -91,6 +93,16 @@ def list_papers(
 
         if min_citations > 0:
             q = q.filter(Paper.cited_by_count >= min_citations)
+
+        # 剔除推荐论文（SQL 层过滤，分页安全；供检索页"全部结果"视图分离对话推荐）
+        ex_ids = [int(x) for x in exclude_paper_ids.split(",") if x.strip().isdigit()]
+        if ex_ids:
+            q = q.filter(Paper.id.notin_(ex_ids))
+
+        # 仅保留指定论文（检索页「已推荐」视图：按推荐 id 取完整论文数据，卡片样式与主列表一致）
+        in_ids = [int(x) for x in include_paper_ids.split(",") if x.strip().isdigit()]
+        if in_ids:
+            q = q.filter(Paper.id.in_(in_ids))
 
         total = q.count()
 

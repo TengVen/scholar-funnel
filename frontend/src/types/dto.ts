@@ -185,6 +185,17 @@ export interface PaperListParams {
   min_citations?: number;
   page?: number;
   page_size?: number;
+  /** 剔除的论文 id（如当前 run 的推荐论文），服务端 SQL 层过滤保证分页正确 */
+  exclude_paper_ids?: number[];
+  /** 仅保留的论文 id（如取推荐论文完整数据，复用同一 PaperCard 样式） */
+  include_paper_ids?: number[];
+}
+
+/** 推荐论文附加信息（分类徽章 + 一句话理由 + 召回依据；与主列表卡片同款呈现） */
+export interface PaperRecommendation {
+  category: Category;
+  one_liner: string;
+  recall_basis?: string;
 }
 
 // ── Cart（骨架）──
@@ -486,14 +497,16 @@ export interface L1SourcesAttachment {
   sources: L1Source[];
 }
 
-/** L2 认知结构论文条目 */
+/** L2 认知结构论文条目（推荐理由三件套：分类 + 一句话理由 + 召回依据） */
 export interface StructurePaper {
   paper_id: number;
   title: string;
   year?: number | null;
   cited_by_count: number;
   suggested_category: Category;
-  reason: string;
+  reason: string;                  // 元数据模板（无摘要 / LLM 失败兜底，旧数据回退用）
+  one_liner?: string;              // 一句话推荐理由（有摘要 LLM 生成；缺省回退 reason）
+  recall_basis?: string;           // 召回依据（命中词/召回路，内部信号不展示）
 }
 
 /** L2 认知结构（核心推荐 vs 全部候选计数分离） */
@@ -589,6 +602,13 @@ export interface SearchRunRecord {
   papers?: PaperBrief[];         // 该 Run 归属论文（Search Run 独立资产视图）
   cognitive?: Partial<CognitiveStructure>;  // 该 Run 的核心推荐（三分类，finalize 时按 run_id 关联）
   created_at: string;
+}
+
+/** 检索记录详情（GET /api/search/runs/{id}，检索页「已推荐」视图数据源；SearchRunRecord + 项目名） */
+export interface RunDetail extends SearchRunRecord {
+  project_id: number;
+  project_name?: string;
+  tech_probe?: string | null;
 }
 
 export interface CognitiveCategoryCount {

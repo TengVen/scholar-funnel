@@ -59,7 +59,8 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
                     key={p.paper_id}
                     title={p.title}
                     meta={[p.year ? String(p.year) : "", p.cited_by_count ? `被引 ${p.cited_by_count}` : ""]}
-                    reason={p.reason}
+                    reason={p.one_liner ?? p.reason}
+                    recallBasis={p.recall_basis}
                     href={`/paper/${p.paper_id}${projectId ? `?project_id=${projectId}&auto=1` : ""}`}
                     paperId={p.paper_id}
                     projectId={projectId}
@@ -75,7 +76,7 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
         <button
           type="button"
           onClick={() => setShowAll((v) => !v)}
-          className="btn-secondary text-xs !py-1.5"
+          className="inline-flex items-center gap-1 text-xs !py-1.5 px-3 rounded-md bg-gold/10 border border-gold/40 text-gold-deep hover:bg-gold/20 hover:border-gold/60 transition-colors backdrop-blur-sm"
         >
           {showAll ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           {showAll ? "收起" : `展开全部核心推荐（${shownTotal} 篇）`}

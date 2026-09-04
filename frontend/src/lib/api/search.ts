@@ -12,6 +12,7 @@ import type {
   LocalSearchResponse,
   PaperListParams,
   PaperListResponse,
+  RunDetail,
 } from "@/types/dto";
 
 // ── 主检索（异步 task + 轮询） ──
@@ -80,7 +81,15 @@ export function listPapers(params: PaperListParams): Promise<PaperListResponse> 
   if (params.min_citations) qs.set("min_citations", String(params.min_citations));
   if (params.page !== undefined) qs.set("page", String(params.page));
   if (params.page_size) qs.set("page_size", String(params.page_size));
+  if (params.exclude_paper_ids?.length) qs.set("exclude_paper_ids", params.exclude_paper_ids.join(","));
+  if (params.include_paper_ids?.length) qs.set("include_paper_ids", params.include_paper_ids.join(","));
   return request(`/api/papers?${qs.toString()}`);
+}
+
+// ── 检索记录详情（检索页「已推荐」视图数据源：run 认知结构 + 归属论文 + 深入探究标记）──
+
+export function getRunDetail(runId: number): Promise<RunDetail> {
+  return request(`/api/search/runs/${runId}`);
 }
 
 // ── 本地库二次检索（对已入库论文按向量语义召回）──

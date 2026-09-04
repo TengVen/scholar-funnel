@@ -1,65 +1,30 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import {
-  ExternalLink, Plus, Check, ChevronDown, ChevronUp, Github,
-  Calendar, Quote, Target, Sparkles, Loader2,
+  ExternalLink, ChevronDown, ChevronUp, Github,
+  Calendar, Quote, Target, BookOpen,
 } from "lucide-react";
-import { classifyPaper } from "@/lib/api/cart";
-import type { Paper } from "@/types/dto";
-import { useCartStore } from "@/stores/cartStore";
+import type { Paper, PaperRecommendation } from "@/types/dto";
 import { KEYWORD_COLORS } from "@/config/keywords";
-import { toast } from "@/lib/toast";
-import { CATEGORIES, CATEGORY_NOTES } from "@/config/categories";
+import { CATEGORY_SECTION, CATEGORY_META } from "@/config/categories";
 import { WhyLine } from "./WhyLine";
 
+/**
+ * 检索页论文卡（2026-09-03 产品拍板）：主列表与「已推荐」视图共用同一卡片。
+ * - 「加入骨架」按钮已取消（骨架概念收敛为推荐标签，操作收敛到详情页）
+ * - 主操作 = 「深入研究」：进入论文详情页并触发深入探究（详情页内升 L2，不入三分类）
+ * - recommendation（可选）：推荐论文附加信息（分类徽章 + 一句话理由 + 召回依据），
+ *   仅「已推荐」视图传入，卡片其余样式与主列表完全一致
+ */
 interface PaperCardProps {
   paper: Paper;
-  onAddToCart: (paperId: number, category?: string, notes?: string) => void;
+  onOpenPaper: (paperId: number) => void;
+  recommendation?: PaperRecommendation | null;
 }
 
-export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
+export function PaperCard({ paper, onOpenPaper, recommendation }: PaperCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [classifying, setClassifying] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // 已在骨架：从全局 cart store 实时推导（增删骨架后自动更新，无需重拉论文列表）
-  const inCart = useCartStore(
-    (s) => s.cart?.items.some((it) => it.paper_id === paper.id) ?? false,
-  );
-
-  // 点击外部关闭菜单
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  // 手动分类：带默认理由；智能分类：带 AI reason
-  const handleAdd = (category?: string, notes?: string) => {
-    setMenuOpen(false);
-    onAddToCart(paper.id, category, notes);
-  };
-
-  const handleSmartAdd = async () => {
-    if (classifying) return;
-    setClassifying(true);
-    try {
-      const res = await classifyPaper(paper.id);
-      setMenuOpen(false);
-      // AI 分类：带 AI 返回的理由
-      onAddToCart(paper.id, res.category, `AI 分类：${res.reason}`);
-    } catch (e) {
-      toast(`AI 分类失败: ${e instanceof Error ? e.message : String(e)}`, "error");
-    } finally {
-      setClassifying(false);
-    }
-  };
 
   const authors = paper.authors || [];
   const authorDisplay =
@@ -145,6 +110,26 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
         </div>
       )}
 
+      {/* 推荐信息（仅「已推荐」视图）：分类徽章 + 一句话理由 + 召回依据 */}
+      {recommendation && (
+        <div className="mt-2 rounded-md px-2.5 py-1.5 bg-gold/[0.06] border border-gold/20">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: CATEGORY_SECTION[recommendation.category]?.dot }} />
+            <span className={`text-2xs font-medium ${CATEGORY_SECTION[recommendation.category]?.color ?? "text-ink-muted"}`}>
+              {CATEGORY_META[recommendation.category]?.label ?? recommendation.category}
+            </span>
+          </div>
+          {recommendation.one_liner && (
+            <p className="text-sm text-ink-secondary leading-relaxed mt-1">{recommendation.one_liner}</p>
+          )}
+          {recommendation.recall_basis && (
+            <p className="text-2xs text-ink-faint leading-relaxed mt-0.5">
+              召回依据：{recommendation.recall_basis}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* "为什么是它" —— 召回溯源一行（P0-A：默认可见，点击展开） */}
       {paper.why && <WhyLine why={paper.why} />}
 
@@ -177,72 +162,17 @@ export function PaperCard({ paper, onAddToCart }: PaperCardProps) {
         </div>
       )}
 
-      {/* Actions */}
+      {/* Actions：深入研究 = 主操作（进详情页深挖，升 L2）；外链保留 */}
       <div className="flex items-center gap-2 mt-3 pt-3 border-t border-line-light">
-        {/* 加入骨架：点击弹出分类菜单 */}
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => !inCart && setMenuOpen(!menuOpen)}
-            disabled={inCart}
-            className={
-              inCart
-                ? "btn-ghost text-success text-sm cursor-default"
-                : "btn-secondary text-sm flex items-center gap-1"
-            }
-          >
-            {inCart ? (
-              <>
-                <Check className="w-3 h-3 inline mr-1" />
-                已加入
-              </>
-            ) : (
-              <>
-                <Plus className="w-3 h-3 inline mr-1" />
-                加入骨架
-                <ChevronDown className="w-3 h-3" />
-              </>
-            )}
-          </button>
-
-          {/* 分类菜单 */}
-          {menuOpen && !inCart && (
-            <div className="absolute left-0 top-full mt-1 w-56 bg-paper-white border border-gold/25 rounded-xl shadow-2xl shadow-black/40 py-1.5 z-20">
-              <p className="px-3 pb-1 pt-0.5 text-2xs text-ink-faint tracking-wide">
-                加入为哪一类？
-              </p>
-              {CATEGORIES.map((cat) => (
-                <button
-                  key={cat.key}
-                  onClick={() => handleAdd(cat.key, CATEGORY_NOTES[cat.key])}
-                  className="w-full text-left px-3 py-1.5 hover:bg-paper-warm transition-colors"
-                >
-                  <span className="block text-sm text-ink leading-tight">{cat.label}</span>
-                  <span className="block text-2xs text-ink-muted">{cat.desc}</span>
-                </button>
-              ))}
-              <div className="my-1 mx-3 border-t border-line-light" />
-              <button
-                onClick={handleSmartAdd}
-                disabled={classifying}
-                className="w-full text-left px-3 py-1.5 hover:bg-accent-light/20 transition-colors flex items-center gap-2"
-              >
-                {classifying ? (
-                  <Loader2 className="w-3.5 h-3.5 text-gold-light animate-spin shrink-0" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5 text-gold-light shrink-0" />
-                )}
-                <span>
-                  <span className="block text-sm text-gold-light leading-tight">
-                    {classifying ? "AI 分析中..." : "智能分类"}
-                  </span>
-                  <span className="block text-2xs text-ink-muted">
-                    AI 读摘要推荐分类
-                  </span>
-                </span>
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={() => onOpenPaper(paper.id)}
+          className="btn-secondary text-sm flex items-center gap-1.5"
+          title="进入论文详情页并深入研究（升为 L2，不加入分类清单）"
+        >
+          <BookOpen className="w-3.5 h-3.5 text-gold-light" />
+          深入研究
+        </button>
 
         <div className="flex-1" />
 

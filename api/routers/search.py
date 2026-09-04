@@ -294,3 +294,57 @@ def search_local(body: LocalSearchRequest, user: User = Depends(get_current_user
         )
     except Exception as e:
         raise HTTPException(500, f"本地检索失败: {str(e)}")
+
+
+# ── 检索记录详情（检索页"已推荐"视图数据源：单 run 视角 = 认知结构 + 归属论文 + 深入探究标记）──
+
+@router.get("/runs/{run_id}")
+def get_run_detail(run_id: int, user: User = Depends(get_current_user)):
+    """单个检索记录的详情：基本字段 + 归属论文（含 explored 标记）+ 核心推荐（cognitive 三分类）。
+    检索页按 run 组织（「已推荐」视图 / 主列表剔除推荐）的数据源。"""
+    from collections import Counter
+    from storage.models import SearchRun, Paper, PaperRunLink, Project
+    from storage.search_runs import collect_run_cognitive
+    with get_session() as session:
+        run = session.get(SearchRun, run_id)
+        if run is None:
+            raise HTTPException(404, "检索记录不存在")
+        check_project_access(run.project_id, user)
+        proj = session.get(Project, run.project_id)
+        # 归属论文（run → PaperRunLink → Paper，含 explored_at 深入探究标记）
+        papers: list[dict] = []
+        keywords: list[str] = []
+        links = session.query(PaperRunLink).filter(PaperRunLink.search_run_id == run_id).all()
+        pids = [l.paper_id for l in links]
+        if pids:
+            rows = (
+                session.query(Paper)
+                .filter(Paper.id.in_(pids))
+                .order_by(Paper.explored_at.desc().nullslast(), Paper.id.desc())
+                .all()
+            )
+            cnt: Counter = Counter()
+            for row in rows:
+                papers.append({
+                    "paper_id": row.id, "openalex_id": row.openalex_id,
+                    "title": row.title, "year": row.year,
+                    "stage": row.stage, "explored": row.explored_at is not None,
+                })
+                kws = row.keywords if isinstance(row.keywords, list) else []
+                cnt.update(k for k in kws if isinstance(k, str) and k.strip())
+            keywords = [k for k, _ in cnt.most_common(5)]
+        cognitive = collect_run_cognitive(session, run.project_id, [run_id]).get(run_id, {})
+        return {
+            "id": run.id, "project_id": run.project_id,
+            "project_name": proj.name if proj else "",
+            "run_type": run.run_type, "query": run.query, "tech_probe": run.tech_probe,
+            "user_constraint": run.user_constraint, "target_category": run.target_category,
+            "total_found": run.total_found, "saved_count": run.saved_count,
+            "covered_ratio": run.covered_ratio,
+            "mode": run.mode, "status": run.status, "error": run.error,
+            "plan_reason": run.plan_reason,
+            "year_from": run.year_from, "year_to": run.year_to,
+            "methodology": run.methodology, "paper_type": run.paper_type,
+            "keywords": keywords, "papers": papers, "cognitive": cognitive,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+        }

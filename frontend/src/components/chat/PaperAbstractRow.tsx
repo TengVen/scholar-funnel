@@ -15,14 +15,15 @@ import { getPaperDetail } from "@/lib/api/papers";
 interface PaperAbstractRowProps {
   title: string;
   meta: string[];              // 元数据片段（年份/被引…），空片段自动忽略
-  reason?: string;
+  reason?: string;             // 一句话推荐理由（one_liner ?? reason）
+  recallBasis?: string;        // 召回依据（命中词/召回路，可选小字）
   href: string;                // /paper/{id}?project_id=…
   paperId?: number | null;     // 有则提供摘要按需拉取能力
   projectId?: number | null;
 }
 
 export function PaperAbstractRow({
-  title, meta, reason, href, paperId, projectId,
+  title, meta, reason, recallBasis, href, paperId, projectId,
 }: PaperAbstractRowProps) {
   const router = useRouter();
   const metaText = meta.filter(Boolean).join(" · ");
@@ -64,6 +65,9 @@ export function PaperAbstractRow({
           </p>
           {metaText && <p className="text-xs text-ink-faint mt-0.5">{metaText}</p>}
           {reason && <p className="text-xs text-ink-muted mt-1 leading-relaxed">{reason}</p>}
+          {recallBasis && (
+            <p className="text-2xs text-ink-faint mt-0.5 leading-relaxed">召回依据：{recallBasis}</p>
+          )}
         </button>
 
         {canFetch && (

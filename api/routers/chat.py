@@ -661,47 +661,9 @@ def _project_workspace(session, p: Project) -> dict:
     for rid in run_ids:
         cnt = Counter(run_keywords[rid])
         run_keywords[rid] = [k for k, _ in cnt.most_common(5)]
-    # 各 Run 的核心推荐（按 run_id 关联消息卡）：l2_structure（full_search 三分类认知结构）
-    # 或 deep_research_result（深研骨架候选，按 suggested_category 分组）
-    run_cognitive: dict[int, dict] = {rid: {} for rid in run_ids}
-    if run_ids:
-        for m in (
-            session.query(Message)
-            .filter(Message.project_id == p.id)
-            .order_by(Message.id.desc())
-            .all()
-        ):
-            att = m.attachments
-            if not isinstance(att, dict):
-                continue
-            rid = att.get("run_id")
-            if rid not in run_cognitive or run_cognitive[rid]:
-                continue
-            if att.get("type") == "l2_structure" and isinstance(att.get("cognitive_structure"), dict):
-                cs = att["cognitive_structure"]
-                run_cognitive[rid] = {
-                    "topic": cs.get("topic", ""),
-                    "selected_count": cs.get("selected_count", 0),
-                    "foundation": cs.get("foundation", []) or [],
-                    "mainstream": cs.get("mainstream", []) or [],
-                    "frontier": cs.get("frontier", []) or [],
-                }
-            elif att.get("type") == "deep_research_result":
-                cands = att.get("candidates") or []
-                groups: dict[str, list] = {"foundation": [], "mainstream": [], "frontier": []}
-                for c in cands:
-                    cat = c.get("suggested_category", "mainstream")
-                    groups.setdefault(cat, []).append({
-                        "paper_id": c.get("paper_id"),
-                        "title": c.get("title", ""),
-                        "year": c.get("year", 0),
-                        "reason": c.get("reason", ""),
-                    })
-                run_cognitive[rid] = {
-                    "topic": att.get("project_name") or "",
-                    "selected_count": sum(len(v) for v in groups.values()),
-                    **groups,
-                }
+    # 各 Run 的核心推荐（共用解析：l2_structure 三分类 / deep_research_result 候选分组）
+    from storage.search_runs import collect_run_cognitive
+    run_cognitive = collect_run_cognitive(session, p.id, run_ids)
     # 论文推荐 = 子研究池内论文（全量/增量检索入库的累积论文池；按 Run 归属由 search_runs.papers 细化）
     paper_rows = (
         session.query(Paper)

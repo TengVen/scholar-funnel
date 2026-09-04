@@ -8,7 +8,55 @@ P1：返回 run_id，供论文 ↔ 检索记录多对多关联（link_paper_runs
 """
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from storage.mysql_db import get_session
-from storage.models import SearchRun, PaperRunLink
+from storage.models import SearchRun, PaperRunLink, Message
+
+
+def collect_run_cognitive(session, project_id: int, run_ids: list[int]) -> dict[int, dict]:
+    """各 Run 的核心推荐（按 run_id 关联消息卡，session 复用避免重复连接）：
+    l2_structure（full_search 三分类认知结构）或 deep_research_result（深研骨架候选，按 suggested_category 分组）。
+    返回 {run_id: {topic, selected_count, foundation[], mainstream[], frontier[]}}（无推荐 run 为 {}）。
+    与工作台概览（chat.py）共用同一解析逻辑。"""
+    run_cognitive: dict[int, dict] = {rid: {} for rid in run_ids}
+    if not run_ids:
+        return run_cognitive
+    for m in (
+        session.query(Message)
+        .filter(Message.project_id == project_id)
+        .order_by(Message.id.desc())
+        .all()
+    ):
+        att = m.attachments
+        if not isinstance(att, dict):
+            continue
+        rid = att.get("run_id")
+        if rid not in run_cognitive or run_cognitive[rid]:
+            continue
+        if att.get("type") == "l2_structure" and isinstance(att.get("cognitive_structure"), dict):
+            cs = att["cognitive_structure"]
+            run_cognitive[rid] = {
+                "topic": cs.get("topic", ""),
+                "selected_count": cs.get("selected_count", 0),
+                "foundation": cs.get("foundation", []) or [],
+                "mainstream": cs.get("mainstream", []) or [],
+                "frontier": cs.get("frontier", []) or [],
+            }
+        elif att.get("type") == "deep_research_result":
+            cands = att.get("candidates") or []
+            groups: dict[str, list] = {"foundation": [], "mainstream": [], "frontier": []}
+            for c in cands:
+                cat = c.get("suggested_category", "mainstream")
+                groups.setdefault(cat, []).append({
+                    "paper_id": c.get("paper_id"),
+                    "title": c.get("title", ""),
+                    "year": c.get("year", 0),
+                    "reason": c.get("reason", ""),
+                })
+            run_cognitive[rid] = {
+                "topic": att.get("project_name") or "",
+                "selected_count": sum(len(v) for v in groups.values()),
+                **groups,
+            }
+    return run_cognitive
 
 
 def record_search_run(
