@@ -29,18 +29,18 @@ export function PaperAbstractBar({ abstract, abstractSource = "" }: { abstract?:
           <ChevronRight className="w-3.5 h-3.5 text-ink-faint shrink-0" />
         )}
         <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
-        <span className="text-xs font-medium text-ink-secondary shrink-0">摘要</span>
+        <span className="text-xs font-medium text-ink shrink-0">摘要</span>
         {isAiTldr && (
           <span className="text-2xs px-1.5 py-px rounded-full border border-status-running/30 text-status-running bg-status-running/10 whitespace-nowrap shrink-0">
             AI 概要
           </span>
         )}
         {!open && (
-          <span className="flex-1 min-w-0 text-xs text-ink-faint truncate">{text}</span>
+          <span className="flex-1 min-w-0 text-xs text-ink-muted truncate">{text}</span>
         )}
       </button>
       {open && (
-        <p className="px-4 pb-3 pt-1 text-sm text-ink-secondary leading-relaxed whitespace-pre-wrap border-t border-line/60">
+        <p className="px-4 pb-3 pt-1 text-sm text-ink leading-relaxed whitespace-pre-wrap border-t border-line/60">
           {text}
           {isAiTldr && <span className="block text-xs text-ink-faint mt-1.5">以上为 AI 生成概要（非原文摘要）</span>}
         </p>

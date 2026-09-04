@@ -54,11 +54,16 @@ export function getPaperAnalysis(paperId: number, projectId: number): Promise<Pa
   return request(`/api/papers/${paperId}/analysis/result?project_id=${projectId}`);
 }
 
-/** 详情页单篇问答（触发分析落库 L2→L3 + 引用回溯） */
-export function askPaper(paperId: number, projectId: number, question: string): Promise<PaperAskResult> {
+/** 详情页连续问答（触发分析落库 L2→L3 + 引用回溯；history 最近 ≤10 轮承接追问） */
+export function askPaper(
+  paperId: number,
+  projectId: number,
+  question: string,
+  history: { role: "user" | "assistant"; content: string }[] = [],
+): Promise<PaperAskResult> {
   return request(`/api/papers/${paperId}/ask`, {
     method: "POST",
-    body: JSON.stringify({ project_id: projectId, question }),
+    body: JSON.stringify({ project_id: projectId, question, history: history.slice(-10) }),
   });
 }
 

@@ -212,10 +212,13 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
     }
   };
 
-  const handleAsk = async (question: string): Promise<PaperAskResult | null> => {
+  const handleAsk = async (
+    question: string,
+    history: { role: "user" | "assistant"; content: string }[],
+  ): Promise<PaperAskResult | null> => {
     if (!detail?.paper_id || !projectId) return null;
     try {
-      const res = await askPaper(detail.paper_id, projectId, question);
+      const res = await askPaper(detail.paper_id, projectId, question, history);
       if (res.answer === "分析准备中，请稍后再问") {
         toast("分析准备中，请稍后再问", "info");
         startPolling(detail.paper_id, projectId);
@@ -325,7 +328,7 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
             <h1 className="font-serif text-lg font-semibold text-ink truncate">{detail.title}</h1>
             <StatusBadge analysis={detail.analysis} />
           </div>
-          <p className="text-sm text-ink-faint truncate">
+          <p className="text-sm text-ink-muted truncate">
             {[detail.authors?.join(", "), detail.year, detail.venue, detail.doi && `DOI ${detail.doi.slice(0, 24)}`]
               .filter(Boolean).join(" · ") || "暂无元数据"}
           </p>

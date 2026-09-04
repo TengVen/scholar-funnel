@@ -562,7 +562,7 @@ def ask_paper(paper_id: int, body: AskRequest, user: User = Depends(get_current_
             if full_text or paper.sections is None:
                 paper.sections = cached_sections or None
 
-    answer, citations = _answer_question(paper, body.question, topic)
+    answer, citations = _answer_question(paper, body.question, topic, body.history or [])
 
     with get_session() as session:
         session.add(PaperQuestion(
@@ -572,8 +572,14 @@ def ask_paper(paper_id: int, body: AskRequest, user: User = Depends(get_current_
     return AskResponse(answer=answer, citations=citations)
 
 
-def _answer_question(paper: Paper, question: str, topic: str = "") -> tuple[str, list]:
-    """基于分节（或摘要）回答 + 引用回溯（citations: [{section, snippet}]）"""
+def _answer_question(paper: Paper, question: str, topic: str = "", history: list | None = None) -> tuple[str, list]:
+    """基于分节（或摘要）的连续问答 + 引用回溯（citations: [{section, snippet}]）。
+
+    多轮（2026-09-04）：history 最近 10 轮仅作承接上下文，不落库、不要求模型复述；
+    域策略（宽松域 + 边界标注）：论文未显式提及但相关的背景/概念也正常回答，
+    但须标注「（论文未提及，属背景补充）」且禁止为其编造 citations——防止把
+    背景知识伪造成论文观点（幻觉红线）。
+    """
     from llm import client as llm
     from agents import paper_analysis as pa
 
@@ -585,8 +591,16 @@ def _answer_question(paper: Paper, question: str, topic: str = "") -> tuple[str,
         material = paper.abstract or ""
         material_type = "摘要"
 
+    # 最近 10 轮（后端兜底截断；role/content 白名单）
+    turns = [h for h in (history or []) if isinstance(h, dict) and h.get("role") in ("user", "assistant")]
+    turns = turns[-10:]
+    history_lines = "\n".join(
+        f"{'用户' if h.get('role') == 'user' else '助手'}：{str(h.get('content') or '')[:800]}"
+        for h in turns
+    )
+
     prompt = f"""\
-你是学术论文精读助手。基于论文材料回答用户问题。
+你是学术论文精读助手，与用户围绕这篇论文进行连续对话。
 
 论文：{paper.title}（{paper.year or '未知'}）
 研究课题：{topic or '未设定'}
@@ -594,13 +608,25 @@ def _answer_question(paper: Paper, question: str, topic: str = "") -> tuple[str,
 论文材料（{material_type}）：
 {material[:20000] if material else '（无材料）'}
 
+对话历史（最近 {len(turns)} 轮，仅用于理解追问指代，不必复述）：
+{history_lines or '（无）'}
+
 用户问题：{question}
+
+回答策略（重要）：
+1. 优先依据论文材料回答，涉及论文具体内容（方法/实验/结论）时给出支撑引用；
+2. 论文未显式提及但与问题相关的背景、概念、术语、方法原理等，也应当正常回答
+   （这是用户合理的知识扩展需求，不得拒答）——该部分请在句中标注
+   「（论文未提及，属背景补充）」，且不得为其编造 citations；
+3. 禁止把背景知识伪造成论文观点（不得说"论文指出/作者认为"材料里没有的内容）；
+   citations 只能来自论文材料；
+4. 问题与本文完全无关时（闲聊/他领域），可简短回应后引导回到本文。
 
 请严格输出 JSON：
 {{
-  "answer": "回答（200字以内，只依据材料，材料没有的明确说'论文中未见'）",
+  "answer": "回答（≤260 字，可用多段；只依据论文材料的部分自然即可）",
   "citations": [
-    {{"section": "对应章节标题（摘要级问答填'摘要'；无依据则空）", "snippet": "支撑原文片段（≤120字）"}}
+    {{"section": "对应章节标题（摘要级问答填'摘要'；无论文内支撑则留空数组）", "snippet": "支撑原文片段（≤120字）"}}
   ]
 }}
 """

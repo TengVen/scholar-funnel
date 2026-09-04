@@ -40,7 +40,7 @@ export function PaperContentPanel({ abstract, abstractSource = "", sections, mat
               </span>
             )}
           </div>
-          <p className="text-base text-ink-secondary leading-relaxed whitespace-pre-wrap">{abstract}</p>
+          <p className="text-base text-ink leading-relaxed whitespace-pre-wrap">{abstract}</p>
           {isAiTldr && (
             <p className="text-xs text-ink-faint mt-1.5">
               原文摘要未被 OpenAlex/Crossref 收录，以上为 Semantic Scholar AI 生成的论文概要；
@@ -88,7 +88,7 @@ export function PaperContentPanel({ abstract, abstractSource = "", sections, mat
           {sections.map((s, i) => (
             <section key={`${s.heading}-${i}`} id={`paper-sec-${i + 1}`}>
               <h2 className="font-serif text-base font-semibold text-ink mb-2">{s.heading}</h2>
-              <div className="text-base text-ink-secondary leading-relaxed whitespace-pre-wrap">{s.content}</div>
+              <div className="text-base text-ink leading-relaxed whitespace-pre-wrap">{s.content}</div>
             </section>
           ))}
         </div>

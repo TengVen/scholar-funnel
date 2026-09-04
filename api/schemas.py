@@ -209,6 +209,10 @@ class AskRequest(BaseModel):
     """详情页单篇问答：触发分析落库（L2→L3）+ 基于分节/摘要回答"""
     project_id: int
     question: str
+    history: list[dict] = Field(
+        default_factory=list,
+        description="最近对话轮次 [{role: user|assistant, content}]（≤10，承接追问用；仅作上下文不落库）",
+    )
 
 
 class AskResponse(BaseModel):

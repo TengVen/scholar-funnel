@@ -46,8 +46,8 @@ function L1State({ detail, projectId, exploring, onExplore }: Pick<AiResearchPan
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-lg border border-line bg-paper-warm/50 px-3 py-2.5">
-        <p className="text-xs text-ink-faint mb-1">摘要</p>
-        <p className="text-sm text-ink-secondary leading-relaxed line-clamp-6">
+        <p className="text-xs font-medium text-ink-muted mb-1">摘要</p>
+        <p className="text-sm text-ink leading-relaxed line-clamp-6">
           {detail.abstract || "暂无摘要"}
         </p>
       </div>
@@ -55,15 +55,15 @@ function L1State({ detail, projectId, exploring, onExplore }: Pick<AiResearchPan
         type="button"
         onClick={onExplore}
         disabled={exploring || !projectId}
-        className="btn-secondary text-sm !py-2 w-full disabled:opacity-50"
+        className="btn-primary text-sm !py-2 w-full flex items-center justify-center gap-1.5 disabled:opacity-50"
       >
-        {exploring ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+        {exploring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
         深入探究
       </button>
       {!projectId && (
         <p className="text-xs text-ink-faint">需要先选择一个研究项目才能深入探究</p>
       )}
-      <p className="text-xs text-ink-faint leading-relaxed">
+      <p className="text-xs text-ink-muted leading-relaxed">
         深入探究后：自动获取全文 → 生成一句话理解 / 核心贡献 / 方法框架 / 实验结论 / 与当前研究的关系 / 研究脉络
       </p>
     </div>
@@ -126,7 +126,7 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
       )}
       {a.summary && (
         <Block title="摘要学术化总结" badge={<EvidenceBadge level="E3" label={e3Label} />}>
-          <p className="text-sm text-ink-secondary leading-relaxed">{a.summary}</p>
+          <p className="text-sm text-ink leading-relaxed">{a.summary}</p>
         </Block>
       )}
       {a.quick_understand && (
@@ -138,7 +138,7 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
         <Block title="核心贡献" badge={<EvidenceBadge level="E3" label={e3Label} />}>
           <ul className="space-y-1">
             {contributions.map((c, i) => (
-              <li key={i} className="text-sm text-ink-secondary leading-relaxed">{c}</li>
+              <li key={i} className="text-sm text-ink leading-relaxed">{c}</li>
             ))}
           </ul>
         </Block>
@@ -150,13 +150,13 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
             <div className="flex items-center gap-1.5 flex-wrap mb-2">
               {pipeline.map((s, i) => (
                 <span key={i} className="flex items-center gap-1">
-                  <span className="text-xs px-2 py-0.5 rounded-md border border-line bg-paper-warm text-ink-secondary">{s}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-md border border-line bg-paper-warm text-ink">{s}</span>
                   {i < pipeline.length - 1 && <span className="text-ink-faint">→</span>}
                 </span>
               ))}
             </div>
           )}
-          <p className="text-sm text-ink-secondary leading-relaxed">{a.method_framework.text}</p>
+          <p className="text-sm text-ink leading-relaxed">{a.method_framework.text}</p>
           {mfEvidence.length > 0 && (
             <EvidenceItems evidence={mfEvidence} onLocate={onLocate} sections={sections} />
           )}
@@ -189,7 +189,7 @@ function AnalysisState({ detail, onLocate }: { detail: PaperDetail; onLocate?: (
             </div>
           )}
           {a.relation_to_research.potential_contribution && (
-            <p className="text-sm text-ink-secondary leading-relaxed">{a.relation_to_research.potential_contribution}</p>
+            <p className="text-sm text-ink leading-relaxed">{a.relation_to_research.potential_contribution}</p>
           )}
         </Block>
       )}
@@ -217,7 +217,7 @@ function MetaRow({ label, value, highlight }: { label: string; value: string; hi
   return (
     <div className="flex gap-2 text-sm">
       <span className="w-16 shrink-0 text-ink-faint">{label}</span>
-      <span className={highlight ? "text-gold-light" : "text-ink-secondary"}>{value}</span>
+      <span className={highlight ? "text-gold-light" : "text-ink"}>{value}</span>
     </div>
   );
 }
