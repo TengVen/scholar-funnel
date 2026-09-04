@@ -326,7 +326,33 @@ def _detail_out(mode: str, work, paper: Paper | None,
             "can_explore": not has_analysis and (paper is None or paper.stage != "candidate"),
             "can_ask": has_analysis,
         },
+        # 历史问答（持久化恢复：左栏对话流打开即回填；仅已落库论文有，transient 为空）
+        qa_history=_qa_history(paper.id) if paper is not None else [],
     )
+
+
+def _qa_history(paper_id: int, limit: int = 20) -> list[dict]:
+    """该论文历史问答（最近 limit 条，时间升序；{question, answer, citations}）"""
+    from storage.models import PaperQuestion
+    try:
+        with get_session() as session:
+            rows = (
+                session.query(PaperQuestion)
+                .filter(PaperQuestion.paper_id == paper_id)
+                .order_by(PaperQuestion.id.desc())
+                .limit(limit)
+                .all()
+            )
+            return [
+                {
+                    "question": r.question,
+                    "answer": r.answer,
+                    "citations": r.citations if isinstance(r.citations, list) else [],
+                }
+                for r in reversed(rows)
+            ]
+    except Exception:
+        return []
 
 
 @router.get("/transient")
@@ -517,6 +543,36 @@ def analysis_result(paper_id: int, project_id: int = Query(...), user: User = De
     return _analysis_state(project_id, paper.openalex_id, paper)
 
 
+@router.get("/{paper_id}/map")
+def get_paper_map(paper_id: int, project_id: int = Query(...), user: User = Depends(get_current_user)):
+    """论文详情页左栏「地图」导航数据（T10）：反查最近含该论文的 run → 该 run 领域地图快照。
+
+    返回 {run_id, run_query, status, topic?, map?, error?}；论文无 run（transient）→ status=none，
+    前端显示"纳入研究后可查看其领域位置"占位。
+    """
+    with get_session() as session:
+        get_owned_project(session, project_id, user)
+        paper = session.get(Paper, paper_id)
+        if not paper or paper.project_id != project_id:
+            raise HTTPException(404, "论文不存在")
+        from storage.models import PaperRunLink, SearchRun
+        link = (
+            session.query(PaperRunLink)
+            .filter(PaperRunLink.paper_id == paper_id)
+            .order_by(PaperRunLink.created_at.desc())
+            .first()
+        )
+        run_query = None
+        if link is not None:
+            run = session.get(SearchRun, link.search_run_id)
+            run_query = run.query if run else None
+    if link is None:
+        return {"status": "none", "run_id": None, "run_query": None}
+    from agents.map_builder import get_run_map
+    data = get_run_map(link.search_run_id)
+    return {"run_id": link.search_run_id, "run_query": run_query, **data}
+
+
 @router.post("/{paper_id}/ask", response_model=AskResponse)
 def ask_paper(paper_id: int, body: AskRequest, user: User = Depends(get_current_user)):
     """
@@ -565,10 +621,21 @@ def ask_paper(paper_id: int, body: AskRequest, user: User = Depends(get_current_
     answer, citations = _answer_question(paper, body.question, topic, body.history or [])
 
     with get_session() as session:
-        session.add(PaperQuestion(
-            project_id=body.project_id, paper_id=paper_id,
-            question=body.question, answer=answer, citations=citations or None,
-        ))
+        # upsert（uniq_paper_question：同一问题重问/追问同句时更新答案与引用，不冲突报错）
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from storage.models import PaperQuestion as _PQ
+        session.execute(
+            pg_insert(_PQ)
+            .values(
+                project_id=body.project_id, paper_id=paper_id,
+                question=body.question, answer=answer, citations=citations or None,
+            )
+            .on_conflict_do_update(
+                index_elements=["paper_id", "question"],
+                set_={"answer": answer, "citations": citations or None},
+            )
+        )
+        session.commit()
     return AskResponse(answer=answer, citations=citations)
 
 

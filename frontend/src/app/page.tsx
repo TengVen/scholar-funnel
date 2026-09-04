@@ -269,6 +269,10 @@ export default function Home() {
             setActiveProject(found);
             const rid = q.get("run_id");
             setActiveRunId(rid && Number.isFinite(Number(rid)) ? Number(rid) : null);
+            // 恢复来源对话（详情页「返回检索」URL 携带 conv_id；供随后「返回对话」回到同一会话历史，
+            // 而非新对话——Home 重挂载时 resetSession 已清空 store 会话态）
+            const cid = q.get("conv_id");
+            if (cid) setActiveConversationId(cid);
             setActiveView("search");
           }
         });

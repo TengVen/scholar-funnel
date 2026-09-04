@@ -329,6 +329,28 @@ class PaperRunLink(Base):
     search_run: Mapped["SearchRun"] = relationship(back_populates="paper_links")
 
 
+class RunMap(Base):
+    """领域地图快照（T10 地图结构化归纳；一次 run → 一张地图，业务实体，独立表）"""
+    __tablename__ = "ai_run_maps"
+    __table_args__ = (
+        UniqueConstraint("run_id", name="uq_run_maps_run"),
+        Index("idx_run_maps_project", "project_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("ai_search_runs.id"), nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("ai_projects.id"), nullable=False)
+    topic: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(
+        String(20), default="generating", doc="generating / done / failed"
+    )
+    map: Mapped[dict] = mapped_column(JSON, default=dict)
+    model: Mapped[str | None] = mapped_column(String(80), default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ══════════════════════════════════════════════════════════
 #  用户与认证域（对齐 db/postgres/02_users.sql）
 # ══════════════════════════════════════════════════════════

@@ -24,7 +24,9 @@ export default function PaperDetailRoute() {
       persistAnalysis={search.get("persist") === "1"}
       onBackChat={() => router.push(convId ? `/?conversation_id=${convId}` : "/")}
       onBackSearch={() => router.push(
-        projectId ? `/?view=search&project_id=${projectId}${runId ? `&run_id=${runId}` : ""}` : "/",
+        projectId
+          ? `/?view=search&project_id=${projectId}${runId ? `&run_id=${runId}` : ""}${convId ? `&conv_id=${convId}` : ""}`
+          : "/",
       )}
     />
   );

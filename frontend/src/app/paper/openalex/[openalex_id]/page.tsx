@@ -16,7 +16,9 @@ export default function TransientPaperRoute() {
       openalexId={params.openalex_id}
       projectId={projectId}
       onBackChat={() => router.push(convId ? `/?conversation_id=${convId}` : "/")}
-      onBackSearch={() => router.push(projectId ? `/?view=search&project_id=${projectId}` : "/")}
+      onBackSearch={() => router.push(
+        projectId ? `/?view=search&project_id=${projectId}${convId ? `&conv_id=${convId}` : ""}` : "/",
+      )}
     />
   );
 }

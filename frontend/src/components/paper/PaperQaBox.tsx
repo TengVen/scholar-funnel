@@ -34,6 +34,23 @@ export function PaperQaBox({ detail, projectId, onAsk, onLocate }: PaperQaBoxPro
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
+  const loadedPaperRef = useRef<number | null>(null);   // 已装载历史的论文（防分析轮询重建 detail 时重置）
+
+  // 打开详情页 / 切换论文 → 从持久化历史恢复对话流（qa_history 时间升序；transient 无 paper_id 不装）
+  useEffect(() => {
+    const pid = detail.paper_id ?? null;
+    if (pid === null || loadedPaperRef.current === pid) return;
+    loadedPaperRef.current = pid;
+    const hist = detail.qa_history ?? [];
+    setThread(
+      hist.flatMap<AskTurn>((h) => [
+        { role: "user", content: h.question },
+        { role: "assistant", content: h.answer, citations: h.citations ?? [] },
+      ]),
+    );
+    setQuestion("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.paper_id, detail.mode]);
 
   const inputDisabled = asking || !projectId || !canAsk;
 

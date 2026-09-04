@@ -337,6 +337,15 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
                 ),
             )
 
+    # 领域地图顺产（T10）：与认知结构同 run 异步生成，不阻塞 finalize 返回；
+    # 失败/历史 run 可经工作台「生成领域地图」按需重试（POST /runs/{id}/map）
+    if run_id:
+        try:
+            from agents import map_builder
+            map_builder.generate_run_map_async(run_id, project_id, project_name)
+        except Exception as e:
+            logger.warning(f"领域地图顺产调度失败（可后续按需生成）: {e}")
+
     payload = {
         "summary": summary,
         "project_id": project_id,
@@ -664,6 +673,16 @@ def _project_workspace(session, p: Project) -> dict:
     # 各 Run 的核心推荐（共用解析：l2_structure 三分类 / deep_research_result 候选分组）
     from storage.search_runs import collect_run_cognitive
     run_cognitive = collect_run_cognitive(session, p.id, run_ids)
+    # 领域地图状态（T10：批量查一次，供工作台"生成领域地图/查看地图"按钮态）
+    map_statuses: dict[int, str] = {}
+    if run_ids:
+        from storage.models import RunMap
+        for rid, st in (
+            session.query(RunMap.run_id, RunMap.status)
+            .filter(RunMap.run_id.in_(run_ids))
+            .all()
+        ):
+            map_statuses[rid] = st
     # 论文推荐 = 子研究池内论文（全量/增量检索入库的累积论文池；按 Run 归属由 search_runs.papers 细化）
     paper_rows = (
         session.query(Paper)
@@ -718,6 +737,7 @@ def _project_workspace(session, p: Project) -> dict:
                 "keywords": run_keywords.get(r.id, []),
                 "papers": run_papers.get(r.id, []),
                 "cognitive": run_cognitive.get(r.id, {}),
+                "map_status": map_statuses.get(r.id, "none"),
                 "created_at": r.created_at.isoformat() if r.created_at else "",
             }
             for r in runs

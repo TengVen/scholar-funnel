@@ -2,7 +2,7 @@
  * 论文域 API（lib/api 分层：唯一传输层 http）
  */
 import { request, requestBlob } from "@/lib/http";
-import type { PaperDetail, PaperAskResult } from "@/types/dto";
+import type { PaperDetail, PaperAskResult, PaperMapState } from "@/types/dto";
 
 /** L1"加入研究"：把回答来源论文纳入项目候选（stage=candidate，不进骨架） */
 export function joinProject(projectId: number, openalexId: string): Promise<{ ok: boolean; paper_id: number; created?: boolean }> {
@@ -52,6 +52,11 @@ export function exploreOpenalexPaper(
 /** 分析状态/结果轮询（统一返回 {status, content?, ...}） */
 export function getPaperAnalysis(paperId: number, projectId: number): Promise<PaperDetail["analysis"]> {
   return request(`/api/papers/${paperId}/analysis/result?project_id=${projectId}`);
+}
+
+/** 论文 → 领域地图（T10：详情页左栏地图导航；transient/无 run 时 status=none） */
+export function getPaperMap(paperId: number, projectId: number): Promise<PaperMapState> {
+  return request(`/api/papers/${paperId}/map?project_id=${projectId}`);
 }
 
 /** 详情页连续问答（触发分析落库 L2→L3 + 引用回溯；history 最近 ≤10 轮承接追问） */

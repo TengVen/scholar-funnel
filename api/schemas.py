@@ -194,6 +194,7 @@ class PaperDetailOut(BaseModel):
     sections: list | None = None      # 全文分节（有分析后）
     analysis: dict = {}               # {status: none/running/done, source?: cache/db, content?, material_type?}
     actions: dict = {}                # {can_explore, can_ask}
+    qa_history: list[dict] = []       # 该论文历史问答（时间升序，≤20；{question, answer, citations}，供左栏对话流恢复）
 
 
 class ExploreRequest(BaseModel):

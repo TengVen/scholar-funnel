@@ -13,6 +13,7 @@ import type {
   PaperListParams,
   PaperListResponse,
   RunDetail,
+  RunMapState,
 } from "@/types/dto";
 
 // ── 主检索（异步 task + 轮询） ──
@@ -90,6 +91,17 @@ export function listPapers(params: PaperListParams): Promise<PaperListResponse> 
 
 export function getRunDetail(runId: number): Promise<RunDetail> {
   return request(`/api/search/runs/${runId}`);
+}
+
+// ── 领域地图（T10）：run 地图快照读/生成 ──
+
+export function getRunMap(runId: number): Promise<RunMapState> {
+  return request(`/api/search/runs/${runId}/map`);
+}
+
+/** 确保 run 有领域地图（done→返回现有；none/failed→触发后台生成；generating→202 抛错由调用方轮询） */
+export function ensureRunMap(runId: number): Promise<RunMapState> {
+  return request(`/api/search/runs/${runId}/map`, { method: "POST" });
 }
 
 // ── 本地库二次检索（对已入库论文按向量语义召回）──

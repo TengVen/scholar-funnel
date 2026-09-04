@@ -318,6 +318,8 @@ export interface PaperDetail {
     material_type?: string;
   };
   actions: { can_explore: boolean; can_ask: boolean };
+  /** 该论文历史问答（时间升序 ≤20；{question, answer, citations}，打开详情页回填左栏对话流） */
+  qa_history?: Array<{ question: string; answer: string; citations: Array<{ section?: string; snippet?: string }> }>;
 }
 
 export interface PaperAskResult {
@@ -609,6 +611,35 @@ export interface RunDetail extends SearchRunRecord {
   project_id: number;
   project_name?: string;
   tech_probe?: string | null;
+  map_status?: "none" | "generating" | "done" | "failed";
+}
+
+// ── 领域地图（T10 地图结构化归纳：ai_run_maps 快照）──
+
+/** 地图快照（归纳产物：锚点/主线/热点/演进；paper 节点均可点进详情） */
+export interface RunMapPayload {
+  topic?: string;
+  anchors?: Array<{ paper_id: number; title: string; year?: number | null; is_survey?: boolean }>;
+  mainlines?: Array<{ name: string; description?: string; paper_ids: number[] }>;
+  hotspots?: Array<{ question: string; paper_ids: number[] }>;
+  evolution?: Array<{ stage: string; description?: string; year_from?: number | null; year_to?: number | null }>;
+  fallback?: boolean;   // true = 规则版（LLM 失败降级）
+}
+
+/** run 地图状态与快照（GET/POST /api/search/runs/{id}/map） */
+export interface RunMapState {
+  status: "none" | "generating" | "done" | "failed";
+  topic?: string;
+  map?: RunMapPayload;
+  model?: string | null;
+  error?: string | null;
+  created_at?: string | null;
+}
+
+/** 论文 → 领域地图（GET /api/papers/{id}/map；transient 无 run 时 status=none） */
+export interface PaperMapState extends RunMapState {
+  run_id?: number | null;
+  run_query?: string | null;
 }
 
 export interface CognitiveCategoryCount {

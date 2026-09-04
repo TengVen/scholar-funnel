@@ -334,6 +334,9 @@ def get_run_detail(run_id: int, user: User = Depends(get_current_user)):
                 cnt.update(k for k in kws if isinstance(k, str) and k.strip())
             keywords = [k for k, _ in cnt.most_common(5)]
         cognitive = collect_run_cognitive(session, run.project_id, [run_id]).get(run_id, {})
+        # 领域地图状态（T10：none/generating/done/failed；详情数据经 /runs/{id}/map 拉取）
+        from agents.map_builder import get_run_map
+        map_status = get_run_map(run_id)["status"]
         return {
             "id": run.id, "project_id": run.project_id,
             "project_name": proj.name if proj else "",
@@ -346,5 +349,51 @@ def get_run_detail(run_id: int, user: User = Depends(get_current_user)):
             "year_from": run.year_from, "year_to": run.year_to,
             "methodology": run.methodology, "paper_type": run.paper_type,
             "keywords": keywords, "papers": papers, "cognitive": cognitive,
+            "map_status": map_status,
             "created_at": run.created_at.isoformat() if run.created_at else None,
         }
+
+
+# ── 领域地图（T10）──
+
+def _owned_run(run_id: int, user: User) -> "SearchRun":
+    """查 run 并校验项目归属；不存在 404。供 map 端点与 run 详情共用鉴权。"""
+    from storage.models import SearchRun
+    with get_session() as session:
+        run = session.get(SearchRun, run_id)
+    if run is None:
+        raise HTTPException(404, "检索记录不存在")
+    check_project_access(run.project_id, user)
+    return run
+
+
+@router.get("/runs/{run_id}/map")
+def get_run_map(run_id: int, user: User = Depends(get_current_user)):
+    """读取某 run 的领域地图快照（T10）：{status, topic?, map?, error?}；无记录 status=none。"""
+    _owned_run(run_id, user)
+    from agents.map_builder import get_run_map as _get
+    return _get(run_id)
+
+
+@router.post("/runs/{run_id}/map")
+def ensure_run_map(run_id: int, user: User = Depends(get_current_user)):
+    """确保某 run 有领域地图：done→返回现有；generating→202；none/failed→后台生成。
+
+    用于 finalize 顺产失败或历史 run 的按需补生成（工作台「生成领域地图」）。
+    """
+    run = _owned_run(run_id, user)
+    from agents import map_builder
+    cur = map_builder.get_run_map(run_id)
+    if cur["status"] == "done":
+        return {"status": "done", "map": cur.get("map") or {}}
+    if cur["status"] == "generating":
+        raise HTTPException(202, "地图生成中，请稍候刷新")
+    # none / failed → 重新生成（failed 允许重试）
+    topic = ""
+    with get_session() as session:
+        from storage.models import Project
+        proj = session.get(Project, run.project_id)
+        if proj:
+            topic = proj.user_query or ""
+    map_builder.generate_run_map_async(run_id, run.project_id, topic)
+    return {"status": "generating"}
