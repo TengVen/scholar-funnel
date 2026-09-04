@@ -2,7 +2,8 @@
  * 论文域 API（lib/api 分层：唯一传输层 http）
  */
 import { request, requestBlob } from "@/lib/http";
-import type { PaperDetail, PaperAskResult, PaperMapState } from "@/types/dto";
+import type { PaperDetail, PaperAskResult } from "@/types/dto";
+import type { PaperMapState } from "@/types/map";
 
 /** L1"加入研究"：把回答来源论文纳入项目候选（stage=candidate，不进骨架） */
 export function joinProject(projectId: number, openalexId: string): Promise<{ ok: boolean; paper_id: number; created?: boolean }> {

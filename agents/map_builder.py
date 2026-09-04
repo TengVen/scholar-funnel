@@ -314,8 +314,28 @@ def generate_run_map_async(run_id: int, project_id: int, topic: str = "") -> str
     return "none"
 
 
+def _collect_titles(session, payload: dict) -> dict:
+    """地图引用 id → 标题映射（mainlines/hotspots 只冗余 paper_ids；读取时反查标题供前端展示）。
+
+    兼容历史快照：无论何时生成的快照，只要论文仍在库即可取到标题。
+    """
+    from storage.models import Paper
+    ids: set[int] = set()
+    for m in (payload.get("mainlines") or []):
+        ids.update(m.get("paper_ids") or [])
+    for h in (payload.get("hotspots") or []):
+        ids.update(h.get("paper_ids") or [])
+    if not ids:
+        return {}
+    rows = session.query(Paper.id, Paper.title).filter(Paper.id.in_(ids)).all()
+    return {str(pid): (title or "") for pid, title in rows}
+
+
 def get_run_map(run_id: int) -> dict:
-    """读取地图状态与快照；无记录返回 {status: 'none'}。"""
+    """读取地图状态与快照；无记录返回 {status: 'none'}。
+
+    返回附带 titles（引用 paper_id → 标题）：前端把主线的支撑论文显示为标题而非内部 id。
+    """
     from storage.mysql_db import get_session
     from storage.models import RunMap
     try:
@@ -323,10 +343,12 @@ def get_run_map(run_id: int) -> dict:
             row = session.query(RunMap).filter(RunMap.run_id == run_id).first()
             if row is None:
                 return {"status": "none"}
+            payload = row.map or {}
             return {
                 "status": row.status,
                 "topic": row.topic or "",
-                "map": row.map or {},
+                "map": payload,
+                "titles": _collect_titles(session, payload),
                 "model": row.model,
                 "error": row.error,
                 "created_at": row.created_at.isoformat() if row.created_at else None,

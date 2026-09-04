@@ -52,6 +52,16 @@ export function useChatTasks({
             ? { type: "l2_structure", level: "L2", cognitive_structure: summary.cognitive_structure }
             : undefined,
         });
+        // 领域地图消息卡（T10）：finalize 后追加（地图异步生成，卡内自拉状态与结果）
+        if (summary.run_id) {
+          pushMessage({
+            role: "assistant",
+            content: "",
+            project_id: summary.project_id,
+            project_name: summary.project_name,
+            attachments: { type: "run_map", run_id: summary.run_id, project_id: summary.project_id },
+          });
+        }
         onProjectCreated(summary.project_id);
         setStage("greeting");
         window.dispatchEvent(new CustomEvent("chat:updated")); // 刷新左侧会话列表

@@ -1,6 +1,7 @@
 /**
  * 检索 API —— 主检索 / 缺口补充 / 标题直达 / 论文列表
  */
+import type { RunMapState } from "@/types/map";
 import { request } from "../http";
 import type {
   SearchRequest,
@@ -13,7 +14,6 @@ import type {
   PaperListParams,
   PaperListResponse,
   RunDetail,
-  RunMapState,
 } from "@/types/dto";
 
 // ── 主检索（异步 task + 轮询） ──

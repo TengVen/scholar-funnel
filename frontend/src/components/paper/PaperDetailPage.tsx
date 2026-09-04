@@ -8,7 +8,7 @@ import { toast } from "@/lib/toast";
 import { useLocalStorageConfig } from "@/hooks/useLocalStorageConfig";
 import { sectionAnchor, matchSection, type SectionTarget } from "@/lib/paper/sectionLocate";
 import { ResizablePanel } from "./ResizablePanel";
-import { TocSidebar } from "./TocSidebar";
+import { PaperLeftNav } from "./PaperLeftNav";
 import { PaperQaBox } from "./PaperQaBox";
 import { PaperContentPanel } from "./PaperContentPanel";
 import { PaperAbstractBar } from "./PaperAbstractBar";
@@ -17,14 +17,16 @@ import { AnalysisUpgradeBanner } from "./AnalysisUpgradeBanner";
 import { PdfViewer } from "./PdfViewer";
 import { PaperUploadBar } from "./PaperUploadBar";
 
-/** 详情页三栏布局偏好（宽度 + 折叠状态，持久化到 localStorage） */
+/** 详情页三栏布局偏好（宽度 + 折叠状态 + 左栏问答区高度，持久化到 localStorage） */
 interface PaperLayout {
   leftW: number;
   leftCollapsed: boolean;
   rightW: number;
   rightCollapsed: boolean;
+  /** 左栏底部问答交互框高度（px，可上下拖拽） */
+  qaH: number;
 }
-const DEFAULT_LAYOUT: PaperLayout = { leftW: 280, leftCollapsed: false, rightW: 320, rightCollapsed: false };
+const DEFAULT_LAYOUT: PaperLayout = { leftW: 280, leftCollapsed: false, rightW: 320, rightCollapsed: false, qaH: 260 };
 function migrateLayout(raw: unknown): PaperLayout {
   const src = (raw ?? {}) as Record<string, unknown>;
   const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
@@ -33,6 +35,7 @@ function migrateLayout(raw: unknown): PaperLayout {
     leftCollapsed: src.leftCollapsed === true,
     rightW: num(src.rightW, DEFAULT_LAYOUT.rightW),
     rightCollapsed: src.rightCollapsed === true,
+    qaH: num(src.qaH, DEFAULT_LAYOUT.qaH),
   };
 }
 
@@ -68,6 +71,32 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 左右栏宽度/折叠偏好（持久化，防 hydration 崩溃：首屏用 fallback）
   const [layout, setLayout] = useLocalStorageConfig<PaperLayout>("scholar_funnel_paper_layout", DEFAULT_LAYOUT, migrateLayout);
+
+  // ── 左栏问答区高度上下拖拽（与三栏宽度拖拽同交互模式：mousedown + 全局 mousemove）──
+  const qaResizeRef = useRef<{ y: number; h: number } | null>(null);
+  const startQaResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    qaResizeRef.current = { y: e.clientY, h: layout.qaH };
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => {
+      if (!qaResizeRef.current) return;
+      // 向上拖（clientY 减小）→ 问答区增高
+      const h = qaResizeRef.current.h + (qaResizeRef.current.y - ev.clientY);
+      const minH = 140;                          // 保证输入行 + 至少一轮可读
+      const maxH = Math.round(window.innerHeight * 0.62); // 上限约六成视口，上区导航保底
+      setLayout({ ...layout, qaH: Math.min(maxH, Math.max(minH, Math.round(h))) });
+    };
+    const onUp = () => {
+      qaResizeRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   // 加载详情（项目论文或 transient）
   useEffect(() => {
@@ -364,10 +393,31 @@ export function PaperDetailPage({ paperId, openalexId, projectId, autoExplore = 
           header={<><BookOpen className="w-4 h-4 text-accent" /> 论文导航</>}
         >
           <div className="flex flex-col h-full">
+            {/* 上区：地图 | 目录 双层页签（T10；transient 无 run 时自动落目录视图） */}
             <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
-              <TocSidebar hasSections={!!sections?.length} headings={headings} onJump={handleJump} />
+              <PaperLeftNav
+                paperId={detail.paper_id}
+                projectId={projectId}
+                hasSections={!!sections?.length}
+                headings={headings}
+                onJump={handleJump}
+              />
             </div>
-            <div className="shrink-0 border-t border-line px-3 py-3">
+
+            {/* 垂直拖拽手柄：上拉问答区变大 / 下拉变小（与左右栏宽度拖拽同交互） */}
+            <div
+              onMouseDown={startQaResize}
+              title="上下拖拽调整问答区高度"
+              className="group shrink-0 relative h-2 cursor-row-resize flex items-center justify-center"
+            >
+              <div className="w-full border-t border-line/70 group-hover:border-accent/80 transition-colors" />
+            </div>
+
+            {/* 下区：基于本文的问答交互框（高度可上下拖拽，qaH 持久化） */}
+            <div
+              className="shrink-0 flex flex-col min-h-0 overflow-hidden px-3 py-3"
+              style={{ height: layout.qaH }}
+            >
               <PaperQaBox detail={detail} projectId={projectId} onAsk={handleAsk} onLocate={handleLocate} />
             </div>
           </div>

@@ -9,6 +9,7 @@ import { L1SourcesCard } from "./L1SourcesCard";
 import { L2StructureCard } from "./L2StructureCard";
 import { ResearchResultCard } from "./ResearchResultCard";
 import { DeepResearchRunningCard } from "./DeepResearchRunningCard";
+import { MapMessageCard } from "./MapMessageCard";
 
 /**
  * 对话态消息流：
@@ -47,6 +48,8 @@ export function MessageList({
                 structure={msg.attachments.cognitive_structure}
                 projectId={msg.project_id ?? null}
               />
+            ) : msg.attachments?.type === "run_map" ? (
+              <MapMessageCard att={msg.attachments} projectId={msg.project_id ?? null} />
             ) : msg.role === "user" ? (
               <div className="max-w-[85%] rounded-2xl px-4 py-3 text-base leading-relaxed bg-paper-chrome text-ink whitespace-pre-wrap">
                 {msg.content}

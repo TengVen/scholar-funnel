@@ -336,6 +336,13 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
                     if cognitive else None
                 ),
             )
+            # 领域地图消息卡（T10，甲）：地图异步生成，卡内自拉状态；供刷新/历史恢复
+            if run_id:
+                _append_message(
+                    session, conv, user.id, "assistant", "",
+                    project_id=project_id, project_name=project_name,
+                    attachments={"type": "run_map", "run_id": run_id, "project_id": project_id},
+                )
 
     # 领域地图顺产（T10）：与认知结构同 run 异步生成，不阻塞 finalize 返回；
     # 失败/历史 run 可经工作台「生成领域地图」按需重试（POST /runs/{id}/map）
@@ -350,6 +357,7 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
         "summary": summary,
         "project_id": project_id,
         "project_name": project_name,
+        "run_id": run_id,
         "cognitive_structure": cognitive,
     }
     task["summarized"] = True

@@ -115,8 +115,8 @@ export function PaperQaBox({ detail, projectId, onAsk, onLocate }: PaperQaBoxPro
     <div className="flex flex-col gap-2 min-h-0">
       <p className="text-xs font-medium text-ink-muted">向 AI 提问</p>
 
-      {/* 对话流（多轮，可滚动） */}
-      <div ref={streamRef} className="max-h-[42vh] overflow-y-auto space-y-2 pr-0.5">
+      {/* 对话流（多轮，占满问答区剩余高度 → 可上下滚动查看历史；输入行常驻底部） */}
+      <div ref={streamRef} className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
         {thread.map((t, i) =>
           t.role === "user" ? (
             <div key={i} className="flex justify-end">

@@ -10,6 +10,7 @@ import type {
 import { getWorkspace } from "@/lib/api/chat";
 import { cn } from "@/lib/utils";
 import { CATEGORY_META, CATEGORY_SECTION } from "@/config/categories";
+import { RunMapSection } from "@/components/map/RunMapSection";
 
 /**
  * 工作台概览（对话页伸缩右栏，2-page IA）——方案 B：指标面板式 + 区块就地展开。
@@ -277,8 +278,8 @@ function RunCard({ run, isFirst, open, collapsed, onToggle, onToggleSection, onO
 
           {/* 区块目录行：计数胶囊，点击就地展开，可多开 */}
           <div className="flex items-center gap-1.5 flex-wrap border-t border-line/60 pt-2">
-            <SectionChip active={isSecOpen("cognitive")} onClick={() => onToggleSection(secKey("cognitive"))}>
-              认知结构 {recCount}
+            <SectionChip active={isSecOpen("map")} onClick={() => onToggleSection(secKey("map"))}>
+              领域地图
             </SectionChip>
             <SectionChip active={isSecOpen("rec")} onClick={() => onToggleSection(secKey("rec"))}>
               论文推荐 {recCount}
@@ -292,31 +293,10 @@ function RunCard({ run, isFirst, open, collapsed, onToggle, onToggleSection, onO
             </button>
           </div>
 
-          {/* 就地展开区块 */}
-          {isSecOpen("cognitive") && (
+          {/* 就地展开区块：领域地图（2026-09-04：替代原"认知结构"计数块——三分类已由「论文推荐」列表承载，地图是 run 级结构产物，点开即看） */}
+          {isSecOpen("map") && (
             <div className="mt-2 pt-2 border-t border-line/60">
-              {cognitive?.topic ? (
-                <p className="text-2xs text-ink-faint mb-1.5 leading-relaxed">
-                  主题：{typeof cognitive.topic === "string" && cognitive.topic.length > 40
-                    ? `${cognitive.topic.slice(0, 40)}…` : cognitive.topic}
-                </p>
-              ) : null}
-              {recGroups.length === 0 ? (
-                <p className="text-2xs text-ink-faint">暂无认知结构（检索完成后生成）</p>
-              ) : (
-                <div className="flex flex-wrap gap-1">
-                  {recGroups.map(({ cat, items }) => {
-                    const sec = CATEGORY_SECTION[cat];
-                    const meta = CATEGORY_META[cat];
-                    return (
-                      <span key={cat} className="text-2xs px-1.5 py-0.5 rounded-md border border-line/60 bg-paper-warm/40 whitespace-nowrap">
-                        <span className={sec.color}>{meta.label}</span>
-                        <span className="text-ink-faint"> · {items.length}</span>
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
+              <RunMapSection runId={run.id} onOpenPaper={onOpenPaper} defaultCollapsed={false} />
             </div>
           )}
 

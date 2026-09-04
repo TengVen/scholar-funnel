@@ -28,7 +28,7 @@ export function TocSidebar({ hasSections, headings, onJump }: TocSidebarProps) {
 
   return (
     <nav className="space-y-0.5">
-      <p className="text-xs text-ink-faint mb-2">论文目录</p>
+      <p className="text-xs text-ink-muted mb-2">论文目录</p>
       {items.map((label, i) => (
         <button
           key={`${label}-${i}`}
