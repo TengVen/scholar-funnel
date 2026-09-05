@@ -75,7 +75,7 @@ TOOL_GAP_SEARCH = {
     "type": "function",
     "function": {
         "name": "gap_search",
-        "description": "骨架缺口补充检索：为某类别（奠基/主流/前沿）找还缺的论文候选（不入库）。用户说'补一补/缺什么/某类还缺'时调用。",
+        "description": "类别补充检索：当某类别（奠基/主流/前沿）相关论文不足时，按约束补充检索候选论文（不入库）。用户说'某类还缺/补一补/再找点某类'时调用。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -91,7 +91,7 @@ TOOL_SKELETON_STATUS = {
     "type": "function",
     "function": {
         "name": "get_skeleton_status",
-        "description": "查看当前项目骨架的状态（奠基/主流/前沿各类论文数量、是否已满）。用户问'骨架怎么样/骨架缺什么/几个了'时调用。",
+        "description": "查看当前项目各类别（奠基/主流/前沿）论文覆盖情况与配额余量。用户问'各类覆盖/数量/还缺多少'时调用。",
         "parameters": {"type": "object", "properties": {}},
     },
 }
@@ -101,8 +101,8 @@ TOOL_DEEP_RESEARCH = {
     "function": {
         "name": "deep_research",
         "description": (
-            "执行一次深度调研（多智能体工作流）：意图解析 → 主干检索 → AI 推荐骨架论文（候选，不入库）→ 推导技术探针。"
-            "与 full_search 的区别：full_search 只做单次检索入库；deep_research 会额外给出骨架候选与探针，适合用户说"
+            "执行一次深度调研（多智能体工作流）：意图解析 → 主干检索 → 归纳核心候选论文（按奠基/主流/前沿分类，不入库）→ 推导技术探针。"
+            "与 full_search 的区别：full_search 只做单次检索入库；deep_research 会额外给出核心候选与探针，适合用户说"
             "'调研/梳理/了解/综述一下某个方向'、'这个方向该读什么'、'帮我建立一个完整的研究脉络' 等系统性诉求。"
         ),
         "parameters": {
@@ -127,8 +127,8 @@ TOOL_JUDGMENT = {
         "description": (
             "记录用户对某篇论文的研究判断（对话式修正，判断会沉淀并在后续检索生效）："
             "exclude=这篇不对/不相关（后续检索不再返回，可逆）；uncertain=先存疑；"
-            "adopt=采纳并加入骨架（用户指定分类或用系统建议分类）；none=撤销之前的判断（恢复）。"
-            "当用户在对话中对具体论文给出评价、修正、排除、说'这篇不对/不相关/先存疑/加入骨架'等指令时调用。"
+            "adopt=采纳并纳入研究清单（记录判断与推荐分类）；none=撤销之前的判断（恢复）。"
+            "当用户在对话中对具体论文给出评价、修正、排除等指令时调用（如'这篇不对/不相关/先存疑/很相关，纳入研究'）。"
         ),
         "parameters": {
             "type": "object",
@@ -136,7 +136,7 @@ TOOL_JUDGMENT = {
                 "action": {"type": "string", "enum": ["adopt", "exclude", "uncertain", "none"], "description": "判断动作"},
                 "paper_ref": {"type": "string", "description": "论文标识：标题片段或数字 ID（来自检索结果/对话上下文）"},
                 "reason": {"type": "string", "description": "用户给出的理由（可空）"},
-                "category": {"type": "string", "enum": ["foundation", "mainstream", "frontier"], "description": "仅 adopt 需要：骨架分类，缺省由系统按规则/AI 建议"},
+                "category": {"type": "string", "enum": ["foundation", "mainstream", "frontier"], "description": "仅 adopt 需要：推荐分类（奠基/主流/前沿），缺省由系统按规则/AI 建议"},
             },
             "required": ["action", "paper_ref"],
         },
@@ -456,7 +456,7 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
             return {
                 "status": "ok",
                 "counts": summary,
-                "message": f"当前骨架：{json.dumps(summary, ensure_ascii=False)}",
+                "message": f"当前各类别覆盖：{json.dumps(summary, ensure_ascii=False)}",
             }
 
         if name == "record_paper_judgment":
@@ -484,7 +484,7 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
                     category = (suggestion or {}).get("category", "mainstream")
                 result = cart_svc.add(project_id, paper.id, category, reason)
                 if not result.get("ok"):
-                    return {"status": "error", "message": f"加入骨架失败：{result.get('error')}"}
+                    return {"status": "error", "message": f"纳入研究清单失败：{result.get('error')}"}
 
             j = judgments.set_judgment(
                 project_id, paper.id, action, reason=reason or None, source="chat"
@@ -493,9 +493,9 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
                 return {"status": "error", "message": j.get("error")}
 
             label = {
-                "adopt": "已加入骨架", "exclude": "已排除", "uncertain": "已标记存疑", "none": "已撤销判断",
+                "adopt": "已纳入研究清单", "exclude": "已排除", "uncertain": "已标记存疑", "none": "已撤销判断",
             }.get(action, action)
-            extra = f"（分类：{category}）" if action == "adopt" and category else ""
+            extra = f"（推荐分类：{category}）" if action == "adopt" and category else ""
             return {
                 "status": "ok",
                 "message": f"《{paper.title[:60]}》{label}{extra}。排除的论文后续检索将不再出现，随时可说'恢复'撤销。",
@@ -507,7 +507,7 @@ def execute_tool(name: str, args: dict, conv: Conversation, user: User) -> dict:
                 "status": result["status"],
                 "thread_id": result.get("thread_id", ""),
                 "project_id": result.get("project_id"),
-                "message": "深度调研已启动（意图解析→主干检索→骨架候选→探针推导，预计 2-5 分钟）。完成结果会以卡片形式展示在这里。",
+                "message": "深度调研已启动（意图解析→主干检索→核心候选归纳→探针推导，预计 2-5 分钟）。完成结果会以卡片形式展示在这里。",
             }
 
         return {"status": "error", "message": f"未知工具: {name}"}
@@ -637,7 +637,7 @@ def start_deep_research(conv: Conversation, user: User, params: dict) -> dict:
             conversation_id=conv_row.id if conv_row else 0,
             user_id=user.id,
             role="assistant",
-            content="深度调研已启动：意图解析 → 主干检索 → 骨架候选 → 探针推导（预计 2-5 分钟，完成后在本消息下方展示结果）",
+            content="深度调研已启动：意图解析 → 主干检索 → 核心候选归纳 → 探针推导（预计 2-5 分钟，完成后在本消息下方展示结果）",
             project_id=project_id,
             attachments={
                 "type": "deep_research",

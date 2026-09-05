@@ -52,6 +52,10 @@ export function PaperQaBox({ detail, projectId, onAsk, onLocate }: PaperQaBoxPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.paper_id, detail.mode]);
 
+  const sections: PaperSection[] = detail.sections ?? detail.analysis.sections ?? [];
+  // 无材料（2026-09-05）：无全文分节 且 无摘要/TLDR（detail.abstract 已含 TLDR 兜底，仍空=真无材料）
+  const noMaterial = canAsk && sections.length === 0 && !(detail.abstract ?? "").trim();
+
   const inputDisabled = asking || !projectId || !canAsk;
 
   // 新问答追加后自动滚到底（对话流区）
@@ -88,28 +92,34 @@ export function PaperQaBox({ detail, projectId, onAsk, onLocate }: PaperQaBoxPro
     }
   };
 
-  const sections: PaperSection[] = detail.sections ?? detail.analysis.sections ?? [];
   const locateCitation = (section: string) => {
     if (!onLocate) return;
     const t = matchSection(section, sections);
     if (t) onLocate(t);
   };
 
+  // 引用可定位性：无全文分节（摘要级/无材料问答）时引用只是出处标注，不能跳到原文
+  const citationsLocatable = sections.length > 0 && !!onLocate;
+
   const placeholder = !projectId
     ? "需要研究项目才能提问"
     : !canAsk
       ? "先「深入探究」转为研究论文后可提问"
-      : st === "running"
-        ? "AI 分析中…可先输入，完成后即回答"
-        : "问这篇论文一个问题…";
+      : noMaterial
+        ? "该论文暂无材料，仍可提问（基于标题的常识性讨论）"
+        : st === "running"
+          ? "AI 分析中…可先输入，完成后即回答"
+          : "问这篇论文一个问题…";
 
   const hint = !projectId
     ? "提问前请先选择或创建一个研究项目"
     : !canAsk
       ? "点右侧「深入探究」：落库并生成分析后，即可基于全文连续提问"
-      : st === "running"
-        ? "AI 分析中…完成后的回答将带原文引用定位，可连续追问"
-        : "可连续追问（保留最近 10 轮上下文）；论文外的背景问题也会回答并标注来源";
+      : noMaterial
+        ? "⚠️ 该论文未获取到全文与摘要，无法基于材料回答——以下为基于标题的领域常识性说明，非论文内容，是否采信由你判断"
+        : st === "running"
+          ? "AI 分析中…完成后的回答将带原文引用定位，可连续追问"
+          : "可连续追问（保留最近 10 轮上下文）；论文外的背景问题也会回答并标注来源";
 
   return (
     <div className="flex flex-col gap-2 min-h-0">
@@ -130,14 +140,16 @@ export function PaperQaBox({ detail, projectId, onAsk, onLocate }: PaperQaBoxPro
               {t.citations.length > 0 && (
                 <div className="flex flex-col gap-1 mt-2">
                   {t.citations.map((c, ci) => (
-                    <button
+                    <div
                       key={ci}
-                      type="button"
-                      onClick={() => locateCitation(c.section ?? "")}
-                      disabled={!onLocate}
-                      className="flex gap-2 items-start bg-paper-warm/60 rounded-md px-2 py-1 text-left disabled:cursor-default"
+                      className={`flex gap-2 items-start rounded-md px-2 py-1 ${
+                        citationsLocatable
+                          ? "bg-paper-warm/60 cursor-pointer hover:bg-paper-warm"
+                          : "bg-paper-warm/30 cursor-default"
+                      }`}
                       style={{ borderLeft: "2px solid rgba(95,207,190,0.5)" }}
-                      title={onLocate ? "定位到原文对应章节" : undefined}
+                      onClick={citationsLocatable ? () => locateCitation(c.section ?? "") : undefined}
+                      title={citationsLocatable ? "定位到原文对应章节" : c.section === "摘要" ? "摘要级引用的出处标注（无全文可定位）" : undefined}
                     >
                       {c.section ? (
                         <span
@@ -148,7 +160,7 @@ export function PaperQaBox({ detail, projectId, onAsk, onLocate }: PaperQaBoxPro
                         </span>
                       ) : null}
                       <span className="text-xs text-ink-secondary leading-relaxed">{c.snippet}</span>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}

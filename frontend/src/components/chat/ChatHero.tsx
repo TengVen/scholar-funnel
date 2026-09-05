@@ -41,7 +41,7 @@ export function ChatHero({
           Scholar Funnel
         </h1>
         <p className="text-base text-ink-muted mt-2 mb-8 text-center">
-          用对话的方式描述研究方向，自动拆解意图、召回并构建文献骨架
+          用对话的方式描述研究方向，自动拆解意图、召回文献并构建结构化领域认知
         </p>
 
         {/* 输入框上方一行：工作台入口（图标 + 文字，语义自明；左侧放置） */}

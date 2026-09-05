@@ -9,19 +9,18 @@ import type { Paper, SearchResult, RunDetail } from "@/types/dto";
 import { listPapers, getRunDetail, runTrunkSearch, runLocalSearch } from "@/lib/api/search";
 import { taskFailureMessage } from "@/lib/taskFeedback";
 import { useProjectStore } from "@/stores/projectStore";
-import { useCartStore } from "@/stores/cartStore";
 import { useAuth } from "@/hooks/useAuth";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SearchPanel } from "@/components/search/SearchPanel";
 import { PaperList } from "@/components/search/PaperList";
 import { PaperCard } from "@/components/search/PaperCard";
 import { RecommendedPanel } from "@/components/search/RecommendedPanel";
+import { LocalSearchView } from "@/components/search/LocalSearchView";
 import { StatsBar } from "@/components/search/StatsBar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ResizablePanel } from "@/components/paper/ResizablePanel";
 import { WorkspacePanel } from "@/components/workspace/WorkspacePanel";
 import { ToastContainer } from "@/components/common/ToastContainer";
-import { Database } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 export default function Home() {
@@ -55,9 +54,6 @@ export default function Home() {
   const rememberLastConversation = useProjectStore((s) => s.rememberLastConversation);
   const resetSession = useProjectStore((s) => s.resetSession);
   const createProjectStore = useProjectStore((s) => s.createProject);
-
-  // ── 骨架（全局共享 → cartStore；页面本身无骨架 UI，loadCart 供其它视图读取）──
-  const loadCart = useCartStore((s) => s.loadCart);
 
   // ── 认证（authStore + useAuth）──
   const { init: initAuth, user: authUser, initialized: authInitialized } = useAuth();
@@ -176,9 +172,8 @@ export default function Home() {
   useEffect(() => {
     if (activeProject) {
       loadPapers(activeProject.id, 0);
-      loadCart(activeProject.id);
     }
-  }, [activeProject, loadPapers, loadCart]);
+  }, [activeProject, loadPapers]);
 
   // ── 执行检索（广域 OpenAlex）──
   const handleSearch = async (query: string, techProbe: string) => {
@@ -194,7 +189,6 @@ export default function Home() {
       });
       setSearchResult(result);
       await loadPapers(activeProject.id, 0);
-      await loadCart(activeProject.id);
     } catch (e: unknown) {
       toast(taskFailureMessage(e, "检索"), "error");
     } finally {
@@ -304,52 +298,23 @@ export default function Home() {
 
     switch (activeView) {
       case "search":
-        // 本地库二次检索模式：对已入库论文做领域/技术语义召回
-        if (localMode) {
+        // 本地库二次检索视图（独立组件：仅呈现，编排在 page.tsx）
+        if (localMode && activeProject) {
           return (
-            <>
-              <SearchPanel
-                activeProject={activeProject}
-                searching={scope === "local" ? localSearching : searching}
-                scope={scope}
-                onScopeChange={handleScopeChange}
-                onSearch={handleSearch}
-                onNewProject={handleNewProject}
-                onLocalSearch={handleLocalSearch}
-              />
-              <div className="flex items-center justify-between px-6 py-2 border-b border-aux-teal/25 bg-aux-teal/[0.06] shrink-0">
-                <span className="flex items-center gap-2 text-sm text-ink-muted">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-aux-teal/15 text-aux-teal border border-aux-teal/30">
-                    <Database className="w-3 h-3" />
-                    本地库召回
-                  </span>
-                  <span className="text-ink-secondary font-medium">{localQuery}</span>
-                  <span className="ml-1 text-ink-faint">{localPapers.length} 篇</span>
-                </span>
-                <button
-                  onClick={() => setLocalMode(false)}
-                  className="btn-ghost text-sm"
-                >
-                  退出本地检索
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2 bg-aux-teal/[0.02]">
-                {localSearching && localPapers.length === 0 ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="w-5 h-5 border-2 border-line border-t-aux-teal rounded-full animate-spin" />
-                  </div>
-                ) : localPapers.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center gap-2 text-ink-faint">
-                    <Database className="w-6 h-6 opacity-40" />
-                    <p className="text-base">未找到匹配的已入库论文</p>
-                  </div>
-                ) : (
-                  localPapers.map((p) => (
-                    <PaperCard key={p.id} paper={p} onOpenPaper={() => handleOpenPaper(p.id, activeProject!.id, true)} />
-                  ))
-                )}
-              </div>
-            </>
+            <LocalSearchView
+              project={activeProject}
+              scope={scope}
+              searching={searching}
+              localSearching={localSearching}
+              query={localQuery}
+              papers={localPapers}
+              onScopeChange={handleScopeChange}
+              onSearch={handleSearch}
+              onNewProject={handleNewProject}
+              onLocalSearch={handleLocalSearch}
+              onExit={() => setLocalMode(false)}
+              onOpenPaper={(pid) => handleOpenPaper(pid, activeProject!.id, true)}
+            />
           );
         }
         // run 上下文视图：对话推荐论文与全量结果分离（2026-09-03 拍板）

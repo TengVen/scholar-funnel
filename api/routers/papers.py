@@ -646,6 +646,9 @@ def _answer_question(paper: Paper, question: str, topic: str = "", history: list
     域策略（宽松域 + 边界标注）：论文未显式提及但相关的背景/概念也正常回答，
     但须标注「（论文未提及，属背景补充）」且禁止为其编造 citations——防止把
     背景知识伪造成论文观点（幻觉红线）。
+    无材料交互（2026-09-05 用户拍板）：论文无全文/无摘要/无 TLDR 时**不拒绝回答**，
+    但后端强制在回答前标注「未基于任何论文材料与证据」，空引用——
+    是否信任/是否继续由用户决定，而非系统一开始就设限。
     """
     from llm import client as llm
     from agents import paper_analysis as pa
@@ -655,8 +658,15 @@ def _answer_question(paper: Paper, question: str, topic: str = "", history: list
         material = "\n\n".join(f"[{s['heading']}]\n{s['content']}" for s in sections)
         material_type = "全文分节"
     else:
-        material = paper.abstract or ""
-        material_type = "摘要"
+        material = (paper.abstract or "").strip()
+        if material:
+            material_type = "摘要"
+        else:
+            # 摘要缺失 → Semantic Scholar TLDR 兜底（AI 概要，非原文；与分析链路 _load_material 对齐）
+            from sources.abstract_fallback import fetch_tldr
+            tldr = fetch_tldr(paper.doi)
+            if tldr:
+                material, material_type = tldr, "AI 概要"
 
     # 最近 10 轮（后端兜底截断；role/content 白名单）
     turns = [h for h in (history or []) if isinstance(h, dict) and h.get("role") in ("user", "assistant")]
@@ -666,14 +676,42 @@ def _answer_question(paper: Paper, question: str, topic: str = "", history: list
         for h in turns
     )
 
-    prompt = f"""\
+    # ── 无材料分支：论文既无全文分节也无摘要（TLDR 兜底也不可用）──
+    if not material:
+        prompt = f"""\
+你是学术论文精读助手，与用户围绕这篇论文进行连续对话。
+
+论文：{paper.title}（{paper.year or '未知'}）
+研究课题：{topic or '未设定'}
+
+【重要】这篇论文当前没有任何可读材料——没有全文、没有摘要、没有 AI 概要。
+你手里只有标题与元数据。用户仍可能提问，需要你这样处理：
+1. 必须诚实：你无法基于论文内容回答，因为论文本身不可读；
+2. 可以基于标题含义与通用领域知识，提供背景性解释与合理推测，帮用户理解这个主题；
+3. 严禁把背景知识/推测表述为该论文的内容——不得说"该论文提出/采用/作者认为"
+   材料里不存在的东西（标题本身除外，标题是真实元数据）；
+4. citations 必须为空数组（没有任何可引用的论文内证据）。
+
+对话历史（最近 {len(turns)} 轮，仅用于理解追问指代，不必复述）：
+{history_lines or '（无）'}
+
+用户问题：{question}
+
+请严格输出 JSON：
+{{
+  "answer": "回答（≤260 字；开头请自然说明这是基于标题与领域常识的说明，而非论文内容）",
+  "citations": []
+}}
+"""
+    else:
+        prompt = f"""\
 你是学术论文精读助手，与用户围绕这篇论文进行连续对话。
 
 论文：{paper.title}（{paper.year or '未知'}）
 研究课题：{topic or '未设定'}
 
 论文材料（{material_type}）：
-{material[:20000] if material else '（无材料）'}
+{material[:20000]}
 
 对话历史（最近 {len(turns)} 轮，仅用于理解追问指代，不必复述）：
 {history_lines or '（无）'}

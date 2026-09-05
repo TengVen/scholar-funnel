@@ -29,7 +29,7 @@ export function DeepResearchRunningCard({
       {!ended && (
         <>
           <p className="text-xs text-ink-faint mt-1.5 leading-relaxed">
-            意图解析 → 主干检索 → 骨架候选 → 探针推导，完成后在此展示结果
+            意图解析 → 主干检索 → 候选归纳 → 探针推导，完成后在此展示结果
           </p>
           <button
             onClick={onCancel}

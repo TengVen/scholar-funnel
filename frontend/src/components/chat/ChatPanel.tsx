@@ -270,7 +270,7 @@ export function ChatPanel({
               ...prev,
               {
                 role: "assistant",
-                content: "深度调研已启动：意图解析 → 主干检索 → 骨架候选 → 探针推导（预计 2-5 分钟）",
+                content: "深度调研已启动：意图解析 → 主干检索 → 候选归纳 → 探针推导（预计 2-5 分钟）",
                 attachments: {
                   type: "deep_research",
                   thread_id: res.task_id!,

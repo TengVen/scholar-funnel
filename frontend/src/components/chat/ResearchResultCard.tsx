@@ -53,10 +53,9 @@ export function ResearchResultCard({ att, projectId, onOpenSearchResults, onEmpt
       </div>
 
       {metrics && (
-        <div className="px-4 grid grid-cols-4 gap-2 mb-2">
+        <div className="px-4 grid grid-cols-3 gap-2 mb-2">
           <Stat label="核心论文" value={metrics.core_papers} />
           <Stat label="新增文献" value={metrics.new_papers} />
-          <Stat label="骨架候选" value={metrics.skeleton_candidates} />
           <Stat label="研究探针" value={metrics.research_probes} />
         </div>
       )}

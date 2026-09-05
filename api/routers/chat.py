@@ -559,9 +559,8 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
     content = (
         f"深度调研完成：核心论文 {payload['metrics']['core_papers']} 篇、"
         f"新增文献 {payload['metrics']['new_papers']} 篇、"
-        f"骨架候选 {payload['metrics']['skeleton_candidates']} 篇、"
         f"研究探针 {payload['metrics']['research_probes']} 个。"
-        "骨架候选未自动入库；点开论文可进入详情深入研究，或到工作台查看。"
+        "点开论文可进入详情深入研究，或到工作台查看。"
     )
 
     with get_session() as session:
@@ -679,7 +678,7 @@ def _generate_summary(search: dict, project_name: str) -> str:
         f"「{project_name}」方向的检索已完成：共召回 {total} 篇，新入库 {saved} 篇"
         + (f"，其中综述 {surveys} 篇" if surveys else "") + "。",
         "已生成检索项目，可在检索页查看论文列表（按相关度/被引/年份排序），"
-        "并从中挑选论文加入骨架（奠基/主流/前沿）。",
+        "点开任意论文即可进入详情深入研究。",
     ]
     return "\n".join(lines)
 
