@@ -465,6 +465,8 @@ export interface DeepResearchAttachments {
   level?: "L3";
   thread_id: string;
   project_id: number;
+  /** 本次调研的主干 run（后端 finalize 写入；供"查看所有检索结果"直达检索页，历史附件可能缺失） */
+  run_id?: number | null;
   status?: "running" | "ended";
   metrics?: {
     core_papers: number;         // 核心论文
@@ -479,6 +481,13 @@ export interface DeepResearchAttachments {
   };
   candidates?: DeepResearchCandidate[];
   probes?: DeepResearchProbe[];
+  /** 0 召回原因信息（core=0 时由后端 finalize 附上 → 前端渲染"未召回"卡，替代全 0 成功卡） */
+  empty?: {
+    reason: "no_hits" | "filtered";   // no_hits=检索层无命中；filtered=命中后被相关度过滤清空
+    found: number;                    // 检索层原始命中数（filtered 时 >0）
+    after_rerank?: number;
+    query?: string;                   // 清洗掉年份限定的方向（供"去限定重跑"）
+  };
 }
 
 /** L1 来源条目（answer_with_sources hits；openalex_id 供"加入研究"） */
@@ -526,6 +535,8 @@ export interface L2StructureAttachment {
   type: "l2_structure";
   level: "L2";
   cognitive_structure: CognitiveStructure;
+  /** 本次检索的 run（后端 finalize 写入；历史附件可能缺失） */
+  run_id?: number | null;
 }
 
 /** 领域地图消息卡附件（T10，甲：对话内地图卡；run_id/project_id 供卡内自拉快照） */

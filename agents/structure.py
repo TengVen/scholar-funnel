@@ -3,7 +3,8 @@ agents/structure.py —— L2 认知结构（结构化归纳）
 
 v1（2026-09-03）：规则三层分组 + 推荐理由三件套（用户拍板）——
   [分类] suggested_category（奠基/主流/前沿）
-  [一句话理由] one_liner：有摘要 → LLM 按摘要批量生成（≤40 字）；无摘要 → 元数据模板（reason）兜底
+  [一句话理由] one_liner：有摘要 → LLM 按摘要批量生成（≤40 字）；无摘要但有标题+关键词 → LLM
+            弱输入档（定位式简述，不编造方法/数据，2026-09-05）；两者皆无 → reason 元数据模板兜底
   [召回依据] recall_basis：由 Paper.recall_meta 规则转述（matched_terms 命中词 / routes 召回路），
             不暴露 similarity/rerank_score 内部信号
 v0 reason（build_reason 元数据模板）保留：无摘要/LLM 失败时作 one_liner 兜底与旧端回退。
@@ -37,8 +38,10 @@ _ROUTE_ZH = {
 }
 _ONELINER_SYSTEM = (
     "你是学术文献综述助手。为每篇论文生成一条「一句话推荐理由」（≤40 字）："
-    "说明该论文与你给的研究主题之间的相关角度与参考价值，必须基于给出的摘要判断，"
-    "不编造摘要之外的内容，语气客观、不用套话。"
+    "说明该论文与你给的研究主题之间的相关角度与参考价值。"
+    "输入带摘要的论文必须严格基于摘要与关键词判断；"
+    "输入标注【无摘要】的论文仅依据标题/关键词/分类给出定位式简述，可适度推断其研究领域与价值，"
+    "但不得编造具体方法细节、数据或数字。语气客观、不用套话、不要出现'该文与主题相关/值得一读'这类空话。"
 )
 
 
@@ -56,41 +59,83 @@ def _recall_basis_text(meta) -> str:
     return "；".join(parts)
 
 
+def _parse_one_liners(payload) -> dict[int, str] | None:
+    """从 LLM 返回（dict 或 JSON 文本，可能带 ```json 围栏/前后杂质）宽容解析 reasons；
+    结构不合法返回 None（调用方重试一次）。"""
+    data = payload if isinstance(payload, dict) else None
+    if data is None and isinstance(payload, str):
+        s = payload.strip()
+        if s.startswith("```"):
+            s = s.strip("`").lstrip("json").strip()
+        start, end = s.find("{"), s.rfind("}")
+        if 0 <= start < end:
+            try:
+                data = json.loads(s[start:end + 1])
+            except ValueError:
+                data = None
+    if not isinstance(data, dict):
+        return None
+    out: dict[int, str] = {}
+    for item in data.get("reasons") or []:
+        try:
+            pid = int(item.get("paper_id"))
+        except (TypeError, ValueError):
+            continue
+        txt = str(item.get("one_liner") or "").strip()
+        if txt:
+            out[pid] = txt[:80]
+    return out or None
+
+
 def _generate_one_liners(topic: str, papers: list[dict]) -> dict[int, str]:
-    """一次 LLM 批量调用为有摘要的推荐论文生成一句话理由；失败静默降级（调用方兜底）。"""
-    feed = [p for p in papers if p.get("abstract_src")]
+    """为核心推荐论文生成一句话理由（一次 LLM 批量调用、摘要+关键词驱动）。
+
+    - 输入过滤：带摘要**或**带关键词的论文都进批（核心十几篇；全量列表不调 LLM）。
+      无摘要但有标题+关键词 → 以【无摘要】弱输入档生成定位式简述，进一步缩小"必公式句"面；
+      两者皆无 → 不进批，调用方用元数据模板兜底。
+    - 宽容解析 + 失败自动重试一次，仍失败才静默降级（调用方用元数据模板兜底）。
+    """
+    # 带摘要 或 带关键词（无摘要弱输入档）都进批；两者皆无 → 模板兜底
+    feed = [p for p in papers if p.get("abstract_src") or p.get("keywords")]
     if not feed:
         return {}
+    _CAT_ZH = {"foundation": "奠基", "mainstream": "主流", "frontier": "前沿"}
     lines = []
     for i, p in enumerate(feed, 1):
+        kws = p.get("keywords") or []
+        kw_line = f"关键词：{'、'.join(str(k) for k in kws[:5])}" if kws else ""
+        abstract = (p.get("abstract_src") or "").strip()
+        abstract_line = (
+            f"摘要：{abstract}" if abstract
+            else "【无摘要】该论文无摘要：仅依据标题/关键词/分类给出定位式简述，不得编造方法/数据/数字。"
+        )
+        cat = p.get("suggested_category")
+        cat_line = f"分类：{_CAT_ZH.get(cat, cat)}" if cat else ""
         lines.append(
             f"[{i}] paper_id={p['paper_id']}\n"
             f"标题：{p.get('title') or ''}（{p.get('year') or '未知年份'}）\n"
-            f"摘要：{p['abstract_src']}"
+            f"{cat_line}\n"
+            f"{kw_line}\n"
+            f"{abstract_line}"
         )
     prompt = (
-        f"研究主题：{topic or '（未提供）'}\n"
-        "以下是候选论文，请逐篇生成一句话推荐理由（各自独立、不要雷同、不要用'该文与主题相关'这类空话）：\n\n"
+        f"研究主题：{topic or '（未提供，请依据论文信息自行判断其研究主题）'}\n"
+        "以下是候选论文，请逐篇生成一句话推荐理由（各自独立、不要雷同、不要用空话）：\n\n"
         + "\n\n".join(lines)
         + '\n\n请严格输出 JSON：{"reasons": [{"paper_id": <数字>, "one_liner": "<一句话理由>"}]}'
     )
-    try:
-        from llm.client import chat_json
-        raw = chat_json(prompt, system=_ONELINER_SYSTEM, temperature=0.3, max_tokens=4000)
-        data = json.loads(raw)
-        out: dict[int, str] = {}
-        for item in data.get("reasons") or []:
-            try:
-                pid = int(item.get("paper_id"))
-            except (TypeError, ValueError):
-                continue
-            txt = str(item.get("one_liner") or "").strip()
-            if txt:
-                out[pid] = txt[:80]
-        return out
-    except Exception as e:
-        logger.warning(f"一句话理由生成失败（降级元数据模板）: {e}")
-        return {}
+    from llm.client import chat_json
+    for attempt in range(2):
+        try:
+            raw = chat_json(prompt, system=_ONELINER_SYSTEM, temperature=0.3, max_tokens=4000)
+            out = _parse_one_liners(raw)
+            if out is not None:
+                return out
+            logger.warning(f"一句话理由解析未命中（第{attempt + 1}次），重试")
+        except Exception as e:
+            logger.warning(f"一句话理由 LLM 调用失败（第{attempt + 1}次）: {e}")
+    logger.warning("一句话理由生成失败（已重试，降级元数据模板）")
+    return {}
 
 
 def build_cognitive_structure(
@@ -152,8 +197,9 @@ def build_cognitive_structure(
             "reason": reason,
             # 召回依据（规则转述 recall_meta，零 LLM）
             "recall_basis": _recall_basis_text(r.recall_meta),
-            # 摘要源（临时字段，生成一句话理由后移除）
+            # 摘要源与关键词（临时字段，生成一句话理由后移除）
             "abstract_src": (r.abstract or "").strip()[:1200],
+            "keywords": r.keywords if isinstance(r.keywords, list) else [],
         }
         groups[cat].append(item)
         selected.append(item)

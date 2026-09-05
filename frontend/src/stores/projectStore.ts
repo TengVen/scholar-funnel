@@ -16,6 +16,8 @@ interface ProjectStore {
   activeConversationId: string | null;
   /** 每个项目最后使用的会话（切对话页时按项目恢复；-1 = 无项目时） */
   lastConvForProject: Record<number, string>;
+  /** 全局最近活跃会话（任何入口兜底：详情页等无 URL 会话参数时回到最近会话，2026-09-05） */
+  lastActiveConversationId: string | null;
   /** 待打开的历史会话（左侧点击，指令优先） */
   chatOpenConvId: string | null;
   /** 新对话信号（每次 +1 触发 ChatPanel 重置） */
@@ -52,6 +54,7 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   conversations: [],
   activeConversationId: null,
   lastConvForProject: {},
+  lastActiveConversationId: null,
   chatOpenConvId: null,
   chatNewSignal: 0,
   limitsByProject: {},
@@ -82,12 +85,13 @@ export const useProjectStore = create<ProjectStore>((set) => ({
 
   setActiveProject: (p) => set({ activeProject: p }),
 
-  selectConversation: (cid) => set({ chatOpenConvId: cid, activeConversationId: cid }),
+  selectConversation: (cid) => set({ chatOpenConvId: cid, activeConversationId: cid, lastActiveConversationId: cid }),
 
   newConversation: () =>
     set((s) => ({
       chatOpenConvId: null,
       activeConversationId: null,
+      lastActiveConversationId: null,
       activeProject: null, // 新对话断开项目上下文：右上角徽章 + 左侧高亮同步清除
       chatNewSignal: s.chatNewSignal + 1,
     })),
@@ -98,7 +102,10 @@ export const useProjectStore = create<ProjectStore>((set) => ({
 
   rememberLastConversation: (cid, pid) => {
     if (!cid) return;
-    set((s) => ({ lastConvForProject: { ...s.lastConvForProject, [pid ?? -1]: cid } }));
+    set((s) => ({
+      lastConvForProject: { ...s.lastConvForProject, [pid ?? -1]: cid },
+      lastActiveConversationId: cid,
+    }));
   },
 
   resetSession: () => set({ activeProject: null, activeConversationId: null }),

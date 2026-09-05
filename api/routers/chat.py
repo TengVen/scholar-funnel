@@ -300,6 +300,13 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
 
     # LLM 生成文字总结（基于统计，不塞论文列表）
     summary = _generate_summary(search, project_name)
+    # 0 召回原因分级（2026-09-05）：无命中 vs 被过滤 → 具体人话 + 下一步（替换通用文案）
+    _reason0 = _classify_empty(search.get("total_found", 0), search.get("after_rerank", 0))
+    if _reason0:
+        summary = _empty_search_message(
+            _reason0, search.get("total_found", 0),
+            search.get("after_rerank", 0), project_name,
+        )
 
     # L2 认知结构（v0 规则三层分组；T10 地图归纳落地后替换为数据驱动版，schema 不变）
     cognitive = None
@@ -316,42 +323,45 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
     # 存会话消息（role=assistant，带 L2 认知结构卡）——按 user 过滤，防跨用户越权
     # run_id：关联本次检索的 Run（核心推荐按 Run 归属，工作台论文推荐按 Run 区分）
     run_id = result.get("run_id")
-    with get_session() as session:
-        conv = (
-            session.query(Conversation)
-            .filter(
-                Conversation.project_id == project_id,
-                Conversation.user_id == user.id,
-            )
-            .first()
-        )
-        if conv:
-            _append_message(
-                session, conv, user.id, "assistant",
-                summary,
-                project_id=project_id, project_name=project_name,
-                attachments=(
-                    {"type": "l2_structure", "level": "L2", "run_id": run_id,
-                     "cognitive_structure": cognitive}
-                    if cognitive else None
-                ),
-            )
-            # 领域地图消息卡（T10，甲）：地图异步生成，卡内自拉状态；供刷新/历史恢复
-            if run_id:
-                _append_message(
-                    session, conv, user.id, "assistant", "",
-                    project_id=project_id, project_name=project_name,
-                    attachments={"type": "run_map", "run_id": run_id, "project_id": project_id},
+    # 落库/顺产整体降级（2026-09-05 修复）：任一步失败不再整体 500——
+    # 此前出现过"后端任务成功、前端却收到 summary 500 (Internal Server Error)"，即此处某环节抛错所致；
+    # 结果卡由前端本地渲染，落库失败仅影响刷新恢复，故记错误后仍返回基础 payload。
+    try:
+        with get_session() as session:
+            conv = (
+                session.query(Conversation)
+                .filter(
+                    Conversation.project_id == project_id,
+                    Conversation.user_id == user.id,
                 )
+                .first()
+            )
+            if conv:
+                _append_message(
+                    session, conv, user.id, "assistant",
+                    summary,
+                    project_id=project_id, project_name=project_name,
+                    attachments=(
+                        {"type": "l2_structure", "level": "L2", "run_id": run_id,
+                         "cognitive_structure": cognitive}
+                        if cognitive else None
+                    ),
+                )
+                # 领域地图消息卡（T10，甲）：地图异步生成，卡内自拉状态；供刷新/历史恢复
+                if run_id:
+                    _append_message(
+                        session, conv, user.id, "assistant", "",
+                        project_id=project_id, project_name=project_name,
+                        attachments={"type": "run_map", "run_id": run_id, "project_id": project_id},
+                    )
 
-    # 领域地图顺产（T10）：与认知结构同 run 异步生成，不阻塞 finalize 返回；
-    # 失败/历史 run 可经工作台「生成领域地图」按需重试（POST /runs/{id}/map）
-    if run_id:
-        try:
+        # 领域地图顺产（T10）：与认知结构同 run 异步生成，不阻塞 finalize 返回；
+        # 失败/历史 run 可经工作台「生成领域地图」按需重试（POST /runs/{id}/map）
+        if run_id:
             from agents import map_builder
             map_builder.generate_run_map_async(run_id, project_id, project_name)
-        except Exception as e:
-            logger.warning(f"领域地图顺产调度失败（可后续按需生成）: {e}")
+    except Exception as e:
+        logger.error(f"检索总结落库失败（降级返回基础 payload，task={task_id}）: {e}")
 
     payload = {
         "summary": summary,
@@ -363,6 +373,41 @@ def finalize_search_summary(task_id: str, user: User = Depends(get_current_user)
     task["summarized"] = True
     task["summary_payload"] = payload
     return payload
+
+# ── 0 召回/无候选：原因归类 + 人话 + 方向清洗（2026-09-05，full_search 与 deep_research 共用）──
+
+def _classify_empty(total_found: int, after_rerank: int) -> str | None:
+    """0 候选的原因归类：no_hits=检索层无命中（查询串/年份窗口问题）；filtered=命中后被相关度过滤清空；None=非 0。"""
+    if total_found <= 0:
+        return "no_hits"
+    if after_rerank <= 0:
+        return "filtered"
+    return None
+
+
+def _strip_year_limits(text: str) -> str:
+    """剥离方向描述中的常见年份限定短语（"去限定重跑"用：防止方向文本再次引导模型加年份窗口）。
+    启发式宽松处理；剥离后为空则回退原文。"""
+    import re as _re
+    t = _re.sub(r"20\d{2}\s*年\s*(?:以后|以来|之后|至今)?", "", text)
+    t = _re.sub(r"近\s*(?:三|五|几|多)?\s*年(?:多|以来|的|里)?", "", t)
+    t = _re.sub(r"(?:19|20)\d{2}\s*[-–~]\s*(?:19|20)\d{2}", "", t)
+    t = _re.sub(r"[，,；;、\s]{1,4}", "，", t).strip("，,;。 ")
+    return t or text
+
+
+def _empty_search_message(reason: str, total: int, after_rerank: int, topic: str) -> str:
+    """0 召回的人话（原因 + 下一步），供两种 finalize 共用。"""
+    if reason == "filtered":
+        return (
+            f"「{topic}」方向找到 {total} 篇候选，但相关度过滤后一篇也没剩——"
+            "方向可能与已有认知偏离，或限定过窄。建议精简方向描述重试，"
+            "或先用「去掉时间/类型限定重试」跑一次全貌。"
+        )
+    return (
+        f"「{topic}」方向未能召回到文献。常见原因：方向描述太具体、混入了具体方法名、"
+        "或年份窗口过窄。建议精简方向后重试，或先不限定时间跑一次全貌（可点下方按钮一键重跑）。"
+    )
 
 
 # ── 深度调研（deep_research）结果卡 ──
@@ -414,19 +459,50 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
     except Exception:
         _deep_run_id = None
 
-    # 候选富化：从 ai_papers 补作者/被引（推荐理由之外的元数据，供三分类分组下的论文行展示）
-    paper_ids = [r.get("paper_id") for r in recs[:12] if r.get("paper_id")]
+    # 候选富化：从 ai_papers 补作者/被引/摘要/关键词（展示元数据 + 一句话理由的输入材料）
+    paper_ids = [r.get("paper_id") for r in recs if r.get("paper_id")]
     paper_info: dict[int, dict] = {}
+    topic_src = ""
     if paper_ids:
         from storage.models import Paper as PaperModel
+        from storage.models import Project as ProjectModel
         with get_session() as session:
+            _proj = session.get(ProjectModel, project_id)
+            if _proj:
+                topic_src = (_proj.user_query or _proj.name or "")[:150]
             for row in session.query(PaperModel).filter(PaperModel.id.in_(paper_ids)).all():
                 authors = row.authors if isinstance(row.authors, list) else []
                 paper_info[row.id] = {
                     "authors": authors[:3],
                     "authors_note": f"{authors[0]}{' 等' if len(authors) > 1 else ''}" if authors else "",
                     "cited_by_count": row.cited_by_count or 0,
+                    "abstract": (row.abstract or "").strip()[:1200],
+                    "keywords": row.keywords if isinstance(row.keywords, list) else [],
                 }
+    # 核心候选一句话理由（与 L2 认知结构同机制：仅核心十几篇、摘要+关键词驱动、一次 LLM 调用；
+    # 无摘要但有标题+关键词 → 弱输入档（定位式简述，不编造）；两者皆无/失败 → reason 模板兜底，
+    # 不阻塞——全量列表不调 LLM）
+    one_liners: dict[int, str] = {}
+    try:
+        from agents.structure import _generate_one_liners as _gen_ones
+        one_liners = _gen_ones(topic_src, [
+            {
+                "paper_id": pid,
+                "title": r.get("title", ""),
+                "year": r.get("year", 0),
+                "suggested_category": r.get("suggested_category", ""),
+                "abstract_src": paper_info.get(pid, {}).get("abstract", ""),
+                "keywords": paper_info.get(pid, {}).get("keywords", []),
+            }
+            for r in recs
+            if (pid := r.get("paper_id"))
+            and (
+                paper_info.get(pid, {}).get("abstract")
+                or paper_info.get(pid, {}).get("keywords")
+            )
+        ])
+    except Exception as e:
+        logger.warning(f"深研核心候选一句话理由生成失败（reason 模板兜底）: {e}")
 
     # 研究成果指标（面向用户：研究形成了什么，而非系统处理了多少数据）
     # 检索过程（主干召回→初筛→Rerank→核心候选）收纳进 process，前端"查看检索过程"展开
@@ -454,11 +530,12 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
                 "title": r.get("title", ""),
                 "year": r.get("year", 0),
                 "suggested_category": r.get("suggested_category", "mainstream"),
-                "reason": r.get("reason", ""),
+                # 一句话理由优先（LLM、摘要+关键词）；未生成则用骨架阶段的 reason 模板
+                "reason": one_liners.get(r.get("paper_id")) or r.get("reason", ""),
                 "authors_note": paper_info.get(r.get("paper_id"), {}).get("authors_note", ""),
                 "cited_by_count": paper_info.get(r.get("paper_id"), {}).get("cited_by_count", 0),
             }
-            for r in recs[:12]
+            for r in recs
         ],
         "probes": [
             {
@@ -466,15 +543,25 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
                 "description": p.get("description", ""),
                 "coverage_ratio": p.get("coverage_ratio", 0),
             }
-            for p in probes[:5]
+            for p in probes
         ],
     }
+    # 0 召回（核心候选为空）：附 empty 原因信息 → 前端渲染"未召回"卡（替换全 0 成功卡）；
+    # query（清洗掉年份限定的方向，供"去限定重跑"）在会话内拿到项目名后补填
+    empty_note = None
+    if core_n == 0:
+        _tf = trunk.get("total_found", 0) or 0
+        _ar = trunk.get("after_rerank", 0) or 0
+        _r = _classify_empty(_tf, _ar)
+        if _r:
+            empty_note = {"reason": _r, "found": _tf, "after_rerank": _ar, "query": ""}
+            payload["empty"] = empty_note
     content = (
         f"深度调研完成：核心论文 {payload['metrics']['core_papers']} 篇、"
         f"新增文献 {payload['metrics']['new_papers']} 篇、"
         f"骨架候选 {payload['metrics']['skeleton_candidates']} 篇、"
         f"研究探针 {payload['metrics']['research_probes']} 个。"
-        "骨架候选未自动入库，可在此加入或到研究空间查看。"
+        "骨架候选未自动入库；点开论文可进入详情深入研究，或到工作台查看。"
     )
 
     with get_session() as session:
@@ -508,19 +595,72 @@ def finalize_deep_research(thread_id: str, user: User = Depends(get_current_user
             proj = session.get(Project, project_id)
             if proj:
                 pname = proj.name
-            # 0 召回时结果卡文案明确提示（区别于正常完成）
-            if trunk.get("total_found", 0) == 0:
-                content = (
-                    f"深度调研未能召回到文献（「{pname}」）。\n"
-                    "可能原因：关键词过于具体、或数据源暂时不可用。"
-                    "建议调整方向描述后重新调研，或稍后再试。"
+            # 0 召回：补 query（清洗年份限定）并换人话 content（原因 + 下一步；区别于正常完成）
+            if empty_note:
+                empty_note["query"] = _strip_year_limits(pname or "")[:120]
+                content = _empty_search_message(
+                    empty_note["reason"], empty_note["found"], empty_note["after_rerank"], pname,
                 )
             _append_message(
                 session, conv, user.id, "assistant", content,
                 project_id=project_id, project_name=pname, attachments=payload,
             )
 
+            # 深研 run 的领域地图消息卡（T10，与 full_search finalize 一致）：正常召回时追加，
+            # 对话流内自动出现地图卡（卡内自拉状态与生成）；0 召回不产生地图卡
+            if _deep_run_id and trunk.get("total_found", 0) > 0:
+                _append_message(
+                    session, conv, user.id, "assistant", "",
+                    project_id=project_id, project_name=pname,
+                    attachments={"type": "run_map", "run_id": _deep_run_id, "project_id": project_id},
+                )
+
+            # 领域地图顺产（T10）：深研的主干 run 也异步生成地图（与 full_search finalize 一致；
+            # 失败/历史 run 可经工作台「生成领域地图」按需重试，不阻塞 finalize 返回）
+            if _deep_run_id:
+                try:
+                    from agents import map_builder
+                    map_builder.generate_run_map_async(_deep_run_id, project_id, pname)
+                except Exception as e:
+                    logger.warning(f"深研领域地图顺产调度失败（可后续按需生成）: {e}")
+
     return {"content": content, "attachments": payload}
+
+
+@router.post("/deep-research/relaunch")
+def relaunch_deep_research(body: dict, user: User = Depends(get_current_user)):
+    """0 召回收敛后的一键重跑（"去掉时间/类型限定重试"）：
+    - query：finalize 已剥离年份限定的方向主题（后端再显式清空 year/paper_type 双保险）；
+    - 复用 start_deep_research：新建 project + 启动卡 + 后台 funnel，前端轮询该 thread。
+    返回 thread_id/project_id；调用方（ChatPanel）据此追加 running 卡并进入既有深研轮询管线。
+    """
+    query = (body or {}).get("query", "").strip()
+    conv_id = (body or {}).get("conv_id", "").strip()
+    if not query or not conv_id:
+        raise HTTPException(400, "缺少方向或会话参数")
+    query = _strip_year_limits(query)[:200]
+
+    from agents.chat_agent import start_deep_research
+    from storage.models import Conversation
+    from storage.mysql_db import get_session
+    with get_session() as session:
+        conv = (
+            session.query(Conversation)
+            .filter(Conversation.uuid == conv_id, Conversation.user_id == user.id)
+            .first()
+        )
+    if conv is None:
+        raise HTTPException(404, "会话不存在")
+
+    result = start_deep_research(conv, user, {
+        "user_query": query,
+        "tech_probe": "",
+        "year_from": None,
+        "year_to": None,
+        "paper_type": "all",
+        "methodology": "general",
+    })
+    return {"status": result.get("status", "started"), "thread_id": result.get("thread_id")}
 
 
 def _generate_summary(search: dict, project_name: str) -> str:

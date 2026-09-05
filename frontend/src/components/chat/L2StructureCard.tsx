@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Map, ChevronDown, ChevronUp } from "lucide-react";
+import { ExternalLink, Map, ChevronDown, ChevronUp } from "lucide-react";
 import type { CognitiveStructure, StructurePaper } from "@/types/dto";
 import type { Category } from "@/types/domain";
 import { CATEGORY_SECTION, CATEGORY_META } from "@/config/categories";
@@ -10,15 +10,18 @@ import { PaperAbstractRow } from "./PaperAbstractRow";
 /**
  * L2 认知结构卡（L2Renderer）：论文 = 认知结构节点。
  * 明确区分"核心推荐"与"全部候选"；分类以"奠基/主流/前沿"区块标题呈现。
- * 操作收敛：论文点击进入详情页（认知位置/为什么推荐在详情页展示）。
+ * 操作收敛：论文点击进入详情页（认知位置/为什么推荐在详情页展示）；
+ * 底部提供「查看所有检索结果」→ 直达该 run 的检索页（2026-09-05：收敛原普通消息的长标题"查看项目"入口）。
  */
 interface L2StructureCardProps {
   content: string;
   structure: CognitiveStructure;
   projectId?: number | null;
+  runId?: number | null;   // 本次检索的 run（跳检索页直达该 run 视图）
+  onOpenSearchResults?: (projectId: number, runId?: number | null) => void;
 }
 
-export function L2StructureCard({ content, structure, projectId }: L2StructureCardProps) {
+export function L2StructureCard({ content, structure, projectId, runId, onOpenSearchResults }: L2StructureCardProps) {
   const [showAll, setShowAll] = useState(false);
 
   const groups: { key: Category; papers: StructurePaper[] }[] = [
@@ -81,8 +84,18 @@ export function L2StructureCard({ content, structure, projectId }: L2StructureCa
           {showAll ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           {showAll ? "收起" : `展开全部核心推荐（${shownTotal} 篇）`}
         </button>
+        {onOpenSearchResults && projectId && (
+          <button
+            type="button"
+            onClick={() => onOpenSearchResults(projectId, runId)}
+            className="inline-flex items-center gap-1 btn-secondary text-xs !py-1.5"
+          >
+            <ExternalLink className="w-3 h-3" />
+            查看所有检索结果
+          </button>
+        )}
         {!showAll && (
-          <span className="text-xs text-ink-faint">
+          <span className="text-xs text-ink-faint ml-auto">
             候选结果池已保留全部 {structure.total_candidates} 篇，其余论文可在检索页/工作台继续探索
           </span>
         )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { streamChatMessage, getChatHistory } from "@/lib/api/chat";
+import { streamChatMessage, getChatHistory, relaunchDeepResearch } from "@/lib/api/chat";
 import type { ChatMessage, ChatResponse } from "@/types/dto";
 import { ChatHero } from "./ChatHero";
 import { ChatComposer } from "./ChatComposer";
@@ -12,11 +12,12 @@ import { STORAGE_KEYS } from "@/config/storage";
 import { useLocalStorageConfig, normalizeChatConfig } from "@/hooks/useLocalStorageConfig";
 import { useChatTasks } from "@/hooks/useChatTasks";
 import { useDeepResearchRecovery, type MessagePatch } from "@/hooks/useDeepResearchRecovery";
+import { taskFailureMessage } from "@/lib/taskFeedback";
 import { toast } from "@/lib/toast";
 
 interface ChatPanelProps {
   onProjectCreated: (projectId: number) => void;
-  onOpenProject: (projectId: number) => void;   // 查看项目 → 检索页
+  onOpenSearchResults: (projectId: number, runId?: number | null) => void; // 认知卡「查看所有检索结果」→ 检索页（带 run）
   requestedConversationId?: string | null;      // 左侧点历史会话 → 打开它
   newSignal?: number;                            // 左侧点新对话 → 重置
   currentProjectId?: number | null;             // 当前项目（会话按项目恢复时记录）
@@ -40,7 +41,7 @@ const genConvId = () =>
  */
 export function ChatPanel({
   onProjectCreated,
-  onOpenProject,
+  onOpenSearchResults,
   requestedConversationId,
   newSignal,
   currentProjectId,
@@ -350,6 +351,41 @@ export function ChatPanel({
     drActiveRef.current = false;
   };
 
+  // 0 召回卡「去掉时间/类型限定重试」：复用 relaunch 端点（后端剥离年份 + 清空 year/type），
+  // 追加 running 卡并进入既有深研轮询管线（结果/失败展示与正常深研一致）
+  const handleDeepRelaxedRetry = async (query: string) => {
+    if (drActiveRef.current) {
+      toast("已有深度调研正在进行中，请等待完成", "info");
+      return;
+    }
+    try {
+      const { thread_id } = await relaunchDeepResearch(query, conversationId);
+      drActiveRef.current = true;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "深度调研已重新启动：已自动去掉时间与类型限定，按同一方向重跑（预计 1-2 分钟）。",
+          attachments: {
+            type: "deep_research",
+            thread_id,
+            project_id: 0,
+            status: "running",
+          },
+        },
+      ]);
+      runDeepResearchPoll(thread_id);
+    } catch (e) {
+      toast(taskFailureMessage(e, "深度调研"), "error");
+    }
+  };
+
+  // 0 召回卡「修改方向再试」→ 回填输入框并聚焦（用户自行调整后重新发送）
+  const handleEmptyEditQuery = (query: string) => {
+    setInput(query);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -389,7 +425,9 @@ export function ChatPanel({
           <MessageList
             messages={messages}
             onCancelDeepResearch={handleCancelDeepResearch}
-            onOpenProject={onOpenProject}
+            onOpenSearchResults={onOpenSearchResults}
+            onEmptyRetry={handleDeepRelaxedRetry}
+            onEmptyEdit={handleEmptyEditQuery}
             pendingIdx={pendingIdx}
             searching={searching}
             streamingText={streamText}

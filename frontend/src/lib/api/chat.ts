@@ -57,6 +57,17 @@ export function finalizeDeepResearch(
   return request(`/api/chat/deep-research/${threadId}/finalize`, { method: "POST" });
 }
 
+/** 0 召回一键重跑：同一方向去掉时间/类型限定（后端剥离年份 + 显式清空 year/paper_type） */
+export function relaunchDeepResearch(
+  query: string,
+  convId: string,
+): Promise<{ status: string; thread_id: string }> {
+  return request("/api/chat/deep-research/relaunch", {
+    method: "POST",
+    body: JSON.stringify({ query, conv_id: convId }),
+  });
+}
+
 export function listConversations(): Promise<ConversationSummary[]> {
   return request("/api/chat/conversations");
 }

@@ -7,6 +7,7 @@ import type { SortSpec } from "@/types/domain";
 import { DEFAULT_SORT } from "@/config/search";
 import type { Paper, SearchResult, RunDetail } from "@/types/dto";
 import { listPapers, getRunDetail, runTrunkSearch, runLocalSearch } from "@/lib/api/search";
+import { taskFailureMessage } from "@/lib/taskFeedback";
 import { useProjectStore } from "@/stores/projectStore";
 import { useCartStore } from "@/stores/cartStore";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,6 +41,7 @@ export default function Home() {
   const conversations = useProjectStore((s) => s.conversations);
   const activeConversationId = useProjectStore((s) => s.activeConversationId);
   const lastConvForProject = useProjectStore((s) => s.lastConvForProject);
+  const lastActiveConversationId = useProjectStore((s) => s.lastActiveConversationId);
   const chatOpenConvId = useProjectStore((s) => s.chatOpenConvId);
   const chatNewSignal = useProjectStore((s) => s.chatNewSignal);
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -194,7 +196,7 @@ export default function Home() {
       await loadPapers(activeProject.id, 0);
       await loadCart(activeProject.id);
     } catch (e: unknown) {
-      toast(`检索失败: ${e instanceof Error ? e.message : String(e)}`, "error");
+      toast(taskFailureMessage(e, "检索"), "error");
     } finally {
       setSearching(false);
     }
@@ -211,7 +213,7 @@ export default function Home() {
       setLocalPapers(res.papers);
       setLocalQuery(res.query);
     } catch (e: unknown) {
-      toast(`本地检索失败: ${e instanceof Error ? e.message : String(e)}`, "error");
+      toast(taskFailureMessage(e, "检索"), "error");
     } finally {
       setLocalSearching(false);
     }
@@ -233,7 +235,7 @@ export default function Home() {
   };
 
   // ── 工作台：检索记录 → 检索页（切到该子研究 + 当前 run 上下文）──
-  const handleOpenSearch = (pid: number, runId?: number) => {
+  const handleOpenSearch = (pid: number, runId?: number | null) => {
     loadProjects().then(() => {
       const found = useProjectStore.getState().projects.find((p) => p.id === pid);
       if (found) {
@@ -443,17 +445,12 @@ export default function Home() {
                 if (found) setActiveProject(found);
               });
             }}
-            onOpenProject={(pid) => {
-              // 对话里点"查看项目"→ 跳检索页 + 切到该项目
-              loadProjects().then(() => {
-                const found = useProjectStore.getState().projects.find((p) => p.id === pid);
-                if (found) {
-                  setActiveProject(found);
-                  setActiveView("search");
-                }
-              });
-            }}
-            requestedConversationId={chatOpenConvId ?? lastConvForProject[activeProject?.id ?? -1]}
+            onOpenSearchResults={handleOpenSearch}
+            requestedConversationId={
+              chatOpenConvId
+              ?? lastConvForProject[activeProject?.id ?? -1]
+              ?? lastActiveConversationId
+            }
             newSignal={chatNewSignal}
             currentProjectId={activeProject?.id ?? null}
             onRequestConsumed={() => setChatOpenConvId(null)}

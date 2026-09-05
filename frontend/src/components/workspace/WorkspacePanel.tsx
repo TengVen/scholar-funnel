@@ -295,7 +295,7 @@ function RunCard({ run, isFirst, open, collapsed, onToggle, onToggleSection, onO
 
           {/* 就地展开区块：领域地图（2026-09-04：替代原"认知结构"计数块——三分类已由「论文推荐」列表承载，地图是 run 级结构产物，点开即看） */}
           {isSecOpen("map") && (
-            <div className="mt-2 pt-2 border-t border-line/60">
+            <div className="mt-2 pt-2 border-t border-line/60 max-h-[55vh] overflow-y-auto pr-0.5">
               <RunMapSection runId={run.id} onOpenPaper={onOpenPaper} defaultCollapsed={false} />
             </div>
           )}

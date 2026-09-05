@@ -44,20 +44,21 @@ export function ChatHero({
           用对话的方式描述研究方向，自动拆解意图、召回并构建文献骨架
         </p>
 
-        {/* 输入框上方一行：工作台概览入口（对话框附近小图标） */}
-        <div className="w-full max-w-3xl flex items-center justify-end mb-1.5">
+        {/* 输入框上方一行：工作台入口（图标 + 文字，语义自明；左侧放置） */}
+        <div className="w-full max-w-3xl flex items-center mb-1.5">
           {onToggleWorkspace && (
             <button
               type="button"
               onClick={onToggleWorkspace}
-              title="工作台概览"
-              className={`p-1.5 rounded-lg border transition-colors ${
+              title="工作台概览：当前子研究的检索记录 / 领域地图 / 论文推荐 / 深入研究"
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs transition-colors ${
                 workspaceOpen
-                  ? "border-gold/40 bg-gold/10 text-gold-light"
-                  : "border-transparent text-ink-faint hover:text-ink hover:bg-paper-warm hover:border-line"
+                  ? "border border-gold/40 bg-gold/10 text-gold-light"
+                  : "text-ink-muted hover:text-ink hover:bg-paper-warm"
               }`}
             >
-              <LayoutGrid className="w-4 h-4" />
+              <LayoutGrid className="w-3.5 h-3.5" />
+              工作台
             </button>
           )}
         </div>

@@ -17,6 +17,7 @@ import {
 } from "@/lib/api/chat";
 import { getFunnelState } from "@/lib/api/funnel";
 import type { ChatMessage, DeepResearchAttachments, SearchSummary } from "@/types/dto";
+import { taskFailureMessage } from "@/lib/taskFeedback";
 import { toast } from "@/lib/toast";
 
 export interface UseChatTasksOptions {
@@ -69,7 +70,7 @@ export function useChatTasks({
       onError: (e) => {
         pushMessage({
           role: "assistant",
-          content: `检索失败：${e instanceof Error ? e.message : String(e)}。你可以修改需求后重试。`,
+          content: taskFailureMessage(e, "检索"),
         });
       },
       intervalMs: 3000,
@@ -99,20 +100,37 @@ export function useChatTasks({
       },
       getResult: finalizeDeepResearch,
       onResult: (res) => {
+        // 先把启动卡标记结束（恢复历史路径同语义），再追加结果卡——避免"已完成却仍显示进行中"
+        markDeepResearchEnded();
         pushMessage({
           role: "assistant",
           content: res.content,
           attachments: res.attachments,
           project_id: res.attachments.project_id,
         });
+        // 领域地图消息卡（T10）：与 full_search 完成一致——深研主干 run 也本地追加
+        // （地图异步生成，卡内自拉状态）。0 召回（empty）无 run_map 消息卡（后端同条件）
+        if (res.attachments.run_id && !res.attachments.empty) {
+          pushMessage({
+            role: "assistant",
+            content: "",
+            project_id: res.attachments.project_id,
+            attachments: {
+              type: "run_map",
+              run_id: res.attachments.run_id,
+              project_id: res.attachments.project_id,
+            },
+          });
+        }
         onProjectCreated(res.attachments.project_id);
         window.dispatchEvent(new CustomEvent("chat:updated"));
         drActiveRef.current = false;
       },
       onError: (e) => {
+        markDeepResearchEnded();
         pushMessage({
           role: "assistant",
-          content: `深度调研失败：${e instanceof Error ? e.message : String(e)}。你可以换个说法重新发起。`,
+          content: taskFailureMessage(e, "深度调研"),
         });
         drActiveRef.current = false;
       },

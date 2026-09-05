@@ -1,7 +1,7 @@
 "use client";
 
 import type { RefObject } from "react";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { ChatMessage } from "@/types/dto";
 import { EXEC_STAGES } from "@/config/chat";
 import { MarkdownBody } from "./MarkdownBody";
@@ -17,13 +17,18 @@ import { MapMessageCard } from "./MapMessageCard";
  * - 普通文字回复平铺在页面上（ChatGPT 式，无卡片容器）；用户消息保留右侧气泡
  *
  * 尾部附加块：流式草稿（streamingText，逐 token 增长）、执行中占位、检索中提示、滚动锚点。
+ * 检索结果入口收敛（2026-09-05）：普通消息不再渲染长标题"查看项目"行；
+ * 由 L2 认知卡底部「查看所有检索结果」统一承载（带 run 上下文直达检索页）。
  */
 export function MessageList({
-  messages, onCancelDeepResearch, onOpenProject, pendingIdx, searching, streamingText, messagesEndRef,
+  messages, onCancelDeepResearch, onOpenSearchResults, onEmptyRetry, onEmptyEdit,
+  pendingIdx, searching, streamingText, messagesEndRef,
 }: {
   messages: ChatMessage[];
   onCancelDeepResearch: () => void;
-  onOpenProject: (projectId: number) => void;
+  onOpenSearchResults: (projectId: number, runId?: number | null) => void;
+  onEmptyRetry?: (query: string) => void;   // 深研 0 召回「去限定重跑」
+  onEmptyEdit?: (query: string) => void;    // 深研 0 召回「修改方向再试」→ 回填输入框
   pendingIdx: number | null;
   searching: boolean;
   streamingText?: string | null;
@@ -37,7 +42,13 @@ export function MessageList({
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             {msg.attachments?.type === "deep_research_result" ? (
-              <ResearchResultCard att={msg.attachments} projectId={msg.project_id ?? null} />
+              <ResearchResultCard
+                att={msg.attachments}
+                projectId={msg.project_id ?? null}
+                onOpenSearchResults={onOpenSearchResults}
+                onEmptyRetry={onEmptyRetry}
+                onEmptyEdit={onEmptyEdit}
+              />
             ) : msg.attachments?.type === "deep_research" ? (
               <DeepResearchRunningCard att={msg.attachments} onCancel={onCancelDeepResearch} />
             ) : msg.attachments?.type === "l1_sources" ? (
@@ -47,6 +58,8 @@ export function MessageList({
                 content={msg.content}
                 structure={msg.attachments.cognitive_structure}
                 projectId={msg.project_id ?? null}
+                runId={msg.attachments.run_id ?? null}
+                onOpenSearchResults={onOpenSearchResults}
               />
             ) : msg.attachments?.type === "run_map" ? (
               <MapMessageCard att={msg.attachments} projectId={msg.project_id ?? null} />
@@ -58,15 +71,6 @@ export function MessageList({
               // 普通文字回复：去卡片容器，平铺在页面（对齐 ChatGPT 阅读流）
               <div className="w-full min-w-0">
                 <MarkdownBody content={msg.content} />
-                {msg.project_id && (
-                  <button
-                    onClick={() => onOpenProject(msg.project_id!)}
-                    className="mt-2.5 flex items-center gap-1.5 btn-secondary text-sm !py-1.5"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    查看项目「{msg.project_name || `#${msg.project_id}`}」
-                  </button>
-                )}
               </div>
             )}
           </div>
